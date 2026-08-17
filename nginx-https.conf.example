@@ -1,0 +1,69 @@
+limit_req_zone $binary_remote_addr zone=gameops_api:10m rate=30r/m;
+limit_conn_zone $binary_remote_addr zone=gameops_conn:10m;
+
+server {
+    listen 80;
+    listen [::]:80;
+    server_name YOUR_DOMAIN;
+    return 301 https://$host$request_uri;
+}
+
+server {
+    listen 443 ssl http2;
+    listen [::]:443 ssl http2;
+    server_name YOUR_DOMAIN;
+
+    ssl_certificate /etc/letsencrypt/live/YOUR_DOMAIN/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/YOUR_DOMAIN/privkey.pem;
+
+    root /var/www/game-content-ops-ai-workbench/public;
+    index index.html;
+    client_max_body_size 12m;
+    limit_req_status 429;
+    limit_conn_status 429;
+
+    auth_basic "GameOps Demo";
+    auth_basic_user_file /etc/nginx/.htpasswd-gameops;
+
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+    add_header Permissions-Policy "camera=(), microphone=(), geolocation=()" always;
+    add_header Content-Security-Policy "default-src 'self'; img-src 'self' https: data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'" always;
+
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+
+    location /api/hotspot/ {
+        limit_req zone=gameops_api burst=10 nodelay;
+        limit_conn gameops_conn 10;
+        proxy_pass http://127.0.0.1:8790/;
+        include proxy_params;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_read_timeout 60s;
+    }
+
+    location /api/comment/ {
+        limit_req zone=gameops_api burst=10 nodelay;
+        limit_conn gameops_conn 10;
+        proxy_pass http://127.0.0.1:8791/;
+        include proxy_params;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_read_timeout 60s;
+    }
+
+    location /api/ocr/ {
+        limit_req zone=gameops_api burst=5 nodelay;
+        limit_conn gameops_conn 3;
+        proxy_pass http://127.0.0.1:8787/;
+        include proxy_params;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_request_buffering off;
+        proxy_read_timeout 90s;
+    }
+
+    location ~ /\. {
+        deny all;
+    }
+}

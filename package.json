@@ -1,0 +1,25 @@
+{
+  "name": "game-content-ops-ai-workbench",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Game content operations AI workbench with local and online service modes.",
+  "scripts": {
+    "start": "node start-demo.js",
+    "restart": "node restart-demo.js",
+    "start:hotspot": "node hotspot-server.js",
+    "start:comment": "node comment-server.js",
+    "start:ocr": "node ocr-server.js",
+    "build:public": "node scripts/build-public.js",
+    "check:public": "node scripts/check-public.js",
+    "launcher:install": "node scripts/install-macos-launcher.js",
+    "deploy:start": "pm2 start ecosystem.config.js --update-env",
+    "deploy:reload": "pm2 reload ecosystem.config.js --update-env",
+    "deploy:stop": "pm2 stop ecosystem.config.js",
+    "deploy:logs": "pm2 logs gameops-hotspot gameops-comment gameops-ocr",
+    "deploy:check": "node -e \"require('./ecosystem.config.js'); console.log('deployment environment ok')\" && node scripts/check-public.js",
+    "check": "node --check utils.js && node --check launcher.js && node --check app.js && node --check hotspot-server.js && node --check comment-server.js && node --check ocr-server.js && node --check start-demo.js && node --check restart-demo.js && node --check ecosystem.config.js && node --check scripts/build-public.js && node --check scripts/check-public.js && node --check scripts/install-macos-launcher.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

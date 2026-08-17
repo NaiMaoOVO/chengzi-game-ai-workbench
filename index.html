@@ -1,0 +1,916 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>游戏内容运营 AI 分析工作台</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <aside class="sidebar" aria-label="工作台导航">
+        <div class="brand">
+          <div class="brand-mark">G</div>
+          <div>
+            <p class="eyebrow">GameOps AI</p>
+            <h1>游戏内容运营 AI 分析工作台</h1>
+          </div>
+        </div>
+
+        <nav class="nav-list">
+          <button class="nav-button active" data-view="overview">项目总览</button>
+          <button class="nav-button" data-view="content">竞品内容拆解</button>
+          <button class="nav-button" data-view="feedback">玩家评论分析</button>
+          <button class="nav-button" data-view="review">活动复盘生成</button>
+          <button class="nav-button" data-view="trending">热点追踪</button>
+          <button class="nav-button" data-view="version">版本包装助手</button>
+          <button class="nav-button" data-view="segment">玩家分层策略</button>
+          <button class="nav-button" data-view="creator">KOL/KOC 筛选</button>
+        </nav>
+
+        <section class="sidebar-panel">
+          <p class="panel-label">面试展示闭环</p>
+          <ol class="flow-list">
+            <li>追踪平台热点趋势</li>
+            <li>看竞品内容方向</li>
+            <li>提炼玩家情绪与需求</li>
+            <li>产出内容/活动方案</li>
+            <li>复盘数据并给出下一轮动作</li>
+          </ol>
+        </section>
+
+        <div class="sidebar-bottom-nav">
+          <button class="nav-button nav-button-subtle" data-view="resume">备用素材</button>
+        </div>
+      </aside>
+
+      <section class="workspace">
+        <header class="topbar">
+          <div>
+            <p class="eyebrow">Portfolio Demo</p>
+            <h2 id="view-title">项目总览</h2>
+          </div>
+          <div class="status-strip" aria-label="当前能力标签">
+            <span>内容策略</span>
+            <span>玩家洞察</span>
+            <span>复盘归因</span>
+          </div>
+        </header>
+
+        <section class="demo-chain-bar" aria-label="当前演示链路">
+          <div>
+            <span class="chain-label">当前链路</span>
+            <strong id="chain-flow-text">热点发现 → 评论分析 → 风险事件 → 运营动作</strong>
+          </div>
+          <div>
+            <span class="chain-label">数据口径</span>
+            <strong id="chain-source-text">真实数据 · B站公开搜索 · 近24h · 已过滤旧视频</strong><button class="secondary-button caliber-trigger" id="caliber-trigger" type="button" title="查看当前模块数据口径说明">口径说明</button>
+          </div>
+        </section>
+
+        <section class="view active" id="overview-view" data-screen-label="项目总览">
+          <div class="overview-layout">
+            <section class="section-block overview-hero">
+              <p class="eyebrow">Operation Loop</p>
+              <h3>从热点发现到活动复盘的一套游戏内容运营工作流</h3>
+              <p>这个工作台不是单个文案工具，而是把内容运营常见动作串成闭环：先看平台热点和竞品内容，再分析玩家反馈，随后产出版本包装、分层触达、达人筛选，最后回到活动数据复盘。</p>
+              <div class="trending-actions">
+                <button class="secondary-button" id="export-full-report" type="button">导出完整运营方案</button>
+                <button class="secondary-button" id="save-project-state" type="button">保存当前项目</button><div class="project-slots-panel">
+  <strong>项目槽位</strong>
+  <div class="project-slots">
+    <div class="project-slot" data-slot="1"><span class="slot-label">槽位 1</span><span class="slot-name" id="slot-name-1">空</span></div>
+    <div class="project-slot" data-slot="2"><span class="slot-label">槽位 2</span><span class="slot-name" id="slot-name-2">空</span></div>
+    <div class="project-slot" data-slot="3"><span class="slot-label">槽位 3</span><span class="slot-name" id="slot-name-3">空</span></div>
+  </div>
+</div>
+                <button class="secondary-button" id="load-project-state" type="button">载入上次项目</button>
+                <div class="service-mode-switch" aria-label="服务运行模式">
+                  <span>服务模式</span>
+                  <button class="service-mode-button" type="button" data-service-mode="local" title="连接当前设备的 127.0.0.1 服务">本地开发</button>
+                  <button class="service-mode-button" type="button" data-service-mode="online" title="连接当前域名下的 /api 服务">线上服务</button>
+                  <small id="service-mode-status">本地模式</small>
+                </div>
+                <button class="secondary-button" id="refresh-service-status" type="button">刷新服务状态</button>
+                <button class="secondary-button" id="run-demo-check" type="button">演示前自检</button>
+                <label class="demo-mode-toggle">
+                  <input id="demo-mode-toggle" type="checkbox" checked />
+                  <span>失败时样例兜底</span>
+                </label>
+              </div>
+              <div class="overview-toolbar"><div class="conclusion-panel" id="overview-conclusion">
+  <h4>今日分析结论</h4>
+  <div class="conclusion-items" id="conclusion-items">
+    <div class="conclusion-item muted">正在汇总各模块分析结果……</div>
+  </div>
+</div>
+<div class="conclusion-toolbar">
+  <button class="secondary-button" type="button" id="refresh-conclusion">刷新结论</button>
+  <span class="conclusion-tip">点击刷新后可按运营链路汇总最新判断。</span>
+</div>
+<hr class="conclusion-divider"/></div><p class="source-status" id="overview-status">总览状态：可载入案例或直接进入各模块操作。</p>
+              <div class="demo-check-panel" id="demo-check-panel" aria-live="polite"></div>
+            </section>
+
+            
+            <section class="section-block launcher-panel" aria-label="本地服务控制面板">
+              <h3>本地服务控制台</h3>
+              <p class="muted-copy launcher-note">已安装 macOS 网页启动器时，可直接启动本地控制进程；首次使用需要在项目目录执行一次 <code>npm run launcher:install</code>。</p>
+              <div class="launcher-buttons">
+                <button class="secondary-button launcher-primary-action" id="bootstrap-local-launcher" type="button">一键启动本地服务</button>
+                <button class="secondary-button" id="restart-local-launcher" type="button">重启本地服务</button>
+                <button class="secondary-button" id="check-launcher" type="button">刷新状态</button>
+              </div>
+              <p class="source-status" id="launcher-status">控制台状态：等待检查</p>
+            </section>
+
+            <section class="service-status-panel" aria-label="本地服务状态">
+              <article class="service-status-card" id="service-status-ocr">
+                <span class="service-dot"></span>
+                <div>
+                  <strong>截图识别</strong>
+                  <p>检测中...</p>
+                </div>
+              </article>
+              <article class="service-status-card" id="service-status-hotspot">
+                <span class="service-dot"></span>
+                <div>
+                  <strong>B站热点</strong>
+                  <p>检测中...</p>
+                </div>
+              </article>
+              <article class="service-status-card" id="service-status-comment">
+                <span class="service-dot"></span>
+                <div>
+                  <strong>B站评论</strong>
+                  <p>检测中...</p>
+                </div>
+              </article>
+            </section>
+
+            <details class="section-block data-source-config">
+              <summary>数据源配置说明</summary>
+              <div class="data-source-body">
+                <p>各平台需要对应认证信息才能抓取真实数据。以下说明基于项目根目录的 <code>start-demo.js</code> 启动：</p>
+                <div class="data-source-table-wrap">
+                <table class="data-source-table">
+                  <thead>
+                    <tr>
+                      <th>平台</th>
+                      <th>环境变量</th>
+                      <th>配置方式</th>
+                      <th>无配置时行为</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td><strong>B站</strong></td>
+                      <td><code>BILIBILI_COOKIE</code></td>
+                      <td>终端执行：<code>BILIBILI_COOKIE='SESSDATA=...; bili_jct=...' node start-demo.js</code></td>
+                      <td>搜索接口可能返回 412，自动降级为样例数据</td>
+                    </tr>
+                    <tr>
+                      <td><strong>抖音</strong></td>
+                      <td><code>DOUYIN_COOKIE</code></td>
+                      <td>平台接口限制严格，暂不支持公开 API 抓取</td>
+                      <td>始终使用样例兜底数据</td>
+                    </tr>
+                    <tr>
+                      <td><strong>小红书</strong></td>
+                      <td><code>XIAOHONGSHU_COOKIE</code></td>
+                      <td>平台接口限制严格，暂不支持公开 API 抓取</td>
+                      <td>始终使用样例兜底数据</td>
+                    </tr>
+                  </tbody>
+                </table>
+                </div>
+                <p>Cookie 只在本地服务进程中传递，不会写入页面或发送到外部。配置后需重启启动器服务才能生效。</p>
+              </div>
+            </details>
+
+            <section class="section-block">
+              <h3>面试演示路线</h3>
+              <div class="route-grid">
+                <article class="route-card">
+                  <strong>版本上线运营链路</strong>
+                  <p>从版本卖点、玩家分层、达人筛选到直播复盘，适合讲活动运营和版本节点承接。</p>
+                  <div class="route-steps"><span>版本包装</span><span>分层触达</span><span>达人合作</span><span>活动复盘</span></div>
+                  <button class="secondary-button" type="button" data-load-route="version-live">进入路线</button>
+                </article>
+                <article class="route-card">
+                  <strong>B站热点舆情链路</strong>
+                  <p>从热点视频、评论清洗、舆情预警到内容动作，适合讲内容运营和社区洞察。</p>
+                  <div class="route-steps"><span>热点追踪</span><span>评论分析</span><span>风险判断</span><span>动作建议</span></div>
+                  <button class="secondary-button" type="button" data-load-route="hot-feedback">进入路线</button>
+                </article>
+                <article class="route-card">
+                  <strong>新游首曝投放链路</strong>
+                  <p>从竞品内容、首曝包装、达人筛选到预算组合，适合讲新品曝光和达人采买思路。</p>
+                  <div class="route-steps"><span>竞品拆解</span><span>首曝包装</span><span>KOL筛选</span><span>预算效率</span></div>
+                  <button class="secondary-button" type="button" data-load-route="launch-plan">进入路线</button>
+                </article>
+              </div>
+            </section>
+
+            <section class="overview-flow" aria-label="运营闭环">
+              <article class="overview-step">
+                <strong>01 热点追踪</strong>
+                <p>输入平台和游戏，优先抓取真实热点，失败时用样例兜底判断内容窗口和可跟进选题。</p>
+              </article>
+              <article class="overview-step">
+                <strong>02 竞品拆解</strong>
+                <p>拆标题结构、内容卖点和玩家情绪点，提炼可复用的选题方向。</p>
+              </article>
+              <article class="overview-step">
+                <strong>03 玩家洞察</strong>
+                <p>清洗评论样本，识别情绪、风险、高频词和下一步运营动作。</p>
+              </article>
+              <article class="overview-step">
+                <strong>04 版本包装</strong>
+                <p>把更新点转化为公告、社媒文案、视频脚本、Push 和素材清单。</p>
+              </article>
+              <article class="overview-step">
+                <strong>05 分层运营</strong>
+                <p>按新手、回流、付费、剧情、竞技等标签生成触达、奖励和指标。</p>
+              </article>
+              <article class="overview-step">
+                <strong>06 达人合作</strong>
+                <p>按达人数据、内容类型和报价做目标分、性价比和风险筛选。</p>
+              </article>
+              <article class="overview-step">
+                <strong>07 活动复盘</strong>
+                <p>回收曝光、参与、付费或直播数据，判断活动效果和下一轮优化。</p>
+              </article>
+            </section>
+
+            <section class="section-block">
+              <h3>案例一键载入</h3>
+              <div class="case-grid">
+                <article class="case-card">
+                  <strong>巅峰极速版本直播活动</strong>
+                  <p>适合展示直播活动复盘、达人筛选、版本包装和分层运营。</p>
+                  <button class="secondary-button" type="button" data-load-case="racing-live">载入案例</button>
+                </article>
+                <article class="case-card">
+                  <strong>鸣潮版本社区评论分析</strong>
+                  <p>适合展示热点追踪、评论清洗、舆情风险和社区内容策略。</p>
+                  <button class="secondary-button" type="button" data-load-case="wuwa-community">载入案例</button>
+                </article>
+                <article class="case-card">
+                  <strong>新游首曝达人筛选方案</strong>
+                  <p>适合展示新品曝光、KOL/KOC 打分、预算组合和内容 brief。</p>
+                  <button class="secondary-button" type="button" data-load-case="launch-creators">载入案例</button>
+                </article>
+              </div>
+            </section>
+          </div>
+        </section>
+
+        <section class="view" id="content-view" data-screen-label="竞品内容拆解">
+          <div class="tool-layout">
+            <form class="input-panel" id="content-form">
+              <label>
+                游戏/竞品名称
+                <input id="game-name" value="鸣潮" />
+              </label>
+              <label>
+                平台
+                <select id="platform">
+                  <option>B站</option>
+                  <option>抖音</option>
+                  <option>小红书</option>
+                  <option>TapTap</option>
+                  <option>微博</option>
+                </select>
+              </label>
+              <label>
+                内容标题或素材描述
+                <textarea id="content-input" rows="8">新版本前瞻直播爆料：限定角色登场，地图区域开放，福利兑换码汇总，老玩家回归奖励提升。</textarea>
+              </label>
+              <button type="submit">生成拆解</button>
+            </form>
+
+            <div class="output-panel">
+              <div class="metrics-grid" id="content-metrics"></div>
+              <div class="section-block">
+                <h3>内容类型判断</h3>
+                <div id="content-type-list" class="copy-grid"></div>
+              </div>
+              <div class="section-block">
+                <h3>标题结构</h3>
+                <p id="title-pattern"></p>
+              </div>
+              <div class="section-block">
+                <h3>标题结构拆解</h3>
+                <div id="title-breakdown" class="copy-grid"></div>
+              </div>
+              <div class="section-block">
+                <h3>玩家情绪点</h3>
+                <div id="content-emotion-points" class="pill-list"></div>
+              </div>
+              <div class="section-block">
+                <h3>可复用选题</h3>
+                <ul id="topic-list" class="result-list"></ul>
+              </div>
+              <div class="section-block">
+                <h3>可借鉴 / 不可照搬</h3>
+                <div id="content-learn-risk" class="copy-grid"></div>
+              </div>
+              <div class="section-block">
+                <h3>改写方向</h3>
+                <div id="rewrite-list" class="pill-list"></div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="view" id="feedback-view" data-screen-label="玩家评论分析" data-caliber="评论数据来源：手动输入、B站单视频评论或多视频评论。评论清洗机制：去重、去广告、去纯表情/纯链接等低价值样本。情绪判断基于关键词规则，风险事件基于多维度聚合（触发词+出现频次+来源视频数）。标签打标不支持 LLM 级语义理解，适合快速筛选分类，不适合极端敏感舆情判断。">
+          <div class="tool-layout">
+            <form class="input-panel" id="feedback-form">
+              <label>
+                游戏名称
+                <input id="feedback-game" value="鸣潮" list="game-suggestions" placeholder="输入游戏名后可抓取 B站热门视频评论" />
+              </label>
+              <label>
+                热门视频时间范围
+                <select id="feedback-range">
+                  <option value="today">今日</option>
+                  <option value="24h" selected>近 24 小时</option>
+                  <option value="3d">近 3 天</option>
+                  <option value="7d">近 7 天</option>
+                </select>
+              </label>
+              <label>
+                B站视频链接或 BV 号
+                <input id="bili-comment-url" placeholder="例如：https://www.bilibili.com/video/BV... 或 BV..." />
+              </label>
+              <div class="trending-actions">
+                <button class="secondary-button" id="fetch-bili-comments" type="button">抓取 B站评论</button>
+                <button class="secondary-button" id="fetch-hot-video-comments" type="button">抓取热门视频评论</button>
+                <button class="secondary-button" id="check-comment-services" type="button">服务自检</button>
+                <button class="secondary-button" id="export-feedback" type="button">导出分析</button>
+              </div>
+              <p class="source-status" id="feedback-source-status">评论来源：手动输入</p>
+              <div class="fetch-diagnostic" id="feedback-fetch-diagnostic">
+                <strong>抓取诊断</strong>
+                <span>未开始抓取。服务启动后会优先读取真实评论；遇到平台风控或服务不可用时，可用样例兜底继续演示分析链路。</span>
+              </div>
+              <label>
+                玩家评论
+                <textarea id="feedback-input" rows="14">新角色很帅但是抽卡压力太大了。
+这次活动剧情不错，奖励给得也多。
+手机发热还是明显，打团战会掉帧。
+回归奖励挺香的，但是新系统教程太长。
+皮肤好看，想看更多角色互动剧情。
+副本重复刷有点累，希望扫荡或者减负。</textarea>
+              </label>
+              <button type="submit">分析评论</button>
+            </form>
+
+            <div class="output-panel">
+              <div class="metrics-grid compact-metrics" id="feedback-quality-metrics"></div>
+              <div class="chart-card feedback-chart-card">
+                <h3>评论标签分布</h3>
+                <div id="feedback-bars" class="bar-chart"></div>
+              </div>
+              <div class="section-block feedback-risk-panel" id="feedback-risk-panel">
+                <h3>舆情风险预警</h3>
+                <div class="risk-hero" id="feedback-risk-hero"></div>
+                <p id="feedback-risk-summary"></p>
+                <div class="risk-event-list" id="feedback-risk-events"></div>
+                <ul id="feedback-risk-list" class="result-list"></ul>
+              </div>
+              <div class="section-block feedback-emotion-block">
+                <h3>玩家核心情绪</h3>
+                <p id="emotion-summary"></p>
+              </div>
+              <div class="section-block feedback-keywords-block">
+                <h3>高频关键词</h3>
+                <div id="feedback-keywords" class="pill-list"></div>
+              </div>
+              <div class="section-block feedback-samples-block">
+                <h3>代表评论</h3>
+                <ul id="feedback-samples" class="result-list"></ul>
+              </div>
+              <div class="section-block feedback-source-block">
+                <h3>视频来源拆解</h3>
+                <div id="feedback-source-groups" class="copy-grid"></div>
+              </div>
+              <div class="section-block feedback-actions-block">
+                <h3>趋势对比</h3><div id="feedback-trend-compare"><p class="muted-copy trend-compare-placeholder">同一游戏的多轮评论分析后，可对比负面率变化、高频词演变、风险事件增减。当前为单次分析，导入新数据后趋势区会自动对比。</p></div><h3>运营动作建议</h3>
+                <ul id="action-list" class="result-list"></ul>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="view" id="review-view" data-screen-label="活动复盘生成" data-caliber="常规活动复盘：使用曝光→点击→参与→付费漏斗模型。主播直播复盘：对比活动场 ACU/PCU/曝光/进房与近期均值，按口径配置判定正/负反馈。判断口径支持标准/保守/激进取值。">
+          <div class="tool-layout">
+            <form class="input-panel" id="review-form">
+              <div class="segmented-control" aria-label="复盘类型">
+                <button class="segment-button active" type="button" data-review-mode="campaign">常规活动复盘</button>
+                <button class="segment-button" type="button" data-review-mode="livestream">主播直播数据复盘</button>
+              </div>
+              <label>
+                判断口径
+                <select id="review-policy">
+                  <option value="standard" selected>标准口径</option>
+                  <option value="conservative">保守口径</option>
+                  <option value="aggressive">激进口径</option>
+                </select>
+              </label>
+
+              <div class="review-fields active" id="campaign-fields">
+                <div class="form-grid">
+                  <label>曝光量<input id="impressions" type="number" value="420000" /></label>
+                  <label>点击量<input id="clicks" type="number" value="38600" /></label>
+                  <label>参与人数<input id="participants" type="number" value="12800" /></label>
+                  <label>付费人数<input id="payers" type="number" value="1160" /></label>
+                </div>
+                <label>
+                  活动说明
+                  <textarea id="review-input" rows="7">版本预热活动：预约直播、转发抽周边、完成每日任务领取抽卡道具。玩家反馈福利感知强，但任务链路偏长，部分新用户不知道奖励领取入口。</textarea>
+                </label>
+              </div>
+
+              <div class="review-fields" id="livestream-fields">
+                <label>
+                  活动方案/节点
+                  <textarea id="stream-brief" rows="5">巅峰极速版本节点直播活动：围绕新车上线和赛季福利，邀请生态内 KOC 主播与跨品类 KOL 在抖音开播，通过福利口播、组队竞速、抽奖互动提升内容曝光和直播间承接。</textarea>
+                </label>
+                <div class="drop-zone" id="stream-drop-zone" tabindex="0">
+                  <strong>拖入主播直播数据截图</strong>
+                  <span>支持多张图片；当前模式对应的 OCR 服务会识别活动场数据，识别后可继续校正 ACU、PCU、曝光量、进房人数和近期均值。</span>
+                  <input id="stream-screenshots" type="file" accept="image/*" multiple />
+                </div>
+                <p class="muted-copy ocr-privacy-note">线上远程 OCR 会把原始截图发送给配置的第三方服务，请勿上传包含账号、收入或内部经营信息的敏感截图。</p>
+                <div class="ocr-server-status" id="ocr-server-status">
+                  <span class="ocr-status-dot" id="ocr-status-dot"></span>
+                  <span id="ocr-status-text">正在检测 OCR 服务...</span>
+                </div>
+                <div class="streamer-toolbar">
+                  <button class="secondary-button" id="add-streamer" type="button">手动新增主播</button>
+                  <button class="secondary-button" id="load-demo-streamers" type="button">载入示例数据</button>
+                  <button class="secondary-button" id="download-streamer-template" type="button">下载主播模板</button>
+                </div>
+                <label class="file-upload-field compact-upload">
+                  导入主播数据表
+                  <input id="streamer-file" type="file" accept=".csv,.tsv,.txt,.xlsx,text/csv,text/tab-separated-values,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" />
+                  <span>支持 CSV、TSV、TXT、XLSX；字段建议包含主播名、活动 ACU/PCU/曝光/进房、近期均值 ACU/PCU/曝光/进房。</span>
+                </label>
+                <p class="source-status" id="streamer-import-status">主播数据来源：示例/手动输入，可导入表格或拖入截图。</p>
+                <div class="streamer-list" id="streamer-list"></div>
+              </div>
+              <button type="submit">生成复盘</button>
+            </form>
+
+            <div class="output-panel">
+              <div class="metrics-grid" id="review-metrics"></div>
+              <p class="source-status" id="review-data-warning">数据检查：等待生成复盘。</p>
+              <div class="section-block conclusion-grade-block"><h3>活动结论等级</h3><div id="review-conclusion-grade"><p class="muted-copy">生成复盘后可查看活动整体评级。</p></div></div><div class="section-block report-block">
+                <h3>复盘报告</h3>
+                <p id="review-report"></p>
+              </div>
+              <div class="section-block">
+                <h3>下一轮优化</h3>
+                <ul id="next-list" class="result-list"></ul>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="view" id="trending-view" data-screen-label="热点追踪" data-caliber="热点数据来源：优先请求本地 hotspot-server.js 读取 B站公开搜索结果（Cookie 可选），失败后使用场景化样例兜底。热度分计算方式：综合播放、弹幕、收藏与发布时间衰减。不等同于 B站官方全站榜。旧视频已按时间范围在服务端做二次过滤。">
+          <div class="tool-layout">
+            <form class="input-panel" id="trending-form">
+              <label>
+                游戏名称
+                <input id="trending-game" value="鸣潮" list="game-suggestions" placeholder="可输入任意游戏名，如：巅峰极速、三角洲行动、无畏契约" />
+                <datalist id="game-suggestions">
+                  <option value="鸣潮"></option>
+                  <option value="原神"></option>
+                  <option value="崩坏：星穹铁道"></option>
+                  <option value="崩坏3"></option>
+                  <option value="绝区零"></option>
+                  <option value="王者荣耀"></option>
+                  <option value="和平精英"></option>
+                  <option value="第五人格"></option>
+                  <option value="明日方舟"></option>
+                  <option value="巅峰极速"></option>
+                  <option value="蛋仔派对"></option>
+                  <option value="燕云十六声"></option>
+                  <option value="永劫无间"></option>
+                  <option value="光遇"></option>
+                  <option value="三角洲行动"></option>
+                  <option value="无畏契约"></option>
+                  <option value="英雄联盟"></option>
+                  <option value="金铲铲之战"></option>
+                  <option value="逆水寒手游"></option>
+                  <option value="恋与深空"></option>
+                  <option value="碧蓝航线"></option>
+                  <option value="尘白禁区"></option>
+                  <option value="少女前线2：追放"></option>
+                  <option value="赛马娘"></option>
+                  <option value="暗区突围"></option>
+                  <option value="火影忍者手游"></option>
+                </datalist>
+              </label>
+              <label>
+                平台
+                <select id="trending-platform">
+                  <option>B站</option>
+                  <option>抖音</option>
+                  <option>小红书</option>
+                  <option>TapTap</option>
+                  <option>微博</option>
+                </select>
+              </label>
+              <label>
+                时间范围
+                <select id="trending-range">
+                  <option value="today">今日</option>
+                  <option value="24h" selected>近 24 小时</option>
+                  <option value="3d">近 3 天</option>
+                  <option value="7d">近 7 天</option>
+                </select>
+              </label>
+              <label>
+                热点类型偏好（可多选）
+                <div class="tag-select-group" id="trending-tags">
+                  <label class="tag-checkbox"><input type="checkbox" value="攻略" checked /> 攻略</label>
+                  <label class="tag-checkbox"><input type="checkbox" value="资讯" checked /> 资讯</label>
+                  <label class="tag-checkbox"><input type="checkbox" value="整活" checked /> 整活</label>
+                  <label class="tag-checkbox"><input type="checkbox" value="争议" checked /> 争议</label>
+                  <label class="tag-checkbox"><input type="checkbox" value="二创" checked /> 二创</label>
+                </div>
+              </label>
+              <div class="trending-actions">
+                <button type="submit">抓取热点</button>
+                <button class="secondary-button" id="refresh-trending" type="button">刷新榜单</button>
+                <button class="secondary-button" id="export-trending" type="button">导出 CSV</button>
+              </div>
+              <p class="muted-copy centered-copy">优先读取真实数据源；开启“失败时样例兜底”后，服务不可用或平台风控时自动切换为样例兜底榜单。</p>
+              <p class="muted-copy centered-copy">B站真实抓取支持任意关键词，不限于建议列表。</p>
+              <div class="fetch-diagnostic" id="trending-fetch-diagnostic">
+                <strong>抓取诊断</strong>
+                <span>未开始抓取。若出现 HTTP 412 或结果为空，系统会标记原因并保留样例兜底，方便演示完整运营链路。</span>
+              </div>
+            </form>
+
+            <div class="output-panel">
+              <div class="section-block">
+                <div class="trending-header-row">
+                  <h3><span id="trending-game-label">鸣潮</span> · <span id="trending-platform-label">B站</span> 公开搜索热度 TOP 10</h3>
+                  <span class="trending-timestamp" id="trending-timestamp"></span>
+                </div>
+                <p class="source-status" id="trending-source-status">数据源：样例兜底榜单</p>
+                <p class="source-status" id="trending-method">口径：B站公开搜索结果，按播放、弹幕、收藏和发布时间衰减计算综合热度；不等同于 B站官方全站榜。</p>
+              </div>
+              <ol class="trending-list" id="trending-list"></ol>
+              <div class="section-block">
+                <h3>运营洞察</h3>
+                <p id="trending-insight"></p>
+              </div>
+              <div class="section-block" id="trending-detail">
+                <h3>平台差异化策略</h3><div id="trending-platform-strategy"><p class="muted-copy platform-strategy-placeholder">选择不同平台后这里会自动输出对应平台策略建议。B站适合长视频拆解和攻略合集，抖音适合短视频爆点和福利口播，小红书适合图文种草和避雷总结，微博适合节点话题和抽奖扩散，TapTap 适合玩家评价维护和动态同步。</p></div><hr class="conclusion-divider"/><h3>热点详情分析</h3>
+                <p class="muted-copy">点击榜单中的任意视频，查看标题结构、爆点原因和可跟进选题。</p>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="view" id="version-view" data-screen-label="版本包装助手" data-caliber="基于版本更新点、文案风格和主推玩家群体生成公告/社媒文案/视频脚本/Push标题。卖点表达不涉及 LLM 级情感推理，适合初稿包装场景，建议人工核验关键措辞和合规口径。">
+          <div class="tool-layout">
+            <form class="input-panel" id="version-form">
+              <label>
+                游戏名称
+                <input id="version-game" value="巅峰极速" />
+              </label>
+              <label>
+                版本主题
+                <input id="version-theme" value="新赛季极速狂飙" />
+              </label>
+              <label>
+                更新点
+                <textarea id="version-points" rows="10">新限定车辆登场：高性能超跑加入车库
+新赛季排位开启：新增赛道与段位奖励
+新玩法副本：限时挑战赛上线
+新系统：车辆调校方案一键分享
+新皮肤/涂装：赛季主题涂装开放获取
+福利：登录领取抽奖券与养成材料</textarea>
+              </label>
+              <label>
+                主推玩家群体
+                <select id="version-audience">
+                  <option>回流玩家</option>
+                  <option>新手玩家</option>
+                  <option>核心玩家</option>
+                  <option>付费玩家</option>
+                  <option>内容创作者</option>
+                </select>
+              </label>
+              <label>
+                文案风格
+                <select id="version-style">
+                  <option>官方公告风</option>
+                  <option>社区口语风</option>
+                  <option>热血燃向</option>
+                  <option>福利导向</option>
+                  <option>KOL口播风</option>
+                </select>
+              </label>
+              <div class="trending-actions">
+                <button type="submit">生成包装方案</button>
+                <button class="secondary-button" id="copy-version-package" type="button">复制方案</button>
+                <button class="secondary-button" id="export-version-package" type="button">导出方案</button>
+              </div>
+            </form>
+
+            <div class="output-panel">
+              <div class="section-block">
+                <h3>公告文案</h3>
+                <p id="version-announcement"></p>
+              </div>
+              <div class="section-block">
+                <h3>不同平台社媒短文案</h3>
+                <div id="version-social" class="copy-grid"></div>
+              </div>
+              <div class="section-block">
+                <h3>视频脚本</h3>
+                <ol id="version-script" class="result-list"></ol>
+              </div>
+              <div class="section-block">
+                <h3>推送标题</h3>
+                <div id="version-push" class="pill-list"></div>
+              </div>
+              <div class="section-block">
+                <h3>风险检查</h3>
+                <ul id="version-risk" class="result-list"></ul>
+              </div>
+              <div class="section-block">
+                <h3>信息缺口检查</h3>
+                <ul id="version-gap" class="result-list"></ul>
+              </div>
+              <div class="section-block">
+                <h3>发布节奏表</h3>
+                <div id="version-calendar" class="copy-grid"></div>
+              </div>
+              <div class="section-block">
+                <h3>素材需求清单</h3>
+                <div id="version-assets" class="copy-grid"></div>
+              </div>
+              <div class="section-block">
+                <h3>A/B 测试标题</h3>
+                <div id="version-ab" class="pill-list"></div>
+              </div>
+              <div class="section-block">
+                <h3>不同玩家群体卖点表达</h3>
+                <div id="version-audiences" class="audience-grid"></div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="view" id="segment-view" data-screen-label="玩家分层策略" data-caliber="基于玩家标签关键词匹配的画像假设，触达文案和活动推荐为模板化初稿。分层策略不涉及真实用户数据，适合运营方案快速编撰，不适合落地到真实 LTV/Cohort 分层。">
+          <div class="tool-layout">
+            <form class="input-panel" id="segment-form">
+              <label>
+                游戏名称
+                <input id="segment-game" value="巅峰极速" />
+              </label>
+              <label>
+                玩家标签
+                <textarea id="segment-tags" rows="5">新手、回流、轻氪、剧情党</textarea>
+              </label>
+              <label>
+                运营目标
+                <select id="segment-goal">
+                  <option value="activation">拉新激活</option>
+                  <option value="recall">召回回流</option>
+                  <option value="payment">付费转化</option>
+                  <option value="version">版本促活</option>
+                  <option value="reputation">社区口碑</option>
+                  <option value="participation">活动参与</option>
+                </select>
+              </label>
+              <label>
+                生命周期阶段
+                <select id="segment-lifecycle">
+                  <option>首日新手</option>
+                  <option>7日内新手</option>
+                  <option>30日活跃</option>
+                  <option>沉默玩家</option>
+                  <option>回流3日内</option>
+                  <option>核心老玩家</option>
+                </select>
+              </label>
+              <label>
+                活动主题/版本节点
+                <textarea id="segment-theme" rows="5">新赛季上线，新增赛道、排位奖励、限时挑战和登录福利。</textarea>
+              </label>
+              <div class="trending-actions">
+                <button type="submit">生成分层策略</button>
+                <button class="secondary-button" id="copy-segment-plan" type="button">复制方案</button>
+                <button class="secondary-button" id="export-segment-plan" type="button">导出方案</button>
+              </div>
+            </form>
+
+            <div class="output-panel">
+              <div class="section-block">
+                <h3>玩家核心洞察</h3>
+                <p id="segment-insight"></p>
+              </div>
+              <div class="section-block">
+                <h3>玩家画像说明</h3>
+                <div id="segment-persona" class="copy-grid"></div>
+              </div>
+              <div class="section-block">
+                <h3>多标签优先级解释</h3>
+                <div id="segment-priority" class="copy-grid"></div>
+              </div>
+              <div class="section-block">
+                <h3>触达文案</h3>
+                <div id="segment-copy" class="copy-grid"></div>
+              </div>
+              <div class="section-block">
+                <h3>活动推荐</h3>
+                <div id="segment-activity" class="copy-grid"></div>
+              </div>
+              <div class="section-block">
+                <h3>奖励设计建议</h3>
+                <div id="segment-reward" class="copy-grid"></div>
+              </div>
+              <div class="section-block">
+                <h3>奖励成本等级</h3>
+                <div id="segment-reward-cost" class="copy-grid"></div>
+              </div>
+              <div class="section-block">
+                <h3>Push / 邮件 / 社群话术</h3>
+                <div id="segment-channel" class="copy-grid"></div>
+              </div>
+              <div class="section-block">
+                <h3>风险提醒</h3>
+                <ul id="segment-risk" class="result-list"></ul>
+              </div>
+              <div class="section-block">
+                <h3>观察指标</h3>
+                <div id="segment-metrics" class="pill-list"></div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="view" id="creator-view" data-screen-label="KOL/KOC筛选" data-caliber="目标分基于活动场景动态加权：新品曝光看粉丝量和均播，深度测评看内容类型和评论质量，攻略扩散看互动率和品类垂直度，性价比看 CPM/CPE/商单密度。回填字段可修改评分权重，试算新合作方案。">
+          <div class="tool-layout">
+            <form class="input-panel" id="creator-form">
+              <label>
+                合作目标
+                <select id="creator-goal">
+                  <option value="launch">新品曝光</option>
+                  <option value="review">深度测评</option>
+                  <option value="guide">攻略扩散</option>
+                  <option value="value">性价比优先</option>
+                </select>
+              </label>
+              <label>
+                活动场景
+                <select id="creator-activity">
+                  <option value="newLaunch">新品上线/首曝</option>
+                  <option value="version">版本节点传播</option>
+                  <option value="guidePush">攻略内容铺量</option>
+                  <option value="live">直播活动引流</option>
+                  <option value="reputation">社区口碑建设</option>
+                  <option value="budget">低预算测试</option>
+                </select>
+              </label>
+              <label>
+                本轮预算
+                <input id="creator-budget" type="number" value="80000" />
+              </label>
+              <label>
+                导入达人列表
+                <textarea id="creator-input" rows="14" placeholder="支持粘贴 CSV 或表格文本。字段：达人名、平台、粉丝数、平均播放、互动率、内容类型、历史游戏品类、评论质量、预估报价、商单密度"></textarea>
+              </label>
+              <label class="file-upload-field">
+                上传表格文件
+                <input id="creator-file" type="file" accept=".csv,.tsv,.txt,.xlsx,text/csv,text/tab-separated-values,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" />
+                <span>支持 CSV、TSV、TXT、XLSX；默认读取第一个工作表。</span>
+              </label>
+              <div class="field-requirement">
+                <strong>上传字段要求</strong>
+                <p>表格首行建议包含：达人名、平台、粉丝数、平均播放、互动率、内容类型、历史游戏品类、评论质量、预估报价、商单密度。</p>
+                <p>评论质量可填“高/中/低”，商单密度可填“高/中/低”；粉丝数、平均播放、报价支持 10万、8k、50000 等写法。</p>
+              </div>
+              <div class="trending-actions">
+                <button type="submit">生成筛选表</button>
+                <button class="secondary-button" id="load-creator-demo" type="button">载入示例名单</button>
+                <button class="secondary-button" id="download-creator-template" type="button">下载 CSV 模板</button>
+                <button class="secondary-button" id="export-creator-csv" type="button">导出 CSV</button>
+              </div>
+              <p class="source-status" id="creator-status">达人来源：等待导入</p><label>效果回填（可选）<textarea id="creator-backfill" rows="3" placeholder="活动结束后回填每位达人的实际播放、互动率、评论质量和转化情况。填写后点击“重新计算性价比”可更新实际效率评分。"></textarea></label><button class="secondary-button" id="recalc-creator-backfill" type="button">回填后重新计算性价比</button>
+            </form>
+
+            <div class="output-panel">
+              <div class="metrics-grid compact-metrics" id="creator-metrics"></div>
+              <div class="section-block">
+                <h3>评分口径说明</h3>
+                <p id="creator-score-explain"></p>
+              </div>
+              <div class="section-block">
+                <h3>合作优先级</h3>
+                <div id="creator-table" class="creator-table"></div>
+              </div>
+              <div class="section-block">
+                <h3>分层名单</h3>
+                <div id="creator-tier-list" class="copy-grid"></div>
+              </div>
+              <div class="section-block">
+                <h3>场景适配建议</h3>
+                <div id="creator-scenario-list" class="copy-grid"></div>
+              </div>
+              <div class="section-block">
+                <h3>预算组合推荐</h3>
+                <div id="creator-budget-plan" class="copy-grid"></div>
+              </div>
+              <div class="section-block">
+                <h3>达人 Brief 建议</h3>
+                <div id="creator-brief-list" class="copy-grid"></div>
+              </div>
+              <div class="section-block">
+                <h3>数据异常识别</h3>
+                <ul id="creator-anomaly-list" class="result-list"></ul>
+              </div>
+              <div class="section-block">
+                <h3>风险提示</h3>
+                <ul id="creator-risk-list" class="result-list"></ul>
+              </div>
+              <div class="section-block">
+                <h3>汇报总结</h3>
+                <p id="creator-summary"></p>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="view" id="resume-view" data-screen-label="备用素材">
+          <div class="resume-layout">
+            <section class="section-block">
+              <h3>项目名称</h3>
+              <p class="large-copy">游戏内容运营 AI 分析工作台</p>
+            </section>
+            <section class="section-block">
+              <h3>项目描述</h3>
+              <p>独立设计并搭建面向游戏内容推广与运营复盘的轻量工具，支持热点追踪、竞品内容拆解、版本内容包装、玩家分层策略、KOL/KOC 合作筛选、玩家评论情绪分类、活动数据复盘与运营建议生成，形成"热点洞察 - 竞品分析 - 内容包装 - 分层运营 - 达人筛选 - 玩家洞察 - 活动复盘"的运营闭环。</p>
+            </section>
+            <section class="section-block subtle-block">
+              <h3>达人评分口径</h3>
+              <p>目标分不是单一粉丝量排名，而是根据活动场景动态调整的综合适配分。比如新品首曝更看重曝光和破圈，攻略铺量更看重垂类内容和互动质量，口碑建设更看重深度测评和评论质量。性价比则单独看预算效率，用报价、均播、互动率、CPM/CPE、评论质量和商单密度综合判断。</p>
+            </section>
+            <section class="section-block">
+              <h3>简历 bullet</h3>
+              <ul class="result-list">
+                <li>搭建热点追踪模块，按平台和游戏自动生成 TOP 10 热度榜单，输出社区趋势洞察和内容选题建议。</li>
+                <li>搭建版本内容包装模块，将版本更新点转化为公告文案、社媒短文案、视频脚本、推送标题和分层玩家卖点。</li>
+                <li>搭建玩家分层策略模块，按新手、回流、付费、剧情、竞技等标签生成触达文案、活动推荐、奖励设计和多渠道话术。</li>
+                <li>搭建竞品内容拆解模块，按内容卖点、标题结构、玩家情绪点输出可复用选题。</li>
+                <li>搭建 KOL/KOC 合作筛选模块，将达人粉丝数、互动率、内容类型、历史游戏品类、评论质量和报价结构化，自动输出场景适配、预算组合、达人 brief、数据异常识别和风险名单。</li>
+                <li>设计玩家评论标签体系，将反馈归类为付费争议、性能问题、活动反馈、角色偏好、减负需求等运营信号。</li>
+                <li>根据活动曝光、点击、参与、付费数据自动生成复盘报告，辅助定位转化链路问题和下一轮优化动作。</li>
+                <li>将 AI 辅助能力落到热点追踪、内容生产、达人合作、社区反馈和活动复盘等真实游戏运营场景。</li>
+              </ul>
+            </section>
+            <section class="section-block subtle-block">
+              <h3>面试 Q&A 参考</h3>
+              <details><summary><strong>简历项目描述</strong></summary>
+                <p>游戏内容运营 AI 分析工作台。围绕游戏内容运营链路搭建，覆盖热点追踪、竞品内容拆解、玩家评论分析、版本更新包装、KOL/KOC 筛选、玩家分层策略生成与活动复盘。</p>
+              </details>
+              <details><summary><strong>目标用户是谁？</strong></summary>
+                <p>游戏内容运营、社区运营、活动运营和达人合作岗位的同学。不是面向玩家的，而是面向需要处理平台热点、玩家反馈、版本包装、达人筛选和活动复盘的运营人员。</p>
+              </details>
+              <details><summary><strong>提高了多少效率？数据真实吗？</strong></summary>
+                <p>初稿阶段从 1-2 小时缩短到 10-20 分钟。B站使用公开搜索接口真实抓取，抖音/小红书需要挂 Cookie 或接入开放平台。页面标注真实数据/样例兜底来源。</p>
+              </details>
+              <details><summary><strong>和直接问 ChatGPT 有什么区别？</strong></summary>
+                <p>这个工作台把运营流程产品化了。输入字段、判断维度、输出格式和模块链路是固定的，结果更稳定，更适合运营工作的复用场景。</p>
+              </details>
+              <details><summary><strong>评分逻辑怎么来的？</strong></summary>
+                <p>目标分不是单一粉丝量排名，而是根据活动场景动态调整的综合适配分。新品曝光看粉丝量和均播，深度测评看内容类型和评论质量，攻略扩散看互动率和品类垂直度。性价比看 CPM/CPE/商单密度。</p>
+              </details>
+              <details><summary><strong>继续优化会做什么？</strong></summary>
+                <p>第一增强多平台真实数据能力，第二增加历史项目库沉淀复盘资产，第三增加效果回填优化评分权重。</p>
+              </details>
+            </section>
+          </div>
+        </section>
+      </section>
+    </main>
+  <div class="caliber-overlay" id="caliber-overlay"></div>
+<div class="caliber-panel" id="caliber-panel">
+  <h3>数据口径说明<button class="caliber-close" id="caliber-close">✕</button></h3>
+  <div id="caliber-body">选择任意模块后查看对应的数据口径和处理逻辑。</div>
+</div>
+
+    <script src="./utils.js"></script>
+    <script src="./launcher.js"></script>
+    <script src="./app.js"></script>
+</body>
+</html>
