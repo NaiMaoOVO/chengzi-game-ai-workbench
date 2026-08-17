@@ -20,7 +20,7 @@ function checkPort(port, identity) {
       response.on("data", (chunk) => { body += chunk; });
       response.on("end", () => {
         try {
-          resolve(response.statusCode === 200 && JSON.parse(body).service === identity);
+          resolve(JSON.parse(body).service === identity);
         } catch (_error) {
           resolve(false);
         }

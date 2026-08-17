@@ -180,7 +180,7 @@ function renderStreamerList() {
 	          <div class="streamer-card-head">
 	            <div>
 	              <label>主播名称<input data-field="name" value="${streamerName}" /></label>
-	              <p class="muted-copy ocr-status-line">${ocrStatus}${!ocrServerOnline && imageUrl ? ' <span class="ocr-warn">（OCR 服务未连接）</span>' : ""}</p>
+	              <p class="muted-copy ocr-status-line">${ocrStatus}${!ocrServerOnline && imageUrl ? ` <span class="ocr-warn">（${ocrServiceState === "preparing" ? "OCR 服务准备中，识别结果稍后可用" : "OCR 服务未连接"}）</span>` : ""}</p>
 	              <p class="muted-copy ocr-hint-line">${ocrHint}</p>
 	              ${ocrText ? `<details class="ocr-debug-details"><summary>查看 OCR 识别原文</summary><pre class="ocr-raw-text">${ocrText}</pre></details>` : ""}
 	            </div>
@@ -372,6 +372,8 @@ function updateStreamer(id, path, value) {
    ======================================== */
 
 let ocrServerOnline = false;
+let ocrServiceState = "down";
+let ocrHealthGeneration = 0;
 
 function renderServiceModeControls() {
   const mode = applyServiceMode();
@@ -387,37 +389,54 @@ function renderServiceModeControls() {
   }
 }
 
-async function checkOcrHealth() {
+async function checkOcrHealth(retriesLeft = 50) {
+  const generation = ++ocrHealthGeneration;
   const dot = document.querySelector("#ocr-status-dot");
   const text = document.querySelector("#ocr-status-text");
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), 2400);
+
+  const scheduleRetry = () => {
+    if (retriesLeft > 0 && generation === ocrHealthGeneration) {
+      window.setTimeout(() => {
+        if (generation === ocrHealthGeneration) checkOcrHealth(retriesLeft - 1);
+      }, 2000);
+    }
+  };
 
   try {
-    const response = await fetch(`${OCR_SERVICE_URL}/health`);
+    const response = await fetch(`${OCR_SERVICE_URL}/health`, { signal: controller.signal, cache: "no-store" });
     const payload = await response.json().catch(() => ({}));
-    if (response.ok && payload.ocr === "ready") {
+    if (payload.ocr === "ready") {
       ocrServerOnline = true;
+      ocrServiceState = "ready";
       if (dot) { dot.className = "ocr-status-dot ocr-dot-online"; }
       if (text) { text.textContent = "OCR 服务已连接 — 支持手机端和电脑端截图识别"; }
-      /* ✅ OCR 服务已连接 */
-    } else if (payload.ocr === "preparing") {
+    } else if (payload.ocr === "not_ready") {
       ocrServerOnline = false;
-      if (dot) { dot.className = "ocr-status-dot"; }
-      if (text) { text.textContent = "OCR 服务正在准备 macOS Vision，首次启动可能需要几十秒"; }
-      window.setTimeout(checkOcrHealth, 2000);
-    } else {
-      ocrServerOnline = false;
+      ocrServiceState = "not_ready";
       if (dot) { dot.className = "ocr-status-dot ocr-dot-offline"; }
       if (text) { text.textContent = payload.detail || (isOnlineServiceMode() ? "OCR 服务异常，请检查线上 /api/ocr" : "OCR 服务异常，请重启本地服务"); }
+    } else {
+      const preparing = payload.ocr === "preparing";
+      ocrServerOnline = false;
+      if (preparing) ocrServiceState = "preparing";
+      if (dot) { dot.className = "ocr-status-dot"; }
+      if (text) { text.textContent = preparing ? "OCR 服务正在准备 macOS Vision，首次启动可能需要几十秒" : "正在检查 OCR 服务…"; }
+      scheduleRetry();
     }
   } catch (_e) {
     ocrServerOnline = false;
+    ocrServiceState = "down";
     if (dot) { dot.className = "ocr-status-dot ocr-dot-offline"; }
     if (text) {
       text.textContent = isOnlineServiceMode()
         ? "OCR 服务未连接 — 请检查线上 /api/ocr 反向代理或云 OCR 配置"
         : "OCR 服务未启动 — 请点击页面中的“一键启动本地服务”";
     }
-    /* ⚠️ OCR 服务未启动，截图识别功能不可用 */
+    scheduleRetry();
+  } finally {
+    window.clearTimeout(timeout);
   }
 }
 

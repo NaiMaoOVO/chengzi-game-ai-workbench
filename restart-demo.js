@@ -15,7 +15,17 @@ function isProjectController(pid) {
     const command = execFileSync("ps", ["-p", String(pid), "-o", "command="], {
       encoding: "utf8"
     }).trim();
-    return command.includes(process.execPath) && command.includes(START_SCRIPT);
+    const parts = command.split(/\s+/);
+    const nodeBin = parts[0] || "";
+    const nodeOk =
+      nodeBin === process.execPath ||
+      nodeBin === "node" ||
+      nodeBin.endsWith("/node") ||
+      nodeBin.endsWith("/node.exe");
+    const scriptOk = parts.slice(1).some(
+      (arg) => arg === START_SCRIPT || arg === "start-demo.js" || arg.endsWith("/start-demo.js")
+    );
+    return nodeOk && scriptOk;
   } catch (_error) {
     return false;
   }

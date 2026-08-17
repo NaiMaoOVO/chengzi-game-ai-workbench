@@ -431,7 +431,7 @@ const server = http.createServer((request, response) => {
 
   if (request.method === "GET" && (request.url === "/ready" || request.url === "/health")) {
     const readiness = providerStatus();
-    sendJson(request, response, readiness.ready || readiness.preparing ? 200 : 503, {
+    sendJson(request, response, request.url === "/health" || readiness.ready ? 200 : 503, {
       ok: readiness.ready,
       service: "gameops-ocr",
       ocr: readiness.ready ? "ready" : readiness.preparing ? "preparing" : "not_ready",

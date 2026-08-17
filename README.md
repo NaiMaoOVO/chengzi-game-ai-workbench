@@ -75,7 +75,7 @@ npm run launcher:install -- --project /完整/项目路径
 node ocr-server.js
 ```
 
-然后刷新页面，再拖入截图。macOS Provider 会在服务启动时对 `ocr.swift` 做真实编译检查；首次冷启动可能需要几十秒，默认最多等待 90 秒。它需要可用且版本匹配的 Xcode/Command Line Tools。如果 `/health` 返回 503，应先修复 Swift 与 macOS SDK 工具链，而不是继续上传截图。
+然后刷新页面，再拖入截图。macOS Provider 会在服务启动时对 `ocr.swift` 做真实编译检查；首次冷启动可能需要几十秒，默认最多等待 90 秒。它需要可用且版本匹配的 Xcode/Command Line Tools。`/health` 表示进程存活（恒返回 200，用 `ocr` 字段区分 ready/preparing/not_ready）；如果 `/ready` 返回 503 或 `/health` 返回 `ocr:"not_ready"`，应先修复 Swift 与 macOS SDK 工具链，而不是继续上传截图。
 
 如果要读取每日热点真实数据，需要启动热点服务：
 
@@ -181,6 +181,7 @@ Nginx 示例包含 API 限流、连接数限制和基础安全响应头。公开
 curl -fsS http://127.0.0.1:8790/health
 curl -fsS http://127.0.0.1:8791/health
 curl -fsS http://127.0.0.1:8787/health
+curl -fsS http://127.0.0.1:8787/ready
 curl -fsS http://example.com/api/hotspot/health
 curl -fsS http://example.com/api/comment/health
 curl -fsS http://example.com/api/ocr/health
