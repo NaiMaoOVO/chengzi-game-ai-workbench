@@ -21,13 +21,15 @@ const SERVICE_URL_PRESETS = {
     ocr: "http://127.0.0.1:8787",
     hotspot: "http://127.0.0.1:8790",
     comment: "http://127.0.0.1:8791",
-    launcher: "http://127.0.0.1:8793"
+    launcher: "http://127.0.0.1:8793",
+    llm: "http://127.0.0.1:8794"
   },
   online: {
     ocr: "/api/ocr",
     hotspot: "/api/hotspot",
     comment: "/api/comment",
-    launcher: ""
+    launcher: "",
+    llm: "/api/llm"
   }
 };
 
@@ -35,6 +37,7 @@ let OCR_SERVICE_URL = SERVICE_URL_PRESETS.local.ocr;
 let HOTSPOT_SERVICE_URL = SERVICE_URL_PRESETS.local.hotspot;
 let COMMENT_SERVICE_URL = SERVICE_URL_PRESETS.local.comment;
 let LAUNCHER_SERVICE_URL = SERVICE_URL_PRESETS.local.launcher;
+let LLM_SERVICE_URL = SERVICE_URL_PRESETS.local.llm;
 
 function inferDefaultServiceMode() {
   if (typeof window === "undefined" || !window.location) return "local";
@@ -76,6 +79,7 @@ function applyServiceMode(mode = getServiceMode()) {
   HOTSPOT_SERVICE_URL = urls.hotspot;
   COMMENT_SERVICE_URL = urls.comment;
   LAUNCHER_SERVICE_URL = urls.launcher;
+  LLM_SERVICE_URL = urls.llm;
   return mode;
 }
 

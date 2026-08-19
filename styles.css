@@ -382,6 +382,28 @@ button[type="submit"] {
   background: var(--accent-2);
 }
 
+.ai-mode-badge {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 500;
+  vertical-align: middle;
+  background: rgba(120, 120, 120, 0.14);
+  color: inherit;
+}
+
+.ai-mode-badge.ai-active {
+  background: var(--accent);
+  color: #fff;
+}
+
+.ai-insight-summary {
+  margin: 0 0 10px;
+  line-height: 1.7;
+}
+
 .tool-layout {
   display: grid;
   grid-template-columns: minmax(300px, 420px) minmax(0, 1fr);
