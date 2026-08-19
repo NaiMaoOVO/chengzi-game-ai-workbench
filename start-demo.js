@@ -9,7 +9,8 @@ const STATE_FILE = path.join(os.tmpdir(), `gameops-workbench-${process.getuid?.(
 const SERVICES = [
   { name: "热点服务", script: "hotspot-server.js", port: 8790, identity: "gameops-hotspot" },
   { name: "评论服务", script: "comment-server.js", port: 8791, identity: "gameops-comments" },
-  { name: "OCR 服务", script: "ocr-server.js", port: 8787, identity: "gameops-ocr" }
+  { name: "OCR 服务", script: "ocr-server.js", port: 8787, identity: "gameops-ocr" },
+  { name: "AI 增强服务", script: "llm-server.js", port: 8794, identity: "gameops-llm" }
 ];
 
 function checkPort(port, identity) {

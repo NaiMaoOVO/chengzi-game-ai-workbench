@@ -62,6 +62,16 @@ module.exports = {
       OCR_RATE_LIMIT_MAX: process.env.OCR_RATE_LIMIT_MAX || "30",
       OCR_MAX_CONCURRENCY: process.env.OCR_MAX_CONCURRENCY || "2",
       OCR_ALLOW_INSECURE_REMOTE: process.env.OCR_ALLOW_INSECURE_REMOTE || "false"
+    }),
+    app("gameops-llm", "llm-server.js", {
+      LLM_PORT: process.env.LLM_PORT || "8794",
+      LLM_API_KEY: process.env.LLM_API_KEY || "",
+      LLM_BASE_URL: process.env.LLM_BASE_URL || "https://api.deepseek.com/v1",
+      LLM_MODEL: process.env.LLM_MODEL || "deepseek-chat",
+      LLM_TIMEOUT_MS: process.env.LLM_TIMEOUT_MS || "45000",
+      LLM_CACHE_TTL_MS: process.env.LLM_CACHE_TTL_MS || "600000",
+      LLM_RATE_LIMIT_MAX: process.env.LLM_RATE_LIMIT_MAX || "20",
+      LLM_MAX_CONCURRENCY: process.env.LLM_MAX_CONCURRENCY || "2"
     })
   ]
 };

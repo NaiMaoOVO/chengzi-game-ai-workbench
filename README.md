@@ -2,7 +2,25 @@
 
 Game Ops AI Workbench — 面向游戏内容运营场景的一站式本地分析工作台，覆盖热点追踪、玩家评论舆情、直播数据复盘、版本内容包装、玩家分层与达人筛选六大核心场景。
 
-纯前端（原生 JS，零依赖、无构建步骤）+ 三个 Node 本地服务组成，支持本地模式与线上模式切换，真实数据失败时自动降级样例兜底，保证任何环境下都可完整演示。
+纯前端（原生 JS，零依赖、无构建步骤）+ 四个 Node 本地服务组成，支持本地模式与线上模式切换，真实数据失败时自动降级样例兜底，保证任何环境下都可完整演示。
+
+## LLM 双轨增强
+
+评论分析与版本包装模块支持接入 OpenAI 兼容大模型（默认 DeepSeek）：配置 API Key 后自动启用 AI 深度洞察（舆情摘要、核心议题、运营建议、多平台文案）；**无 Key 或调用失败时自动降级回内置规则引擎，所有功能永远可用**。
+
+```bash
+cp .env.example .env
+# 编辑 .env，填入 LLM_API_KEY（DeepSeek 默认，也可换任意 OpenAI 兼容服务）
+node restart-demo.js
+```
+
+| 变量 | 说明 |
+|---|---|
+| `LLM_API_KEY` | API 密钥，留空则运行规则模式 |
+| `LLM_BASE_URL` | 默认 `https://api.deepseek.com/v1`，可换 GLM/Qwen/Ollama 等 |
+| `LLM_MODEL` | 默认 `deepseek-chat` |
+
+LLM 网关内置请求缓存（10 分钟）、限流与并发控制，Prompt 内聚在服务端 `llm-server.js`，前端只传业务数据，密钥不进浏览器。
 
 ## 功能模块
 
@@ -27,6 +45,7 @@ app.js              各模块核心逻辑
 hotspot-server.js   热点抓取服务（B站搜索 + 热度排序，端口 8790）
 comment-server.js   评论抓取服务（B站视频评论，端口 8791）
 ocr-server.js       本地截图识别服务（macOS Vision，端口 8787）
+llm-server.js       LLM 增强网关（OpenAI 兼容，端口 8794）
 start-demo.js       一键启动全部本地服务 + 打开页面
 restart-demo.js     安全重启（PID 状态文件 + 脚本路径校验，不误杀进程）
 scripts/            构建与启动器安装脚本
@@ -78,6 +97,7 @@ Cookie 只在本地服务进程中传递，不会写入页面。页面默认开�
 | `/api/hotspot` | `http://127.0.0.1:8790` |
 | `/api/comment` | `http://127.0.0.1:8791` |
 | `/api/ocr` | `http://127.0.0.1:8787` |
+| `/api/llm` | `http://127.0.0.1:8794` |
 
 ```bash
 npm install -g pm2

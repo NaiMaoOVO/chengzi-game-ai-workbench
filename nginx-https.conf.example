@@ -63,6 +63,16 @@ server {
         proxy_read_timeout 90s;
     }
 
+    location /api/llm/ {
+        limit_req zone=gameops_api burst=5 nodelay;
+        limit_conn gameops_conn 3;
+        proxy_pass http://127.0.0.1:8794/;
+        include proxy_params;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_request_buffering off;
+        proxy_read_timeout 120s;
+    }
+
     location ~ /\. {
         deny all;
     }

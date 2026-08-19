@@ -146,6 +146,13 @@
                   <p>检测中...</p>
                 </div>
               </article>
+              <article class="service-status-card" id="service-status-llm">
+                <span class="service-dot"></span>
+                <div>
+                  <strong>AI 增强</strong>
+                  <p>检测中...</p>
+                </div>
+              </article>
             </section>
 
             <details class="section-block data-source-config">
@@ -400,6 +407,10 @@
                 <h3>趋势对比</h3><div id="feedback-trend-compare"><p class="muted-copy trend-compare-placeholder">同一游戏的多轮评论分析后，可对比负面率变化、高频词演变、风险事件增减。当前为单次分析，导入新数据后趋势区会自动对比。</p></div><h3>运营动作建议</h3>
                 <ul id="action-list" class="result-list"></ul>
               </div>
+              <div class="section-block">
+                <h3>AI 深度洞察 <span class="ai-mode-badge" id="feedback-ai-badge">规则模式</span></h3>
+                <div id="feedback-ai-insight"><p class="muted-copy">生成分析后将调用大模型输出舆情摘要、核心议题与运营建议；未配置 API Key 时展示规则引擎结果。</p></div>
+              </div>
             </div>
           </div>
         </section>
@@ -629,6 +640,10 @@
               <div class="section-block">
                 <h3>公告文案</h3>
                 <p id="version-announcement"></p>
+              </div>
+              <div class="section-block">
+                <h3>AI 增强文案 <span class="ai-mode-badge" id="version-ai-badge">规则模式</span></h3>
+                <div id="version-ai-copy"><p class="muted-copy">生成方案后将调用大模型产出公告与四平台社媒文案；未配置 API Key 时展示模板结果。</p></div>
               </div>
               <div class="section-block">
                 <h3>不同平台社媒短文案</h3>

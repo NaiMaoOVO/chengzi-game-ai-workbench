@@ -389,6 +389,165 @@ function renderServiceModeControls() {
   }
 }
 
+/* ---- LLM 增强服务 ---- */
+
+let llmServiceState = "down";
+let llmModelName = "";
+
+async function checkLlmHealth() {
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), 2400);
+  try {
+    const response = await fetch(`${LLM_SERVICE_URL}/health`, { signal: controller.signal, cache: "no-store" });
+    const payload = await response.json().catch(() => ({}));
+    if (payload.service !== "gameops-llm") throw new Error("identity mismatch");
+    llmServiceState = payload.llm === "ready" ? "ready" : payload.llm === "no_key" ? "no_key" : "not_ready";
+    llmModelName = payload.model || "";
+  } catch (_error) {
+    llmServiceState = "down";
+    llmModelName = "";
+  } finally {
+    window.clearTimeout(timeout);
+  }
+  return llmServiceState;
+}
+
+function renderLlmBadge(id) {
+  const badge = document.querySelector(id);
+  if (!badge) return;
+  if (llmServiceState === "ready") {
+    badge.textContent = `AI 增强 · ${llmModelName}`;
+    badge.className = "ai-mode-badge ai-active";
+  } else {
+    badge.textContent = "规则模式";
+    badge.className = "ai-mode-badge";
+  }
+}
+
+async function requestLlmTask(task, data, timeoutMs = 60000) {
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(`${LLM_SERVICE_URL}/generate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ task, data }),
+      signal: controller.signal
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      return { ok: false, reason: payload.llm === "no_key" ? "no_key" : "error", message: payload.error || `HTTP ${response.status}` };
+    }
+    return { ok: true, result: payload.result, model: payload.model, cached: payload.cached };
+  } catch (error) {
+    return { ok: false, reason: error.name === "AbortError" ? "timeout" : "down", message: error.message };
+  } finally {
+    window.clearTimeout(timeout);
+  }
+}
+
+let feedbackLlmGeneration = 0;
+let versionLlmGeneration = 0;
+
+async function enhanceFeedbackWithLlm() {
+  const generation = ++feedbackLlmGeneration;
+  renderLlmBadge("#feedback-ai-badge");
+  const panel = document.querySelector("#feedback-ai-insight");
+  if (!panel) return;
+  try {
+    if (llmServiceState !== "ready") {
+      panel.innerHTML = `<p class="muted-copy">当前为规则引擎结果。${
+        llmServiceState === "no_key"
+          ? "未配置 LLM_API_KEY：在项目根目录 .env 中配置后重启本地服务，即可启用大模型深度洞察。"
+          : "AI 增强服务未连接，规则引擎结果保持可用。"
+      }</p>`;
+      return;
+    }
+
+    const game = document.querySelector("#feedback-game")?.value.trim() || "目标游戏";
+    const comments = currentFeedbackRows.slice(0, 60).map((row) => row.comment);
+    if (comments.length < 3) {
+      panel.innerHTML = `<p class="muted-copy">评论样本不足 3 条，跳过 AI 深度分析（规则引擎结果不受影响）。</p>`;
+      return;
+    }
+
+    panel.innerHTML = `<p class="muted-copy">AI 正在分析 ${comments.length} 条评论…</p>`;
+    const startedAt = Date.now();
+    const response = await requestLlmTask("feedback-insight", { game, comments });
+    if (generation !== feedbackLlmGeneration) return;
+    if (!response.ok) {
+      panel.innerHTML = `<p class="muted-copy">AI 分析未完成（${escapeHtml(response.message || response.reason)}），已保留上方规则引擎结果。</p>`;
+      return;
+    }
+
+    const insight = response.result || {};
+    const quotes = Array.isArray(insight.representative_quotes)
+      ? insight.representative_quotes.filter((q) => q && typeof q === "object").slice(0, 3).map((q) => `「${String(q.comment || "").slice(0, 50)}」— ${q.reason || ""}`)
+      : [];
+    const elapsed = ((Date.now() - startedAt) / 1000).toFixed(1);
+    panel.innerHTML = `
+      <p class="ai-insight-summary">${escapeHtml(insight.summary || "")}</p>
+      <p class="muted-copy">${escapeHtml(insight.sentiment_overview || "")}</p>
+      ${Array.isArray(insight.top_issues) && insight.top_issues.length ? `<h4>核心议题</h4><ul class="result-list">${insight.top_issues.slice(0, 5).map((t) => `<li>${escapeHtml(String(t))}</li>`).join("")}</ul>` : ""}
+      ${Array.isArray(insight.suggested_actions) && insight.suggested_actions.length ? `<h4>AI 运营建议</h4><ul class="result-list">${insight.suggested_actions.slice(0, 5).map((t) => `<li>${escapeHtml(String(t))}</li>`).join("")}</ul>` : ""}
+      ${quotes.length ? `<h4>代表性评论</h4><ul class="result-list">${quotes.map((t) => `<li>${escapeHtml(t)}</li>`).join("")}</ul>` : ""}
+      <p class="muted-copy">由 ${escapeHtml(response.model || llmModelName)} 生成 · 耗时 ${elapsed}s${response.cached ? " · 命中缓存" : ""}，结果仅供参考，请结合规则引擎交叉验证。</p>
+    `;
+  } catch (error) {
+    if (generation === feedbackLlmGeneration) {
+      panel.innerHTML = `<p class="muted-copy">AI 分析出现异常（${escapeHtml(error.message || "未知错误")}），已保留规则引擎结果。</p>`;
+    }
+  }
+}
+
+async function enhanceVersionWithLlm() {
+  const generation = ++versionLlmGeneration;
+  renderLlmBadge("#version-ai-badge");
+  const panel = document.querySelector("#version-ai-copy");
+  if (!panel) return;
+  try {
+    if (llmServiceState !== "ready") {
+      panel.innerHTML = `<p class="muted-copy">当前为模板生成结果。${
+        llmServiceState === "no_key"
+          ? "未配置 LLM_API_KEY：在项目根目录 .env 中配置后重启本地服务，即可启用大模型文案。"
+          : "AI 增强服务未连接，模板结果保持可用。"
+      }</p>`;
+      return;
+    }
+
+    const game = document.querySelector("#version-game").value.trim() || "目标游戏";
+    const theme = document.querySelector("#version-theme").value.trim() || "全新版本";
+    const points = splitLines(document.querySelector("#version-points").value);
+    const style = document.querySelector("#version-style").value;
+    const audience = document.querySelector("#version-audience").value;
+
+    panel.innerHTML = `<p class="muted-copy">AI 正在生成「${escapeHtml(theme)}」版本文案…</p>`;
+    const startedAt = Date.now();
+    const response = await requestLlmTask("version-copy", { game, theme, points, style, audience });
+    if (generation !== versionLlmGeneration) return;
+    if (!response.ok) {
+      panel.innerHTML = `<p class="muted-copy">AI 文案生成失败（${escapeHtml(response.message || response.reason)}），已保留模板结果。</p>`;
+      return;
+    }
+
+    const copy = response.result || {};
+    const social = copy.social || {};
+    const socialEntries = [["B站", social.bilibili], ["抖音", social.douyin], ["小红书", social.xiaohongshu], ["微博", social.weibo]]
+      .filter(([, value]) => value);
+    const elapsed = ((Date.now() - startedAt) / 1000).toFixed(1);
+    panel.innerHTML = `
+      ${copy.announcement ? `<h4>AI 公告文案</h4><p class="ai-insight-summary">${escapeHtml(copy.announcement)}</p>` : ""}
+      ${socialEntries.length ? `<h4>AI 社媒文案</h4><div class="copy-grid">${socialEntries.map(([title, body]) => `<div class="copy-card"><strong>${title}</strong><p>${escapeHtml(String(body))}</p></div>`).join("")}</div>` : ""}
+      ${Array.isArray(copy.push_titles) && copy.push_titles.length ? `<h4>AI 推送标题</h4><div class="pill-list">${copy.push_titles.slice(0, 5).map((t) => `<span>${escapeHtml(String(t))}</span>`).join("")}</div>` : ""}
+      <p class="muted-copy">由 ${escapeHtml(response.model || llmModelName)} 生成 · 耗时 ${elapsed}s${response.cached ? " · 命中缓存" : ""}，与上方模板结果可对照使用。</p>
+    `;
+  } catch (error) {
+    if (generation === versionLlmGeneration) {
+      panel.innerHTML = `<p class="muted-copy">AI 文案生成出现异常（${escapeHtml(error.message || "未知错误")}），已保留模板结果。</p>`;
+    }
+  }
+}
+
 async function checkOcrHealth(retriesLeft = 50) {
   const generation = ++ocrHealthGeneration;
   const dot = document.querySelector("#ocr-status-dot");
@@ -494,12 +653,19 @@ function renderServiceCard(id, result, fallback) {
 async function getLocalServiceStatus() {
   // 启动状态只查 /health：轻量且校验 service 身份。
   // 不要用 /probe（会真实请求 B站，常 >1.5s，容易被 2.4s 超时误判为“未启动”）。
+  // LLM 卡片状态由 checkLlmHealth 的 llmServiceState 决定（区分 ready/no_key），不在此重复探测。
   const [ocr, hotspot, comment] = await Promise.all([
     checkServiceEndpoint(OCR_SERVICE_URL, "/health", 2400, "gameops-ocr"),
     checkServiceEndpoint(HOTSPOT_SERVICE_URL, "/health", 2400, "gameops-hotspot"),
     checkServiceEndpoint(COMMENT_SERVICE_URL, "/health", 2400, "gameops-comments")
   ]);
-  return { ocr, hotspot, comment };
+  const llm =
+    llmServiceState === "ready"
+      ? { online: true, detail: `AI 增强已启用（${llmModelName}）` }
+      : llmServiceState === "no_key" || llmServiceState === "not_ready"
+      ? { online: true, detail: "服务运行中 · 未配置 API Key，模块运行规则模式" }
+      : { online: false, detail: "未启动，模块自动使用规则模式" };
+  return { ocr, hotspot, comment, llm };
 }
 
 async function refreshOverviewServiceStatus() {
@@ -507,13 +673,18 @@ async function refreshOverviewServiceStatus() {
   renderServiceCard("#service-status-ocr", null, "检测中");
   renderServiceCard("#service-status-hotspot", null, "检测中");
   renderServiceCard("#service-status-comment", null, "检测中");
+  renderServiceCard("#service-status-llm", null, "检测中");
+  await checkLlmHealth();
 
-  const { ocr, hotspot, comment } = await getLocalServiceStatus();
+  const { ocr, hotspot, comment, llm } = await getLocalServiceStatus();
 
   renderServiceCard("#service-status-ocr", ocr);
   renderServiceCard("#service-status-hotspot", hotspot);
   renderServiceCard("#service-status-comment", comment);
-  return { ocr, hotspot, comment };
+  renderServiceCard("#service-status-llm", llm);
+  renderLlmBadge("#feedback-ai-badge");
+  renderLlmBadge("#version-ai-badge");
+  return { ocr, hotspot, comment, llm };
 }
 
 function renderDemoCheck(items) {
@@ -1338,6 +1509,7 @@ function analyzeFeedback() {
 
   renderList(document.querySelector("#action-list"), generateFeedbackActions(labels, sentimentCounts, riskCounts, currentFeedbackRows, cleanResult));
   renderFeedbackSourceGroups(currentFeedbackRows);
+  if (typeof enhanceFeedbackWithLlm === "function") enhanceFeedbackWithLlm();
 }
 
 function importFeedbackComments(comments) {
@@ -2763,6 +2935,7 @@ function generateVersionPackage() {
       body: `${audience} 是本次主推人群，建议首屏文案优先承接他们的核心需求，再补充其他玩家路径。`
     }
   ]);
+  if (typeof enhanceVersionWithLlm === "function") enhanceVersionWithLlm();
 }
 
 function buildVersionPackageText() {

@@ -11,6 +11,7 @@ const RUNTIME_FILES = [
   "hotspot-server.js",
   "comment-server.js",
   "ocr-server.js",
+  "llm-server.js",
   "ocr.swift"
 ];
 
