@@ -278,7 +278,18 @@ const server = http.createServer((request, response) => {
     const sharedInFlight = responseCache.hasInFlight(key);
     if (!sharedInFlight) activeJobs += 1;
     try {
-      const result = await responseCache.getOrCreate(key, () => callUpstream(prompt, task));
+      const result = await responseCache.getOrCreate(key, async () => {
+        try {
+          return await callUpstream(prompt, task);
+        } catch (firstError) {
+          const canRetryWithoutJsonMode =
+            LLM_JSON_MODE === "auto" &&
+            /response_format|json_object|json mode/i.test(firstError.message || "");
+          if (!canRetryWithoutJsonMode) throw firstError;
+          console.log("LLM 网关：上游不支持 response_format，已自动降级为纯提示词模式重试");
+          return callUpstream(prompt, task, { jsonMode: false });
+        }
+      });
       sendJson(request, response, 200, { task: body.task, result, model: LLM_MODEL, cached: false });
     } catch (error) {
       sendJson(request, response, 502, {

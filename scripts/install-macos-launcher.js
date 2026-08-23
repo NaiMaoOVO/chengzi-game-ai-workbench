@@ -2,28 +2,11 @@ const { execFileSync } = require("node:child_process");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
-const { preserveRuntimeEnv, replaceDirectoryWithRollback } = require("../lib/launcher-runtime");
+const { preserveRuntimeEnv, replaceDirectoryWithRollback, writeLauncherSyncStatus } = require("../lib/launcher-runtime");
+const { RUNTIME_FILES } = require("../lib/runtime-manifest");
 
 const APP_NAME = "GameOpsLauncher.app";
 const BUNDLE_ID = "local.gameops.launcher";
-const RUNTIME_FILES = [
-  "start-demo.js",
-  "restart-demo.js",
-  "hotspot-server.js",
-  "comment-server.js",
-  "ocr-server.js",
-  "llm-server.js",
-  "ocr.swift",
-  "xiaohongshu-bridge.js",
-  "lib/env-file.js",
-  "lib/hotspot-ranking.js",
-  "lib/platform-provider.js",
-  "lib/service-supervisor.js",
-  "lib/launcher-runtime.js",
-  "lib/safe-request-url.js",
-  "lib/http-guards.js"
-];
-
 function fail(message) {
   console.error(`安装失败：${message}`);
   process.exit(1);
@@ -146,6 +129,12 @@ try {
 } finally {
   fs.rmSync(sourcePath, { force: true });
 }
+
+writeLauncherSyncStatus(projectPath, {
+  inSync: true,
+  checkedAt: new Date().toISOString(),
+  detail: ""
+});
 
 console.log(`已安装：${appPath}`);
 console.log(`项目目录：${projectPath}`);

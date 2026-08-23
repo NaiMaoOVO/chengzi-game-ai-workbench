@@ -403,8 +403,20 @@ function renderRuntimeModeBadge() {
   badge.textContent = `运行环境：线上站点 · ${window.location.host || "未知来源"}（无法控制本机服务）`;
 }
 
-renderRuntimeModeBadge();
+function renderLauncherSyncWarning() {
+  const sync = window.__LAUNCHER_SYNC__;
+  if (!sync || sync.inSync) return;
+  const panel = document.querySelector(".launcher-panel");
+  if (!panel || document.querySelector("#launcher-sync-warning")) return;
+  const warning = document.createElement("p");
+  warning.id = "launcher-sync-warning";
+  warning.className = "source-status source-mock";
+  warning.textContent = `⚠️ 运行快照与源码不一致（${sync.detail || "存在差异"}）。请在项目目录执行 npm run launcher:install，然后点击“重启本地服务”。`;
+  panel.prepend(warning);
+}
 
+renderRuntimeModeBadge();
+renderLauncherSyncWarning();
 /* ---- LLM 增强服务 ---- */
 
 let llmServiceState = "down";

@@ -4,7 +4,7 @@ require("./lib/env-file").loadProjectEnv(__dirname);
 const { calculateHeatScore, rankHotspots } = require("./lib/hotspot-ranking");
 const { fetchPlatformProvider } = require("./lib/platform-provider");
 const { parseRequestUrl } = require("./lib/safe-request-url");
-
+const { createRetryBudget } = require("./lib/http-guards");
 const PORT = Number(process.env.HOTSPOT_PORT || 8790);
 const BILIBILI_SEARCH_URL = "https://api.bilibili.com/x/web-interface/search/type";
 const BILIBILI_HTML_SEARCH_URL = "https://search.bilibili.com/video";
@@ -20,24 +20,34 @@ const RATE_LIMIT_MAX = Math.max(1, Number(process.env.RATE_LIMIT_MAX || 60));
 const CACHE_TTL_MS = Math.max(0, Number(process.env.CACHE_TTL_MS || 30000));
 const UPSTREAM_TIMEOUT_MS = Math.max(1000, Number(process.env.UPSTREAM_TIMEOUT_MS || 8000));
 const UPSTREAM_RETRIES = Math.max(0, Math.min(3, Number(process.env.UPSTREAM_RETRIES || 2)));
+const upstreamRetryBudget = createRetryBudget({ capacity: 3, refillIntervalMs: 1000 });
 const rateLimits = new Map();
 const responseCache = new Map();
 const SUPPORTED_PLATFORMS = new Set(["B站", "抖音", "小红书", "TapTap", "微博"]);
 const SUPPORTED_RANGES = new Set(["today", "24h", "3d", "7d"]);
-const SESSION_COOKIE = [
-  `buvid3=${randomHex(16)}infoc`,
-  `buvid4=${randomHex(32)}`,
-  `b_nut=${Math.floor(Date.now() / 1000)}`,
-  "CURRENT_FNVAL=4048"
-].join("; ");
+const SESSION_COOKIE_TTL_MS = 24 * 60 * 60 * 1000;
+let sessionCookieCache = { value: "", generatedAt: 0 };
 
 function randomHex(size) {
   return crypto.randomBytes(size).toString("hex").toUpperCase();
 }
 
+function buildSessionCookie() {
+  return [
+    `buvid3=${randomHex(16)}infoc`,
+    `buvid4=${randomHex(32)}`,
+    `b_nut=${Math.floor(Date.now() / 1000)}`,
+    "CURRENT_FNVAL=4048"
+  ].join("; ");
+}
+
 function getBilibiliCookie() {
   if (BILIBILI_COOKIE) return BILIBILI_COOKIE;
-  return SESSION_COOKIE;
+  const now = Date.now();
+  if (!sessionCookieCache.value || now - sessionCookieCache.generatedAt >= SESSION_COOKIE_TTL_MS) {
+    sessionCookieCache = { value: buildSessionCookie(), generatedAt: now };
+  }
+  return sessionCookieCache.value;
 }
 
 function getBilibiliHeaders(referer = "https://search.bilibili.com/") {
@@ -101,19 +111,26 @@ function allowRequest(request) {
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
-
 async function fetchWithRetry(url, options = {}) {
   let lastError;
   for (let attempt = 0; attempt <= UPSTREAM_RETRIES; attempt += 1) {
     try {
       const response = await fetch(url, { ...options, signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS) });
       if (response.status !== 429 && response.status < 500) return response;
+      const retryAfterSeconds = Number(response.headers.get("retry-after"));
+      if (Number.isFinite(retryAfterSeconds) && retryAfterSeconds > 0) {
+        lastError = new Error(`HTTP ${response.status}`);
+        lastError.retryAfterSeconds = Math.min(retryAfterSeconds, 30);
+      } else {
+        lastError = new Error(`HTTP ${response.status}`);
+      }
       await response.body?.cancel();
-      lastError = new Error(`HTTP ${response.status}`);
     } catch (error) {
       lastError = error.name === "TimeoutError" ? new Error("上游请求超时") : error;
     }
-    if (attempt < UPSTREAM_RETRIES) await sleep(200 * (2 ** attempt));
+    if (attempt >= UPSTREAM_RETRIES) break;
+    if (!upstreamRetryBudget.trySpend()) break;
+    await sleep(lastError.retryAfterSeconds ? lastError.retryAfterSeconds * 1000 : Math.min(5000, 200 * (2 ** attempt)));
   }
   throw lastError;
 }

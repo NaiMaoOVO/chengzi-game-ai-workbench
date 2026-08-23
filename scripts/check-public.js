@@ -21,7 +21,9 @@ const references = [
   ...[...html.matchAll(/<script[^>]+src=["']([^"']+)["']/gi)].map((match) => match[1]),
   ...[...html.matchAll(/<link[^>]+href=["']([^"']+)["']/gi)].map((match) => match[1])
 ].filter((value) => value.startsWith("./"));
-const missingReferences = references.filter((reference) => !fs.existsSync(path.join(root, "public", reference.slice(2))));
+// launcher-sync-status.js 由本机 launcher 脚本生成，线上部署与全新克隆中不存在属正常现象。
+const optionalReferences = new Set(["./launcher-sync-status.js"]);
+const missingReferences = references.filter((reference) => !optionalReferences.has(reference) && !fs.existsSync(path.join(root, "public", reference.slice(2))));
 if (missingReferences.length) {
   console.error(`public 页面引用了不存在的资源：${missingReferences.join("、")}`);
   process.exit(1);

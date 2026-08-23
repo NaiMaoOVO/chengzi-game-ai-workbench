@@ -35,7 +35,10 @@ let macosProviderStatus = OCR_PROVIDER === "macos"
   ? { ready: false, preparing: true, detail: "正在检查 macOS Vision 与 Swift 环境" }
   : null;
 
+let readinessCheckInFlight = false;
+
 function checkMacosProvider() {
+  if (readinessCheckInFlight) return;
   if (process.platform !== "darwin") {
     macosProviderStatus = { ready: false, preparing: false, detail: "macOS Vision Provider 只能运行在 macOS" };
     return;
@@ -44,19 +47,25 @@ function checkMacosProvider() {
     macosProviderStatus = { ready: false, preparing: false, detail: "ocr.swift 不存在" };
     return;
   }
+  readinessCheckInFlight = true;
   const moduleCache = path.join(os.tmpdir(), "gameops-swift-module-cache");
   const child = spawn("swiftc", ["-module-cache-path", moduleCache, "-typecheck", MACOS_SCRIPT_PATH]);
   let stderr = "";
   const timer = setTimeout(() => child.kill("SIGTERM"), OCR_READINESS_TIMEOUT_MS);
+  const finishCheck = () => {
+    clearTimeout(timer);
+    readinessCheckInFlight = false;
+  };
   child.stderr.on("data", (chunk) => { stderr += chunk; });
   child.on("error", (error) => {
-    clearTimeout(timer);
+    finishCheck();
     macosProviderStatus = { ready: false, preparing: false, detail: error.message.slice(0, 240) };
   });
   child.on("exit", (code, signal) => {
-    clearTimeout(timer);
+    finishCheck();
     if (code === 0) {
       macosProviderStatus = { ready: true, preparing: false, detail: "macOS Vision ready" };
+      console.log("OCR readiness 自愈成功：macOS Vision 已就绪");
       return;
     }
     const message = signal
@@ -66,7 +75,17 @@ function checkMacosProvider() {
   });
 }
 
-if (OCR_PROVIDER === "macos") checkMacosProvider();
+if (OCR_PROVIDER === "macos") {
+  checkMacosProvider();
+  const readinessSelfHealTimer = setInterval(() => {
+    if (macosProviderStatus?.ready) {
+      clearInterval(readinessSelfHealTimer);
+      return;
+    }
+    checkMacosProvider();
+  }, 60000);
+  readinessSelfHealTimer.unref?.();
+}
 
 function remoteProviderStatus() {
   if (!process.env.OCR_REMOTE_URL) return { ready: false, detail: "OCR_REMOTE_URL 未配置" };

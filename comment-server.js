@@ -2,7 +2,7 @@ const http = require("node:http");
 require("./lib/env-file").loadProjectEnv(__dirname);
 const crypto = require("node:crypto");
 const { parseRequestUrl } = require("./lib/safe-request-url");
-const { createRateLimiter } = require("./lib/http-guards");
+const { createRateLimiter, createRetryBudget } = require("./lib/http-guards");
 
 const PORT = Number(process.env.COMMENT_PORT || 8791);
 const VIDEO_INFO_URL = "https://api.bilibili.com/x/web-interface/view";
@@ -16,7 +16,9 @@ const RATE_LIMIT_MAX = Math.max(1, Number(process.env.RATE_LIMIT_MAX || 60));
 const CACHE_TTL_MS = Math.max(0, Number(process.env.CACHE_TTL_MS || 30000));
 const UPSTREAM_TIMEOUT_MS = Math.max(1000, Number(process.env.UPSTREAM_TIMEOUT_MS || 8000));
 const UPSTREAM_RETRIES = Math.max(0, Math.min(3, Number(process.env.UPSTREAM_RETRIES || 2)));
-const SESSION_COOKIE = getBilibiliCookieValue();
+const upstreamRetryBudget = createRetryBudget({ capacity: 3, refillIntervalMs: 1000 });
+const SESSION_COOKIE_TTL_MS = 24 * 60 * 60 * 1000;
+let sessionCookieCache = { value: "", generatedAt: 0 };
 const allowRateLimitedRequest = createRateLimiter({
   windowMs: RATE_LIMIT_WINDOW_MS,
   max: RATE_LIMIT_MAX,
@@ -40,7 +42,12 @@ function getBilibiliCookieValue() {
 }
 
 function getBilibiliCookie() {
-  return BILIBILI_COOKIE || SESSION_COOKIE;
+  if (BILIBILI_COOKIE) return BILIBILI_COOKIE;
+  const now = Date.now();
+  if (!sessionCookieCache.value || now - sessionCookieCache.generatedAt >= SESSION_COOKIE_TTL_MS) {
+    sessionCookieCache = { value: getBilibiliCookieValue(), generatedAt: now };
+  }
+  return sessionCookieCache.value;
 }
 function getBilibiliHeaders() {
   return {
@@ -81,22 +88,29 @@ function allowRequest(request) {
 }
 
 async function fetchWithRetry(url, options = {}) {
+async function fetchWithRetry(url, options = {}) {
   let lastError;
   for (let attempt = 0; attempt <= UPSTREAM_RETRIES; attempt += 1) {
     try {
       const response = await fetch(url, { ...options, signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS) });
       if (response.status !== 429 && response.status < 500) return response;
+      const retryAfterSeconds = Number(response.headers.get("retry-after"));
+      if (Number.isFinite(retryAfterSeconds) && retryAfterSeconds > 0) {
+        lastError = new Error(`HTTP ${response.status}`);
+        lastError.retryAfterSeconds = Math.min(retryAfterSeconds, 30);
+      } else {
+        lastError = new Error(`HTTP ${response.status}`);
+      }
       await response.body?.cancel();
-      lastError = new Error(`HTTP ${response.status}`);
     } catch (error) {
       lastError = error.name === "TimeoutError" ? new Error("上游请求超时") : error;
     }
-    if (attempt < UPSTREAM_RETRIES) await sleep(200 * (2 ** attempt));
+    if (attempt >= UPSTREAM_RETRIES) break;
+    if (!upstreamRetryBudget.trySpend()) break;
+    await sleep(lastError.retryAfterSeconds ? lastError.retryAfterSeconds * 1000 : Math.min(5000, 200 * (2 ** attempt)));
   }
   throw lastError;
 }
-
-function getCached(key) {
   const entry = responseCache.get(key);
   if (!entry || entry.expiresAt <= Date.now()) {
     responseCache.delete(key);
