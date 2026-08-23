@@ -2974,3 +2974,63 @@ body[data-service-mode="online"] .launcher-panel {
   font-size: 12px;
 }
 
+.briefing-panel {
+  background: rgba(255, 255, 255, 0.78);
+  border: 1px solid rgba(33, 124, 107, 0.18);
+}
+
+.briefing-body {
+  margin-top: 10px;
+  padding: 12px 14px;
+  border: 1px solid rgba(123, 132, 151, 0.16);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.briefing-body h4 {
+  margin: 0 0 6px;
+}
+
+.briefing-body h5 {
+  margin: 10px 0 4px;
+  font-size: 13px;
+}
+
+.briefing-body ul {
+  margin: 4px 0 8px;
+  padding-left: 18px;
+}
+
+.briefing-body li,
+.briefing-body p {
+  font-size: 12.5px;
+  line-height: 1.65;
+  color: #2f3a4d;
+}
+
+.briefing-archive-list {
+  margin-top: 10px;
+  display: grid;
+  gap: 6px;
+}
+
+.briefing-archive-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 6px 10px;
+  border: 1px solid rgba(123, 132, 151, 0.14);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.6);
+}
+
+.briefing-archive-item strong {
+  font-size: 12.5px;
+}
+
+.briefing-archive-item small {
+  display: block;
+  color: #5d6678;
+  font-size: 11.5px;
+}

@@ -125,6 +125,19 @@
               <p class="runtime-mode-badge" id="runtime-mode-badge">运行环境：检测中…</p>
             </section>
 
+            <section class="section-block briefing-panel" aria-label="今日运营简报">
+              <h3>今日运营简报</h3>
+              <p class="muted-copy launcher-note">汇总热点榜单、舆情预警与待办建议，一键生成并存档，形成可持续回看的工作日志。</p>
+              <div class="launcher-buttons">
+                <button class="secondary-button launcher-primary-action" id="generate-briefing" type="button">生成今日简报</button>
+                <button class="secondary-button" id="archive-briefing" type="button">存档本次简报</button>
+                <button class="secondary-button" id="load-briefing-archive" type="button">查看最近存档</button>
+              </div>
+              <p class="source-status" id="briefing-status" aria-live="polite">简报状态：尚未生成。</p>
+              <article class="briefing-body" id="briefing-body" hidden></article>
+              <div class="briefing-archive-list" id="briefing-archive-list"></div>
+            </section>
+
             <section class="service-status-panel" aria-label="本地服务状态">
               <article class="service-status-card" id="service-status-ocr">
                 <span class="service-dot"></span>
@@ -929,6 +942,7 @@
     <script src="./lib/project-slots.js"></script>
     <script src="./lib/ui-guards.js"></script>
     <script src="./lib/safe-storage.js"></script>
+    <script src="./launcher-sync-status.js"></script>
     <script src="./launcher.js"></script>
     <script src="./app.js"></script>
 </body>
