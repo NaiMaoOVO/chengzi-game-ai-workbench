@@ -40,6 +40,14 @@ const serviceCases = [
         assert.equal(post.status, 201);
         const list = await fetch(`http://127.0.0.1:${port}/snapshots?kind=smoke`).then((r) => r.json());
         assert.equal(list.items.length >= 1, true);
+        const putProfile = await fetch(`http://127.0.0.1:${port}/profile`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ game: "冒烟游戏", profile: { competitors: ["竞品A"] } })
+        });
+        assert.equal(putProfile.status, 200);
+        const gotProfile = await fetch(`http://127.0.0.1:${port}/profile?game=${encodeURIComponent("冒烟游戏")}`).then((r) => r.json());
+        assert.equal(gotProfile.profile.competitors[0], "竞品A");
       })();
     }
   }

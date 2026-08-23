@@ -96,6 +96,11 @@ CREATE TABLE IF NOT EXISTS snapshots (
   created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_snapshots_kind_time ON snapshots(kind, created_at);
+CREATE TABLE IF NOT EXISTS project_profiles (
+  game TEXT PRIMARY KEY,
+  payload TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
 `);
 
 const insertStatement = db.prepare("INSERT INTO snapshots (kind, game, source, payload, created_at) VALUES (?, ?, ?, ?, ?)");
@@ -170,12 +175,50 @@ const server = http.createServer((request, response) => {
     }
     return;
   }
+  if (request.method === "GET" && url.pathname === "/profiles") {
+    const rows = db.prepare("SELECT game, payload, updated_at FROM project_profiles ORDER BY updated_at DESC").all();
+    sendJson(request, response, 200, { ok: true, profiles: rows.map((row) => ({ game: row.game, updated_at: row.updated_at, payload: JSON.parse(row.payload) })) });
+    return;
+  }
+  if (request.method === "GET" && url.pathname === "/profile") {
+    const game = (url.searchParams.get("game") || "").trim();
+    if (!game) { sendJson(request, response, 400, { ok: false, error: "game 参数必填" }); return; }
+    const row = db.prepare("SELECT payload, updated_at FROM project_profiles WHERE game = ?").get(game);
+    sendJson(request, response, 200, { ok: true, game, profile: row ? JSON.parse(row.payload) : null, updated_at: row ? row.updated_at : null });
+    return;
+  }
   if (request.method === "GET" && url.pathname === "/latest") {
     try {
       sendJson(request, response, 200, { ok: true, snapshot: latestSnapshot(url) });
     } catch (error) {
       sendJson(request, response, 400, { ok: false, error: error.message });
     }
+    return;
+  }
+  if (request.method === "PUT" && url.pathname === "/profile") {
+    const chunksP = [];
+    let recvP = 0;
+    let rejP = false;
+    request.on("data", (chunk) => {
+      if (rejP) return;
+      recvP += chunk.length;
+      if (recvP > MAX_BODY_BYTES) { rejP = true; sendJson(request, response, 413, { error: "档案内容过大" }); request.resume(); return; }
+      chunksP.push(chunk);
+    });
+    request.on("end", () => {
+      if (rejP) return;
+      try {
+        const body = JSON.parse(Buffer.concat(chunksP).toString("utf8"));
+        const game = typeof body.game === "string" ? body.game.trim().slice(0, 60) : "";
+        if (!game) { sendJson(request, response, 400, { error: "game 必填" }); return; }
+        if (!body.profile || typeof body.profile !== "object") { sendJson(request, response, 400, { error: "profile 必须是对象" }); return; }
+        db.prepare("INSERT INTO project_profiles (game, payload, updated_at) VALUES (?, ?, ?) ON CONFLICT(game) DO UPDATE SET payload = excluded.payload, updated_at = excluded.updated_at")
+          .run(game, JSON.stringify(body.profile), new Date().toISOString());
+        sendJson(request, response, 200, { ok: true, game });
+      } catch (error) {
+        sendJson(request, response, 400, { error: error.message });
+      }
+    });
     return;
   }
   if (request.method !== "POST" || url.pathname !== "/snapshots") {
@@ -198,7 +241,50 @@ const server = http.createServer((request, response) => {
   });
   request.on("end", () => {
     if (rejected) return;
+    if (rejected) return;
+    let body;
+    try {
+      body = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+    } catch (_error) {
+      sendJson(request, response, 400, { error: "请求体不是合法 JSON" });
+      return;
+    }
+    const kind = typeof body.kind === "string" ? body.kind.trim() : "";
+    if (!KIND_PATTERN.test(kind)) {
+      sendJson(request, response, 400, { error: "kind 不合法（小写字母开头的短标识）" });
+      return;
+    }
+    if (!body.payload || typeof body.payload !== "object" || Array.isArray(body.payload)) {
+      sendJson(request, response, 400, { error: "payload 必须是对象" });
+      return;
+    }
+    let serialized;
+    try {
+      serialized = JSON.stringify(body.payload);
+    } catch (_error) {
+      sendJson(request, response, 400, { error: "payload 无法序列化" });
+      return;
+    }
+    const game = typeof body.game === "string" ? body.game.slice(0, 60) : "";
+    const source = body.source === "real" ? "real" : "sample";
+    const info = insertStatement.run(kind, game, source, serialized, new Date().toISOString());
+    sendJson(request, response, 201, { ok: true, id: Number(info.lastInsertRowid) });
+  });
+});
 
+server.on("error", (error) => {
+  console.error("存档服务启动失败：" + error.message);
+  process.exit(1);
+});
+
+server.requestTimeout = 30000;
+server.headersTimeout = 10000;
+
+server.listen(PORT, "127.0.0.1", () => {
+  console.log("🗄 存档服务已启动 → http://127.0.0.1:" + PORT);
+  console.log("   数据文件: " + dbPath);
+  console.log("   健康检查: http://127.0.0.1:" + PORT + "/health");
+});
 
 /* ---- 定时晨报抓取：每天 MORNING_SCHEDULE 抓取各游戏今日热点并落库 ---- */
 
@@ -251,54 +337,3 @@ setInterval(() => {
   lastMorningRunDate = today;
   runMorningFetch();
 }, 60000).unref?.();
-
-    let body;
-    try {
-      body = JSON.parse(Buffer.concat(chunks).toString("utf8"));
-    } catch (_error) {
-      sendJson(request, response, 400, { error: "请求体不是合法 JSON" });
-      return;
-    }
-    const kind = typeof body.kind === "string" ? body.kind.trim() : "";
-    if (!KIND_PATTERN.test(kind)) {
-      sendJson(request, response, 400, { error: "kind 不合法（小写字母开头的短标识）" });
-      return;
-    }
-    if (!body.payload || typeof body.payload !== "object" || Array.isArray(body.payload)) {
-      sendJson(request, response, 400, { error: "payload 必须是对象" });
-      return;
-    }
-    let serialized;
-    try {
-      serialized = JSON.stringify(body.payload);
-    } catch (_error) {
-      sendJson(request, response, 400, { error: "payload 无法序列化" });
-      return;
-    }
-    const game = typeof body.game === "string" ? body.game.slice(0, 60) : "";
-    const source = body.source === "real" ? "real" : "sample";
-    const info = insertStatement.run(kind, game, source, serialized, new Date().toISOString());
-    sendJson(request, response, 201, { ok: true, id: Number(info.lastInsertRowid) });
-  });
-});
-
-server.on("error", (error) => {
-  console.error("存档服务启动失败：" + error.message);
-  process.exit(1);
-});
-
-server.requestTimeout = 30000;
-server.headersTimeout = 10000;
-
-server.listen(PORT, "127.0.0.1", () => {
-  console.log("🗄 存档服务已启动 → http://127.0.0.1:" + PORT);
-  console.log("   数据文件: " + dbPath);
-  console.log("   健康检查: http://127.0.0.1:" + PORT + "/health");
-});
-
-for (const signal of ["SIGINT", "SIGTERM"]) {
-  process.on(signal, () => {
-    try { db.close(); } catch (_error) {}
-    process.exit(0);
-  });
-}

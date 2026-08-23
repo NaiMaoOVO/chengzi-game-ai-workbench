@@ -3071,3 +3071,8 @@ body[data-service-mode="online"] .launcher-panel {
   color: #5d6678;
   font-size: 11.5px;
 }
+
+.profile-select {
+  flex: 1;
+  min-width: 160px;
+}

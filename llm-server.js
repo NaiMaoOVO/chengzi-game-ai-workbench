@@ -75,8 +75,8 @@ const TASKS = {
       if (comments.length < 3) throw new Error("评论样本不足（至少 3 条有效评论）");
       const list = comments.map((c, i) => `${i + 1}. ${c}`).join("\n");
       return {
-        system: "你是资深游戏内容运营分析师，擅长从玩家评论中提炼舆情洞察和可执行建议。只输出 JSON，不要输出其他内容。",
-        user: `分析以下《${game}》玩家评论（已做基础清洗）：\n\n${list}\n\n输出 JSON，字段定义：\n{"summary":"总体舆情摘要，2-3句话，覆盖情绪倾向与核心议题","sentiment_overview":"正向/中性/负向大致占比与形成原因，1-2句话","top_issues":["玩家最关心的3-5个议题，每个一句话并注明热度依据"],"suggested_actions":["3-5条可直接执行的运营动作，每条一句话"],"representative_quotes":[{"comment":"代表性原评论截取前50字","reason":"入选理由一句话"}]}`
+        system: "你是资深游戏内容运营分析师，擅长从玩家评论中提炼舆情洞察和可执行建议。只输出 JSON，不要输出其他内容。引用评论时必须使用【#编号】格式（编号对应输入列表序号），禁止编造不存在的编号。",
+        user: `分析以下《${game}》玩家评论（已做基础清洗，每条前置编号）：\n\n${list}\n\n输出 JSON，字段定义：\n{"summary":"总体舆情摘要，2-3句话，覆盖情绪倾向与核心议题，提及具体评论时用【#编号】标注来源","sentiment_overview":"正向/中性/负向大致占比与形成原因，1-2句话","top_issues":["玩家最关心的3-5个议题，每个一句话并注明热度依据，附【#编号】来源"],"suggested_actions":["3-5条可直接执行的运营动作，每条一句话"],"representative_quotes":[{"quote_id":1,"comment":"代表性原评论截取前50字（与原评论一致）","reason":"入选理由一句话"}]}`
       };
     }
   },
