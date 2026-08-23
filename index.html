@@ -123,6 +123,17 @@
               </div>
               <p class="source-status" id="launcher-status" aria-live="polite">控制台状态：等待检查</p>
               <p class="runtime-mode-badge" id="runtime-mode-badge">运行环境：检测中…</p>
+            <section class="section-block briefing-panel" aria-label="项目档案">
+              <h3>项目档案</h3>
+              <p class="muted-copy launcher-note">按游戏保存版本节奏、竞品清单与 KOL 名单；切换游戏时自动填充各模块的游戏名输入框。</p>
+              <div class="launcher-buttons">
+                <select id="profile-select" class="profile-select" aria-label="选择已存档项目"></select>
+                <button class="secondary-button" id="load-profile" type="button">载入档案</button>
+                <button class="secondary-button" id="save-profile" type="button">保存当前为档案</button>
+              </div>
+              <p class="source-status" id="profile-status" aria-live="polite">项目档案：尚未操作。</p>
+            </section>
+
             </section>
 
             <section class="section-block briefing-panel" aria-label="今日运营简报">

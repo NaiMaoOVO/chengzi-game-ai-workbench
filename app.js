@@ -707,6 +707,92 @@ document.querySelector("#load-briefing-archive")?.addEventListener("click", load
 let llmModelName = "";
 
 async function checkLlmHealth(expectedModeGeneration = serviceModeGuard.current()) {
+
+/* ---- 项目档案 ---- */
+
+function collectProfileFromPage() {
+  return {
+    versionNote: document.querySelector("#version-theme")?.value.trim() || "",
+    competitors: (document.querySelector("#content-competitor")?.value || "").split(/\n+/).map(s=>s.trim()).filter(Boolean).slice(0,10),
+    kolNames: currentCreatorRows.slice(0, 20).map((row) => row.name),
+    savedAt: new Date().toISOString()
+  };
+}
+
+function fillGameInputs(game) {
+  for (const selector of ["#trending-game", "#version-game", "#feedback-game", "#segment-game"]) {
+    const input = document.querySelector(selector);
+    if (input) input.value = game;
+  }
+}
+
+async function refreshProfileList() {
+  const select = document.querySelector("#profile-select");
+  if (!select || isOnlineServiceMode()) return;
+  try {
+    const data = await fetch(ARCHIVE_SERVICE_URL + "/profiles", { cache: "no-store" }).then((r) => r.json());
+    select.innerHTML = '';
+    const placeholder = document.createElement("option");
+    placeholder.value = "";
+    placeholder.textContent = "选择已存档项目…";
+    select.append(placeholder);
+    for (const item of data.profiles || []) {
+      const option = document.createElement("option");
+      option.value = item.game;
+      option.textContent = item.game + "（" + new Date(item.updated_at).toLocaleDateString() + "）";
+      option.dataset.payload = JSON.stringify(item.payload);
+      select.append(option);
+    }
+  } catch (_error) { /* 存档服务不可用时静默 */ }
+}
+
+async function saveCurrentProfile() {
+  const status = document.querySelector("#profile-status");
+  const game = document.querySelector("#trending-game")?.value.trim();
+  if (!game) {
+    if (status) { status.textContent = "项目档案：请先填写游戏名，再保存档案。"; status.className = "source-status source-mock"; }
+    return;
+  }
+  if (isOnlineServiceMode()) {
+    if (status) { status.textContent = "项目档案：线上模式不支持本地档案，请切换本地模式。"; status.className = "source-status source-mock"; }
+    return;
+  }
+  try {
+    const response = await fetch(ARCHIVE_SERVICE_URL + "/profile", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ game, profile: collectProfileFromPage() })
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || !payload.ok) throw new Error(payload.error || "HTTP " + response.status);
+    if (status) { status.textContent = "项目档案：已保存「" + game + "」。"; status.className = "source-status source-real"; }
+    await refreshProfileList();
+  } catch (error) {
+    if (status) { status.textContent = "项目档案：保存失败（" + error.message + "）。"; status.className = "source-status source-mock"; }
+  }
+}
+
+function loadSelectedProfile() {
+  const select = document.querySelector("#profile-select");
+  const status = document.querySelector("#profile-status");
+  const option = select?.selectedOptions[0];
+  if (!option || !option.value) {
+    if (status) { status.textContent = "项目档案：请先从下拉框选择一个已存档项目。"; status.className = "source-status source-mock"; }
+    return;
+  }
+  try {
+    const profile = JSON.parse(option.dataset.payload || "{}");
+    fillGameInputs(option.value);
+    analyzeTrending();
+    if (status) { status.textContent = "项目档案：已载入「" + option.value + "」，各模块游戏名已同步并刷新热点。"; status.className = "source-status source-real"; }
+  } catch (error) {
+    if (status) { status.textContent = "项目档案：载入失败（" + error.message + "）。"; status.className = "source-status source-mock"; }
+  }
+}
+
+document.querySelector("#save-profile")?.addEventListener("click", saveCurrentProfile);
+document.querySelector("#load-profile")?.addEventListener("click", loadSelectedProfile);
+refreshProfileList();
   const controller = new AbortController();
   const timeout = window.setTimeout(() => controller.abort(), 2400);
   try {
@@ -797,8 +883,34 @@ async function enhanceFeedbackWithLlm() {
     }
 
     const insight = response.result || {};
+
+    // 引用溯源：校验【#N】编号有效性，剔除编造引用
+    const maxQuoteId = comments.length;
+    let invalidCitations = 0;
+    let validCitations = 0;
+    function sanitizeCitations(text) {
+      return String(text || "").replace(/【#(\d+)】/g, (_, numStr) => {
+        const num = Number(numStr);
+        if (num >= 1 && num <= maxQuoteId) {
+          validCitations += 1;
+          return "【#" + num + "】";
+        }
+        invalidCitations += 1;
+        return "";
+      });
+    }
+    insight.summary = sanitizeCitations(insight.summary);
+    insight.sentiment_overview = sanitizeCitations(insight.sentiment_overview);
+    if (Array.isArray(insight.top_issues)) {
+      insight.top_issues = insight.top_issues.map((item) => sanitizeCitations(item));
+    }
+
     const quotes = Array.isArray(insight.representative_quotes)
-      ? insight.representative_quotes.filter((q) => q && typeof q === "object").slice(0, 3).map((q) => `「${String(q.comment || "").slice(0, 50)}」— ${q.reason || ""}`)
+      ? insight.representative_quotes.filter((q) => q && typeof q === "object").slice(0, 3).map((q) => {
+          const id = Number(q.quote_id);
+          const label = id >= 1 && id <= maxQuoteId ? "【#" + id + "】" : "";
+          return label + "「" + String(q.comment || "").slice(0, 50) + "」— " + (q.reason || "");
+        })
       : [];
     const elapsed = ((Date.now() - startedAt) / 1000).toFixed(1);
     panel.innerHTML = `
@@ -807,7 +919,7 @@ async function enhanceFeedbackWithLlm() {
       ${Array.isArray(insight.top_issues) && insight.top_issues.length ? `<h4>核心议题</h4><ul class="result-list">${insight.top_issues.slice(0, 5).map((t) => `<li>${escapeHtml(String(t))}</li>`).join("")}</ul>` : ""}
       ${Array.isArray(insight.suggested_actions) && insight.suggested_actions.length ? `<h4>AI 运营建议</h4><ul class="result-list">${insight.suggested_actions.slice(0, 5).map((t) => `<li>${escapeHtml(String(t))}</li>`).join("")}</ul>` : ""}
       ${quotes.length ? `<h4>代表性评论</h4><ul class="result-list">${quotes.map((t) => `<li>${escapeHtml(t)}</li>`).join("")}</ul>` : ""}
-      <p class="muted-copy">由 ${escapeHtml(response.model || llmModelName)} 生成 · 耗时 ${elapsed}s${response.cached ? " · 命中缓存" : ""}，结果仅供参考，请结合规则引擎交叉验证。</p>
+      <p class="muted-copy">由 ${escapeHtml(response.model || llmModelName)} 生成 · 耗时 ${elapsed}s${response.cached ? " · 命中缓存" : ""}${validCitations ? " · 有效引用 " + validCitations + " 处" : ""}${invalidCitations ? " · 已剔除无效引用 " + invalidCitations + " 处" : ""}，结果仅供参考，请结合规则引擎交叉验证。</p>
     `;
   } catch (error) {
     if (generation === feedbackLlmGeneration) {
@@ -815,7 +927,6 @@ async function enhanceFeedbackWithLlm() {
     }
   }
 }
-
 async function enhanceVersionWithLlm() {
   const generation = ++versionLlmGeneration;
   renderLlmBadge("#version-ai-badge");
@@ -3337,7 +3448,14 @@ function buildVersionPackageText() {
     ...abTitles.map((item) => `- ${item}`),
     "",
     "玩家群体卖点：",
-    ...audiences
+    ...audiences,
+    "",
+    "发布前事实核对清单（AI/模板生成内容必须逐项人工确认）：",
+    "- 版本号与更新日期是否与官方公告一致",
+    "- 新角色/皮肤/玩法名称是否为官方定名（无臆造译名）",
+    "- 活动时间、奖励数量、付费价格是否与游戏内实际一致",
+    "- 引用的玩家评论或数据是否可回溯到原始来源",
+    "- 敏感表述是否符合公司口径与平台规范"
   ].join("\n");
 }
 
