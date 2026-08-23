@@ -76,6 +76,8 @@ const demoRoutes = {
 let reviewMode = "campaign";
 let currentTrendingTopics = [];
 let selectedTrendingIndex = 0;
+const trendingRequestGuard = createGenerationGuard();
+const serviceModeGuard = createGenerationGuard();
 let currentFeedbackRows = [];
 let currentCreatorRows = [];
 let streamers = [
@@ -389,23 +391,41 @@ function renderServiceModeControls() {
   }
 }
 
+function renderRuntimeModeBadge() {
+  const badge = document.querySelector("#runtime-mode-badge");
+  if (!badge) return;
+  if (window.location.protocol === "file:") {
+    const segments = decodeURIComponent(window.location.pathname).split("/").filter(Boolean);
+    const tail = segments.slice(-3).join("/");
+    badge.textContent = `运行环境：本地文件 · …/${tail}`;
+    return;
+  }
+  badge.textContent = `运行环境：线上站点 · ${window.location.host || "未知来源"}（无法控制本机服务）`;
+}
+
+renderRuntimeModeBadge();
+
 /* ---- LLM 增强服务 ---- */
 
 let llmServiceState = "down";
 let llmModelName = "";
 
-async function checkLlmHealth() {
+async function checkLlmHealth(expectedModeGeneration = serviceModeGuard.current()) {
   const controller = new AbortController();
   const timeout = window.setTimeout(() => controller.abort(), 2400);
   try {
     const response = await fetch(`${LLM_SERVICE_URL}/health`, { signal: controller.signal, cache: "no-store" });
     const payload = await response.json().catch(() => ({}));
     if (payload.service !== "gameops-llm") throw new Error("identity mismatch");
-    llmServiceState = payload.llm === "ready" ? "ready" : payload.llm === "no_key" ? "no_key" : "not_ready";
-    llmModelName = payload.model || "";
+    if (serviceModeGuard.isCurrent(expectedModeGeneration)) {
+      llmServiceState = payload.llm === "ready" ? "ready" : payload.llm === "no_key" ? "no_key" : "not_ready";
+      llmModelName = payload.model || "";
+    }
   } catch (_error) {
-    llmServiceState = "down";
-    llmModelName = "";
+    if (serviceModeGuard.isCurrent(expectedModeGeneration)) {
+      llmServiceState = "down";
+      llmModelName = "";
+    }
   } finally {
     window.clearTimeout(timeout);
   }
@@ -548,7 +568,7 @@ async function enhanceVersionWithLlm() {
   }
 }
 
-async function checkOcrHealth(retriesLeft = 50) {
+async function checkOcrHealth(retriesLeft = 50, expectedModeGeneration = serviceModeGuard.current()) {
   const generation = ++ocrHealthGeneration;
   const dot = document.querySelector("#ocr-status-dot");
   const text = document.querySelector("#ocr-status-text");
@@ -558,7 +578,7 @@ async function checkOcrHealth(retriesLeft = 50) {
   const scheduleRetry = () => {
     if (retriesLeft > 0 && generation === ocrHealthGeneration) {
       window.setTimeout(() => {
-        if (generation === ocrHealthGeneration) checkOcrHealth(retriesLeft - 1);
+        if (generation === ocrHealthGeneration && serviceModeGuard.isCurrent(expectedModeGeneration)) checkOcrHealth(retriesLeft - 1, expectedModeGeneration);
       }, 2000);
     }
   };
@@ -566,6 +586,7 @@ async function checkOcrHealth(retriesLeft = 50) {
   try {
     const response = await fetch(`${OCR_SERVICE_URL}/health`, { signal: controller.signal, cache: "no-store" });
     const payload = await response.json().catch(() => ({}));
+    if (!serviceModeGuard.isCurrent(expectedModeGeneration)) return;
     if (payload.ocr === "ready") {
       ocrServerOnline = true;
       ocrServiceState = "ready";
@@ -585,6 +606,7 @@ async function checkOcrHealth(retriesLeft = 50) {
       scheduleRetry();
     }
   } catch (_e) {
+    if (!serviceModeGuard.isCurrent(expectedModeGeneration)) return;
     ocrServerOnline = false;
     ocrServiceState = "down";
     if (dot) { dot.className = "ocr-status-dot ocr-dot-offline"; }
@@ -669,14 +691,17 @@ async function getLocalServiceStatus() {
 }
 
 async function refreshOverviewServiceStatus() {
+  const modeGeneration = serviceModeGuard.current();
   renderServiceModeControls();
   renderServiceCard("#service-status-ocr", null, "检测中");
   renderServiceCard("#service-status-hotspot", null, "检测中");
   renderServiceCard("#service-status-comment", null, "检测中");
   renderServiceCard("#service-status-llm", null, "检测中");
-  await checkLlmHealth();
+  await checkLlmHealth(modeGeneration);
+  if (!serviceModeGuard.isCurrent(modeGeneration)) return null;
 
   const { ocr, hotspot, comment, llm } = await getLocalServiceStatus();
+  if (!serviceModeGuard.isCurrent(modeGeneration)) return null;
 
   renderServiceCard("#service-status-ocr", ocr);
   renderServiceCard("#service-status-hotspot", hotspot);
@@ -2390,7 +2415,10 @@ function updateChainBar(viewName = "overview", sourceText = "") {
   };
   const platform = document.querySelector("#trending-platform")?.value || "B站";
   const range = getRangeLabel(document.querySelector("#trending-range")?.value || "24h");
-  const sourceLabel = sourceText || `${platform}公开数据 · ${range} · 旧视频过滤`;
+  const savedTrendingSource = viewName === "trending"
+    ? document.querySelector("#trending-source-status")?.textContent?.replace(/^数据源：/, "")
+    : "";
+  const sourceLabel = sourceText || savedTrendingSource || `${platform}公开数据 · ${range} · 旧视频过滤`;
 
   flow.textContent = flowMap[viewName] || flowMap.overview;
   source.textContent = sourceLabel;
@@ -2632,6 +2660,7 @@ function exportTrendingCsv() {
 }
 
 async function analyzeTrending() {
+  const requestGeneration = trendingRequestGuard.next();
   const game = document.querySelector("#trending-game").value.trim() || "鸣潮";
   const platform = document.querySelector("#trending-platform").value || "B站";
   const sourceStatus = document.querySelector("#trending-source-status");
@@ -2647,11 +2676,12 @@ async function analyzeTrending() {
     "#trending-fetch-diagnostic",
     "loading",
     "正在抓取热点",
-    `正在请求本机热点服务：${platform} · ${game} · ${getRangeLabel(document.querySelector("#trending-range")?.value || "24h")}。`
+    `正在请求${isOnlineServiceMode() ? "线上热点服务" : "本机热点服务"}：${platform} · ${game} · ${getRangeLabel(document.querySelector("#trending-range")?.value || "24h")}。`
   );
 
   try {
     const result = await fetchRealTrending(game, platform);
+    if (!trendingRequestGuard.isCurrent(requestGeneration)) return;
     if (!result.items?.length) {
       renderTrendingList(game, platform, {
         source: "mock",
@@ -2660,13 +2690,16 @@ async function analyzeTrending() {
       return;
     }
 
+    const resultSource = result.source === "real" ? "real" : "mock";
     renderTrendingList(game, platform, {
-      source: "real",
+      source: resultSource,
       sourceLabel: result.sourceLabel,
       note: result.note,
+      reason: resultSource === "real" ? "" : result.note || `${platform} 当前使用样例兜底`,
       items: result.items
     });
   } catch (error) {
+    if (!trendingRequestGuard.isCurrent(requestGeneration)) return;
     if (isDemoMode()) {
       renderTrendingList(game, platform, {
         source: "mock",
@@ -2683,7 +2716,9 @@ async function analyzeTrending() {
       "#trending-fetch-diagnostic",
       "error",
       "真实热点抓取失败",
-      error.message || "请确认 hotspot-server.js 已启动；B站 HTTP 412 通常代表公开接口触发临时风控。"
+      error.message || (isOnlineServiceMode()
+        ? "请检查线上 /api/hotspot 反向代理和服务状态。B站 HTTP 412 通常代表公开接口触发临时风控。"
+        : "请确认 hotspot-server.js 已启动；B站 HTTP 412 通常代表公开接口触发临时风控。")
     );
   }
 }
@@ -3430,6 +3465,8 @@ function hasAny(text, words) {
 
 function scoreCreator(row) {
   const type = inferCreatorType(row);
+  const conversionRate = parseRateValue(row.conversionRate);
+  const conversionScore = conversionRate > 0 ? clampScore(conversionRate * 5) : 0;
   const content = `${row.contentType} ${row.gameHistory}`;
   const fanScore = Math.min(100, Math.log10(Math.max(row.followers, 1)) * 18);
   const viewScore = Math.min(100, Math.log10(Math.max(row.avgViews, 1)) * 20);
@@ -3448,7 +3485,7 @@ function scoreCreator(row) {
   const launch = clampScore(fanScore * 0.32 + viewScore * 0.34 + engagementScore * 0.12 + quality * 0.1 + density * 0.06 + exposureBonus + verticalBonus * 0.4 - riskPenalty * 0.35);
   const review = clampScore(viewScore * 0.18 + engagementScore * 0.18 + quality * 0.3 + density * 0.08 + reviewBonus + verticalBonus - riskPenalty * 0.3);
   const guide = clampScore(viewScore * 0.18 + engagementScore * 0.28 + quality * 0.24 + density * 0.1 + guideBonus + verticalBonus * 0.7 - riskPenalty * 0.25);
-  const value = clampScore(100 - Math.min(60, cpm * 1.3) - Math.min(25, cpe * 0.2) + engagementScore * 0.25 + quality * 0.2 + density * 0.12 - riskPenalty * 0.45);
+  const value = clampScore(100 - Math.min(60, cpm * 1.3) - Math.min(25, cpe * 0.2) + engagementScore * 0.25 + quality * 0.2 + density * 0.12 + conversionScore * 0.12 - riskPenalty * 0.45);
   const overall = clampScore(launch * 0.28 + review * 0.24 + guide * 0.24 + value * 0.24);
   const risks = [];
   if (row.commercialDensity.includes("高")) risks.push("商单密度偏高");
@@ -3460,6 +3497,8 @@ function scoreCreator(row) {
   return {
     ...row,
     type,
+    conversionRate,
+    conversionScore,
     cpm,
     cpe,
     scores: { launch, review, guide, value, overall },
@@ -3647,7 +3686,7 @@ function renderCreatorTable(rows, goal, activity) {
       </div>
       ${rows.map((row) => `
         <div class="creator-table-row">
-          <strong>${escapeHtml(row.name)}<small>${escapeHtml(row.platform)} · ${formatWan(row.followers)}粉 · 均播${formatWan(row.avgViews)}</small></strong>
+          <strong>${escapeHtml(row.name)}${row.dataSource === "backfill" ? '<em class="creator-data-badge">实测</em>' : ""}<small>${escapeHtml(row.platform)} · ${formatWan(row.followers)}粉 · 均播${formatWan(row.avgViews)}</small></strong>
           <span>${escapeHtml(row.type)}</span>
           <span>${escapeHtml(getCreatorFit(row))}</span>
           <span class="score-pill">${targetScore(row, goal, activity)}</span>
@@ -3949,12 +3988,12 @@ async function handleCreatorFileUpload(event) {
   }
 }
 
-function analyzeCreators() {
+function analyzeCreators(rowsOverride = null) {
   const input = document.querySelector("#creator-input")?.value || "";
   const goal = document.querySelector("#creator-goal")?.value || "launch";
   const activity = document.querySelector("#creator-activity")?.value || "newLaunch";
   const budget = numberValue(document.querySelector("#creator-budget")?.value);
-  const parsed = parseCreators(input);
+  const parsed = rowsOverride || parseCreators(input);
   currentCreatorRows = parsed
     .map(scoreCreator)
     .sort((a, b) => scoreByGoal(b, goal, activity) - scoreByGoal(a, goal, activity));
@@ -4469,9 +4508,18 @@ function buildFullOperationReportText() {
   analyzeReview();
   generateVersionPackage();
   generateSegmentPlan();
-  analyzeCreators();
+  const hasBackfillRows = currentCreatorRows.some((row) => row.dataSource === "backfill");
+  analyzeCreators(hasBackfillRows ? currentCreatorRows : null);
 
   const game = document.querySelector("#version-game")?.value.trim() || document.querySelector("#trending-game")?.value.trim() || "目标游戏";
+  const sourceTexts = ["#trending-source-status", "#feedback-source-status", "#creator-status"]
+    .map((selector) => document.querySelector(selector)?.textContent || "")
+    .filter(Boolean);
+  const sampleSources = sourceTexts.filter((text) => /样例|兜底|演示/.test(text));
+  if (currentTrendingTopics.some((topic) => topic.source !== "real")) sampleSources.unshift("热点榜单：当前结果含样例兜底");
+  const dataQuality = sampleSources.length
+    ? `⚠️ 数据状态：本报告包含样例/兜底数据：${sampleSources.join("；")}，不代表真实平台表现。`
+    : "数据状态：当前已生成模块未检测到样例兜底标记，请结合原始来源复核。";
   const date = new Date().toISOString().slice(0, 10);
   const topTopics = currentTrendingTopics.slice(0, 5).map((topic) => `- TOP${topic.rank} ${topic.title}（${topic.tag} / ${topic.risk?.level || "正常"}）`).join("\n");
   const creatorTop = currentCreatorRows.slice(0, 5).map((row) => `- ${row.name}：目标分 ${targetScore(row, document.querySelector("#creator-goal")?.value || "launch", document.querySelector("#creator-activity")?.value || "newLaunch")}，${row.tier}，${getCreatorFit(row)}`).join("\n");
@@ -4479,8 +4527,10 @@ function buildFullOperationReportText() {
   return [
     `# ${game} 游戏内容运营方案`,
     `生成日期：${date}`,
+    dataQuality,
     "",
     "## 1. 项目定位",
+    "",
     "围绕平台热点、竞品内容、玩家反馈、版本包装、分层运营、达人合作和活动复盘形成完整运营闭环。",
     "",
     "## 2. 今日热点结论",
@@ -4729,6 +4779,16 @@ document.querySelector("#stream-screenshots")?.addEventListener("change", (event
 });
 
 const dropZone = document.querySelector("#stream-drop-zone");
+const screenshotInput = document.querySelector("#stream-screenshots");
+dropZone?.addEventListener("click", (event) => {
+  if (event.target !== screenshotInput) screenshotInput?.click();
+});
+dropZone?.addEventListener("keydown", (event) => {
+  if (event.key === "Enter" || event.key === " ") {
+    event.preventDefault();
+    screenshotInput?.click();
+  }
+});
 dropZone?.addEventListener("dragover", (event) => {
   event.preventDefault();
   dropZone.classList.add("dragging");
@@ -4814,6 +4874,7 @@ document.querySelector("#refresh-service-status")?.addEventListener("click", ref
 document.querySelectorAll("[data-service-mode]")?.forEach((button) => {
   button.addEventListener("click", () => {
     const mode = setServiceMode(button.dataset.serviceMode);
+    serviceModeGuard.next();
     renderServiceModeControls();
     checkLauncherStatus();
     checkOcrHealth();
@@ -4866,6 +4927,16 @@ document.querySelector("#trending-list")?.addEventListener("click", (event) => {
 /* ---- 结论看板 ---- */
 
 const PROJECT_SLOTS_KEY = "gameops-project-slots-v2";
+
+function readProjectSlotStorage() {
+  let storage = null;
+  try {
+    storage = window.localStorage;
+  } catch (_error) {
+    return [];
+  }
+  return sanitizeProjectSlots(readStorageArray(storage, PROJECT_SLOTS_KEY));
+}
 
 function renderOverviewConclusion() {
   const container = document.querySelector("#conclusion-items");
@@ -4968,10 +5039,20 @@ function setupConfirmButtons() {
 
 function saveProjectToSlot(slotIndex) {
   const data = collectProjectState();
-  const stateList = JSON.parse(localStorage.getItem(PROJECT_SLOTS_KEY) || "[]");
+  const stateList = readProjectSlotStorage();
   stateList[slotIndex - 1] = data;
-  localStorage.setItem(PROJECT_SLOTS_KEY, JSON.stringify(stateList));
+  try {
+    window.localStorage.setItem(PROJECT_SLOTS_KEY, JSON.stringify(stateList));
+  } catch (_error) {
+    const status = document.querySelector("#overview-status");
+    if (status) {
+      status.textContent = "总览状态：保存失败，本机存储暂不可用。";
+      status.className = "source-status source-mock";
+    }
+    return;
+  }
   updateSlotName(slotIndex, data.controls?.["trending-game"] || "已保存");
+  document.querySelector(`.project-slot[data-slot="${slotIndex}"]`)?.classList.add("has-data");
   const status = document.querySelector("#overview-status");
   if (status) {
     status.textContent = "总览状态：已保存到槽位 " + slotIndex + "。";
@@ -4980,9 +5061,9 @@ function saveProjectToSlot(slotIndex) {
 }
 
 function loadProjectFromSlot(slotIndex) {
-  const stateList = JSON.parse(localStorage.getItem(PROJECT_SLOTS_KEY) || "[]");
+  const stateList = readProjectSlotStorage();
   const data = stateList[slotIndex - 1];
-  if (!data) {
+  if (!data || typeof data !== "object" || !data.controls || typeof data.controls !== "object") {
     const status = document.querySelector("#overview-status");
     if (status) {
       status.textContent = "总览状态：槽位 " + slotIndex + " 为空，请先保存项目。";
@@ -4990,7 +5071,16 @@ function loadProjectFromSlot(slotIndex) {
     }
     return;
   }
-  restoreProjectState(data);
+  try {
+    restoreProjectState(data);
+  } catch (error) {
+    const status = document.querySelector("#overview-status");
+    if (status) {
+      status.textContent = `总览状态：槽位 ${slotIndex} 数据损坏，${error.message || "无法载入"}。`;
+      status.className = "source-status source-mock";
+    }
+    return;
+  }
   const status = document.querySelector("#overview-status");
   if (status) {
     const name = data.controls?.["trending-game"] || "已保存项目";
@@ -5005,11 +5095,17 @@ function updateSlotName(slotIndex, name) {
 }
 
 function refreshSlotNames() {
-  const stateList = JSON.parse(localStorage.getItem(PROJECT_SLOTS_KEY) || "[]");
-  stateList.forEach((data, idx) => {
-    const name = data.controls?.["trending-game"] || data.controls?.["version-game"] || ("槽位 " + (idx + 1));
-    const el = document.querySelector("#slot-name-" + (idx + 1));
-    if (el) el.textContent = name;
+  const stateList = readProjectSlotStorage();
+  document.querySelectorAll(".project-slot").forEach((slot) => {
+    const idx = Number(slot.dataset.slot);
+    const data = stateList[idx - 1];
+    const el = document.querySelector("#slot-name-" + idx);
+    slot.classList.toggle("has-data", Boolean(data && typeof data === "object"));
+    if (el) {
+      el.textContent = data
+        ? data.controls?.["trending-game"] || data.controls?.["version-game"] || ("槽位 " + idx)
+        : "空";
+    }
   });
 }
 
@@ -5099,7 +5195,26 @@ function renderReviewGrade() {
   }
 }
 
-/* ---- 达人效果回填 ---- */
+function parseCreatorBackfill(input) {
+  return splitLines(input).map((line) => {
+    const separatorIndex = line.search(/[:：]/);
+    if (separatorIndex <= 0) return null;
+    const name = line.slice(0, separatorIndex).trim();
+    const values = line.slice(separatorIndex + 1).split(/[\/／,，\t]+/).map((value) => value.trim());
+    if (!name || values.length < 2) return null;
+    return {
+      name,
+      avgViews: parseMetricValue(values[0]),
+      engagementRate: parseRateValue(values[1]),
+      commentQuality: values[2] || "",
+      conversionRate: values[3] || ""
+    };
+  }).filter(Boolean);
+}
+
+function creatorNameKey(name) {
+  return String(name || "").replace(/\s+/g, "").toLowerCase();
+}
 
 function recalcWithBackfill() {
   const backfillText = document.querySelector("#creator-backfill")?.value?.trim();
@@ -5112,18 +5227,50 @@ function recalcWithBackfill() {
     return;
   }
 
+  const backfills = parseCreatorBackfill(backfillText);
+  if (!backfills.length) {
+    if (status) {
+      status.textContent = "达人来源：未识别有效回填数据，请使用「达人名：实际播放/互动率/评论质量/转化」格式。";
+      status.className = "source-status source-mock";
+    }
+    return;
+  }
+
+  if (!currentCreatorRows.length) analyzeCreators();
+  const backfillMap = new Map(backfills.map((item) => [creatorNameKey(item.name), item]));
+  let matched = 0;
+  const updatedRows = currentCreatorRows.map((row) => {
+    const patch = backfillMap.get(creatorNameKey(row.name));
+    if (!patch) return row;
+    matched += 1;
+    return {
+      ...row,
+      ...(patch.avgViews ? { avgViews: patch.avgViews } : {}),
+      ...(patch.engagementRate ? { engagementRate: patch.engagementRate } : {}),
+      ...(patch.commentQuality ? { commentQuality: patch.commentQuality } : {}),
+      ...(patch.conversionRate ? { conversionRate: patch.conversionRate } : {}),
+      dataSource: "backfill"
+    };
+  });
+
+  if (!matched) {
+    if (status) {
+      status.textContent = "达人来源：回填格式正确，但没有匹配到已导入的达人姓名。";
+      status.className = "source-status source-mock";
+    }
+    return;
+  }
+
   if (status) {
-    status.textContent = "达人来源：正在按回填数据重新计算性价比…";
+    status.textContent = `达人来源：已匹配 ${matched}/${backfills.length} 位达人，正在按实测数据重新计算性价比…`;
     status.className = "source-status";
   }
-  analyzeCreators();
+  analyzeCreators(updatedRows);
   if (status) {
-    status.textContent = "达人来源：已按回填数据更新评分和性价比排序。";
-    status.className = "source-status source-real";
+    status.textContent = `达人来源：已按 ${matched} 位达人实测数据更新评分和性价比排序。`;
+    status.className = "source-real";
   }
 }
-
-/* ---- 口径说明事件绑定 ---- */
 
 document.querySelector("#caliber-trigger")?.addEventListener("click", openCaliberPanel);
 document.querySelector("#caliber-close")?.addEventListener("click", closeCaliberPanel);
@@ -5150,25 +5297,15 @@ document.querySelector("#refresh-conclusion")?.addEventListener("click", () => {
 /* ---- 项目槽位 ---- */
 
 document.querySelectorAll(".project-slot").forEach((slot) => {
-  slot.addEventListener("click", () => {
+  slot.querySelector(".slot-save")?.addEventListener("click", (event) => {
+    event.stopPropagation();
     const idx = Number(slot.dataset.slot);
-    if (!idx) return;
-    if (slot.classList.contains("has-data")) {
-      loadProjectFromSlot(idx);
-    } else {
-      const status = document.querySelector("#overview-status");
-      if (status) {
-        status.textContent = "总览状态：槽位 " + idx + " 为空，请先保存项目。";
-        status.className = "source-status source-mock";
-      }
-    }
+    if (idx) saveProjectToSlot(idx);
   });
-  slot.addEventListener("contextmenu", (e) => {
-    e.preventDefault();
+  slot.querySelector(".slot-load")?.addEventListener("click", (event) => {
+    event.stopPropagation();
     const idx = Number(slot.dataset.slot);
-    if (!idx) return;
-    saveProjectToSlot(idx);
-    slot.classList.add("has-data");
+    if (idx) loadProjectFromSlot(idx);
   });
 });
 
