@@ -52,7 +52,7 @@ scripts/            构建与启动器安装脚本
 macos-launcher/     macOS URL Scheme 启动器模板
 ```
 
-页面支持「本地模式 / 线上模式」切换：本地模式请求 `127.0.0.1` 服务，线上模式请求相对路径 `/api/ocr`、`/api/hotspot`、`/api/comment`。
+页面支持「本地模式 / 线上模式」切换：本地模式请求 `127.0.0.1` 服务，线上模式请求相对路径 `/api/ocr`、`/api/hotspot`、`/api/comment`、`/api/llm`。
 
 ## 快速开始
 
@@ -62,9 +62,13 @@ macos-launcher/     macOS URL Scheme 启动器模板
 node start-demo.js
 ```
 
-脚本会检查并启动热点、评论、OCR 三个服务和本地控制进程（8793），然后自动打开工作台页面。`Control + C` 结束。
+脚本会检查并启动热点、评论、OCR、AI 增强四个服务和本地控制进程（8793），然后自动打开工作台页面。`Control + C` 结束。
 
 也可以在网页里一键启动：首次执行一次 `npm run launcher:install` 安装 macOS 启动器，之后页面按钮通过 `gameops://start` / `gameops://restart` 两个固定动作唤起服务。启动器不执行网页传入的任意命令。
+
+安装器会把运行脚本和当前 `.env` 复制到 `~/Library/Application Support/GameOpsLauncher/runtime`，其中 `.env` 权限设为仅当前用户可读写。修改脚本或 `.env` 后需重新执行一次 `npm run launcher:install`，再点击页面的“重启本地服务”。
+
+可用 `npm run launcher:check` 检查已安装运行快照是否与当前源码一致。
 
 改动代码后强制重启：
 
@@ -83,14 +87,59 @@ node restart-demo.js
 | 平台 | 环境变量 | 配置方式 | 无配置时行为 |
 |---|---|---|---|
 | B站 | `BILIBILI_COOKIE` | `BILIBILI_COOKIE='SESSDATA=...; bili_jct=...' node start-demo.js` | 搜索接口可能返回 412，自动降级样例数据 |
-| 抖音 | `DOUYIN_COOKIE` | 平台接口限制严格，暂不支持公开 API 抓取 | 始终使用样例数据 |
-| 小红书 | `XIAOHONGSHU_COOKIE` | 平台接口限制严格，暂不支持公开 API 抓取 | 始终使用样例数据 |
+| 抖音 | `DOUYIN_PROVIDER_URL` | 连接已登录的只读插件或自建 HTTP 提供器 | 未配置时使用样例数据 |
+| 小红书 | `XIAOHONGSHU_PROVIDER_URL` | 连接 OpenCLI、xiaohongshu-mcp 桥接服务或自建提供器 | 未配置时使用样例数据 |
 
 Cookie 只在本地服务进程中传递，不会写入页面。页面默认开启「失败时样例兜底」，真实接口风控或服务不可用时自动降级，保证演示链路完整。
 
+抖音和小红书不内置绕过验证码、浏览器指纹或逆向签名逻辑。外部提供器应只读取当前账号有权查看的公开内容，并返回 `.env.example` 中说明的统一 JSON 结构；远程地址必须使用 HTTPS，本机桥接服务可以使用 `127.0.0.1`。
+
+推荐接入顺序：小红书桌面演示优先使用 OpenCLI，服务器优先使用 `xiaohongshu-mcp`；抖音使用开放平台或已登录的只读采集服务。将桥接服务暴露为统一 HTTP 查询接口后，分别填入 `XIAOHONGSHU_PROVIDER_URL` 或 `DOUYIN_PROVIDER_URL`。未配置、登录失效或触发验证码时，页面会明确标记为样例兜底，不会冒充真实数据。
+
+### 接入 xiaohongshu-mcp
+
+`xiaohongshu-mcp` 是 MCP 服务，不能直接填到 `XIAOHONGSHU_PROVIDER_URL`。项目提供了本机 bridge，将固定的 `search_feeds` 工具转换成热点服务需要的 HTTP JSON。
+
+先确保 `mcporter list` 里存在名为 `xiaohongshu` 的 MCP 服务，然后检查登录：
+
+官方二进制默认提供 `http://127.0.0.1:18060/mcp`，可以这样注册到 `mcporter`：
+
+```bash
+mcporter config add xiaohongshu \
+  http://127.0.0.1:18060/mcp \
+  --transport http \
+  --scope home
+mcporter list xiaohongshu --schema
+```
+
+```bash
+mcporter call 'xiaohongshu.check_login_status()' --timeout 120000
+# 未登录时按工具返回的二维码流程登录
+mcporter call 'xiaohongshu.get_login_qrcode()' --timeout 120000
+```
+
+启动桥接服务：
+
+```bash
+cd "/Users/chenzixun/Documents/Codex/2026-05-22/new-chat"
+cp .env.example .env
+# .env 中确认：XHS_MCP_SERVER=xiaohongshu
+# 如果网页启动时提示找不到 mcporter，填入绝对路径：
+# MCPORTER_BIN=/Users/chenzixun/.npm-global/bin/mcporter
+npm run start:xhs-bridge
+```
+
+另开终端，设置 GameOps 使用本机 bridge：
+
+```bash
+XIAOHONGSHU_PROVIDER_URL=http://127.0.0.1:8805/search npm run restart
+```
+
+如果已经把 `XIAOHONGSHU_PROVIDER_URL=http://127.0.0.1:8805/search` 写入 `.env`，主启动器会自动拉起 bridge；重新执行 `npm run launcher:install` 后，点击网页“重启本地服务”即可。bridge 只监听 `127.0.0.1`，只调用 `search_feeds`，不会把 MCP 工具暴露到公网。搜索结果会由 GameOps 再次按时间范围过滤；没有 `publishedAt` 的结果会被过滤掉，避免旧内容混入今日榜单。
+
 ## 线上部署
 
-线上模式使用 Nginx 托管静态文件，PM2 常驻运行三个 Node 服务：
+线上模式使用 Nginx 托管静态文件，PM2 常驻运行四个 Node 服务：
 
 | 页面请求 | 反向代理目标 |
 |---|---|
@@ -116,6 +165,7 @@ Nginx 配置见 `nginx.conf.example` / `nginx-https.conf.example`（含 API 限�
 curl -fsS http://example.com/api/hotspot/health
 curl -fsS http://example.com/api/comment/health
 curl -fsS http://example.com/api/ocr/health
+curl -fsS http://example.com/api/llm/health
 ```
 
 ## 安全设计

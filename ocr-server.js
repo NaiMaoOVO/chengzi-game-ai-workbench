@@ -1,10 +1,12 @@
 const http = require("node:http");
+require("./lib/env-file").loadProjectEnv(__dirname);
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const crypto = require("node:crypto");
 const { spawn } = require("node:child_process");
 const https = require("node:https");
+const { createRateLimiter } = require("./lib/http-guards");
 
 const PORT = Number(process.env.PORT) || 8787;
 const MAX_UPLOAD_BYTES = 12 * 1024 * 1024;
@@ -17,7 +19,11 @@ const OCR_ALLOW_INSECURE_REMOTE = process.env.OCR_ALLOW_INSECURE_REMOTE === "tru
 const ALLOWED_ORIGINS = new Set((process.env.ALLOWED_ORIGIN || "null,http://localhost:3000,http://localhost:5173,http://localhost:8793,http://127.0.0.1:3000,http://127.0.0.1:5173,http://127.0.0.1:8793").split(",").map((value) => value.trim()).filter(Boolean));
 const RATE_LIMIT_WINDOW_MS = 60 * 1000;
 const RATE_LIMIT_MAX = Number(process.env.OCR_RATE_LIMIT_MAX) || 30;
-const rateLimits = new Map();
+const rateLimiter = createRateLimiter({
+  windowMs: RATE_LIMIT_WINDOW_MS,
+  max: RATE_LIMIT_MAX,
+  trustProxy: process.env.TRUST_PROXY === "1"
+});
 let activeOcrJobs = 0;
 
 if (!["macos", "remote"].includes(OCR_PROVIDER)) {
@@ -84,13 +90,18 @@ function providerStatus() {
 function corsHeaders(request) {
   const origin = request.headers.origin;
   const allowAll = ALLOWED_ORIGINS.has("*");
-  const allowed = allowAll || !origin || ALLOWED_ORIGINS.has(origin);
+  const allowed = allowAll || !origin || origin === "null" || ALLOWED_ORIGINS.has(origin);
   return {
     "Access-Control-Allow-Origin": allowed ? (allowAll ? "*" : (origin || "null")) : "null",
     "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
     "Access-Control-Allow-Headers": "Content-Type",
     "Vary": "Origin"
   };
+}
+
+function isOriginAllowed(request) {
+  const origin = request.headers.origin;
+  return ALLOWED_ORIGINS.has("*") || !origin || origin === "null" || ALLOWED_ORIGINS.has(origin);
 }
 
 function sendJson(request, response, statusCode, payload, extraHeaders = {}) {
@@ -101,28 +112,9 @@ function sendJson(request, response, statusCode, payload, extraHeaders = {}) {
   });
   response.end(JSON.stringify(payload));
 }
-
-function isOriginAllowed(request) {
-  return ALLOWED_ORIGINS.has("*") || !request.headers.origin || ALLOWED_ORIGINS.has(request.headers.origin);
-}
-
 function checkRateLimit(request) {
-  const now = Date.now();
-  const forwarded = String(request.headers["x-forwarded-for"] || "").split(",")[0].trim();
-  const ip = forwarded || request.socket.remoteAddress || "unknown";
-  const current = rateLimits.get(ip);
-  if (!current || current.resetAt <= now) {
-    rateLimits.set(ip, { count: 1, resetAt: now + RATE_LIMIT_WINDOW_MS });
-    return { allowed: true };
-  }
-  current.count += 1;
-  return {
-    allowed: current.count <= RATE_LIMIT_MAX,
-    retryAfter: Math.max(1, Math.ceil((current.resetAt - now) / 1000))
-  };
+  return rateLimiter(request);
 }
-
-/* ---- 数字解析：处理各种格式 ---- */
 
 function parseChineseNumber(rawValue) {
   if (!rawValue) return 0;
@@ -278,86 +270,62 @@ function parseMetrics(text) {
     impressions: pickMetric(text, METRIC_ALIASES.impressions.labels),
     entries: pickMetric(text, METRIC_ALIASES.entries.labels)
   };
-
-  // 附加元数据，帮助前端调试
   result._meta = {
     recognizedCount: Object.values(result).filter((v) => v > 0).length,
     totalLines: text.split(/[\n\r]+/).filter(Boolean).length,
     sampleText: text.slice(0, 300)
   };
-
   return result;
 }
 
-/* ---- OCR 执行 ---- */
-
 function runMacOcr(imagePath) {
   return new Promise((resolve, reject) => {
-    const child = spawn("swift", [MACOS_SCRIPT_PATH, imagePath], {
-      cwd: __dirname,
-      timeout: OCR_TIMEOUT_MS
-    });
-
+    const child = spawn("swift", [MACOS_SCRIPT_PATH, imagePath], { cwd: __dirname });
+    const maxOutputBytes = 1024 * 1024;
     let stdout = "";
     let stderr = "";
-
+    let settled = false;
+    let killTimer = null;
+    const deadlineTimer = setTimeout(() => {
+      child.kill("SIGTERM");
+      killTimer = setTimeout(() => child.kill("SIGKILL"), 2000);
+    }, OCR_TIMEOUT_MS);
+    const finish = (error, value) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(deadlineTimer);
+      if (killTimer) clearTimeout(killTimer);
+      error ? reject(error) : resolve(value);
+    };
     child.stdout.on("data", (chunk) => {
-      stdout += chunk.toString();
+      if (Buffer.byteLength(stdout) < maxOutputBytes) stdout += chunk.toString("utf8").slice(0, maxOutputBytes - Buffer.byteLength(stdout));
     });
-
     child.stderr.on("data", (chunk) => {
-      stderr += chunk.toString();
+      if (Buffer.byteLength(stderr) < maxOutputBytes) stderr += chunk.toString("utf8").slice(0, maxOutputBytes - Buffer.byteLength(stderr));
     });
-
-    child.on("error", (err) => {
-      reject(new Error(`swift 启动失败: ${err.message}`));
-    });
-
-    child.on("close", (code) => {
+    child.on("error", (err) => finish(new Error(`swift 启动失败: ${err.message}`)));
+    child.on("close", (code, signal) => {
       if (code !== 0) {
-        reject(new Error(stderr.trim() || `OCR 进程退出码 ${code}`));
+        finish(new Error(stderr.trim() || (signal ? `OCR 进程被终止（${signal}）` : `OCR 进程退出码 ${code}`)));
         return;
       }
-
-      try {
-        resolve(JSON.parse(stdout));
-      } catch (error) {
-        reject(new Error(`OCR 输出解析失败: ${stdout.slice(0, 200)}`));
-      }
+      try { finish(null, JSON.parse(stdout)); }
+      catch (_error) { finish(new Error(`OCR 输出解析失败: ${stdout.slice(0, 200)}`)); }
     });
   });
 }
 
 function runRemoteOcr(buffer, contentType) {
   return new Promise((resolve, reject) => {
-    if (!process.env.OCR_REMOTE_URL) {
-      reject(new Error("OCR_REMOTE_URL 未配置"));
-      return;
-    }
-
+    if (!process.env.OCR_REMOTE_URL) return reject(new Error("OCR_REMOTE_URL 未配置"));
     let url;
-    try {
-      url = new URL(process.env.OCR_REMOTE_URL);
-    } catch {
-      reject(new Error("OCR_REMOTE_URL 无效"));
-      return;
-    }
+    try { url = new URL(process.env.OCR_REMOTE_URL); }
+    catch (_error) { return reject(new Error("OCR_REMOTE_URL 无效")); }
     const localHttp = url.protocol === "http:" && ["127.0.0.1", "localhost"].includes(url.hostname);
-    if (url.protocol !== "https:" && !localHttp && !OCR_ALLOW_INSECURE_REMOTE) {
-      reject(new Error("远端 OCR 必须使用 HTTPS"));
-      return;
-    }
-
+    if (url.protocol !== "https:" && !localHttp && !OCR_ALLOW_INSECURE_REMOTE) return reject(new Error("远端 OCR 必须使用 HTTPS"));
     const transport = url.protocol === "https:" ? https : http;
-    const headers = {
-      "Content-Type": contentType,
-      "Content-Length": buffer.length,
-      "Accept": "application/json"
-    };
-    if (process.env.OCR_REMOTE_API_KEY) {
-      headers.Authorization = `Bearer ${process.env.OCR_REMOTE_API_KEY}`;
-    }
-
+    const headers = { "Content-Type": contentType, "Content-Length": buffer.length, "Accept": "application/json" };
+    if (process.env.OCR_REMOTE_API_KEY) headers.Authorization = `Bearer ${process.env.OCR_REMOTE_API_KEY}`;
     const remoteRequest = transport.request(url, { method: "POST", headers }, (remoteResponse) => {
       const chunks = [];
       let received = 0;
@@ -371,23 +339,17 @@ function runRemoteOcr(buffer, contentType) {
       });
       remoteResponse.on("end", () => {
         const body = Buffer.concat(chunks).toString("utf8");
-        if (remoteResponse.statusCode < 200 || remoteResponse.statusCode >= 300) {
-          reject(new Error(`远端 OCR 返回 HTTP ${remoteResponse.statusCode}`));
-          return;
-        }
+        if (remoteResponse.statusCode < 200 || remoteResponse.statusCode >= 300) return reject(new Error(`远端 OCR 返回 HTTP ${remoteResponse.statusCode}`));
         try {
           const result = JSON.parse(body);
           if (typeof result.text !== "string") throw new Error("响应缺少 text 字段");
           resolve(result);
-        } catch (error) {
-          reject(new Error(`远端 OCR 响应无效: ${error.message}`));
-        }
+        } catch (error) { reject(new Error(`远端 OCR 响应无效: ${error.message}`)); }
       });
       remoteResponse.on("error", reject);
     });
-    remoteRequest.setTimeout(OCR_TIMEOUT_MS, () => {
-      remoteRequest.destroy(new Error(`远端 OCR 超时（${OCR_TIMEOUT_MS}ms）`));
-    });
+    const deadlineTimer = setTimeout(() => remoteRequest.destroy(new Error(`远端 OCR 超时（${OCR_TIMEOUT_MS}ms）`)), OCR_TIMEOUT_MS);
+    remoteRequest.on("close", () => clearTimeout(deadlineTimer));
     remoteRequest.on("error", reject);
     remoteRequest.end(buffer);
   });
@@ -416,6 +378,12 @@ function detectImage(buffer) {
 const server = http.createServer((request, response) => {
   if (!isOriginAllowed(request)) {
     sendJson(request, response, 403, { error: "origin not allowed" });
+    return;
+  }
+
+  const rateLimit = checkRateLimit(request);
+  if (!rateLimit.allowed) {
+    sendJson(request, response, 429, { error: "rate_limited" }, { "Retry-After": String(rateLimit.retryAfter) });
     return;
   }
 
@@ -460,12 +428,6 @@ const server = http.createServer((request, response) => {
     return;
   }
 
-  const rateLimit = checkRateLimit(request);
-  if (!rateLimit.allowed) {
-    sendJson(request, response, 429, { error: "too many requests" }, { "Retry-After": rateLimit.retryAfter });
-    return;
-  }
-
   const declaredType = String(request.headers["content-type"] || "").split(";", 1)[0].trim().toLowerCase();
   const acceptedTypes = new Set([
     "image/jpeg", "image/jpg", "image/png", "image/gif", "image/heic", "image/heif", "image/webp"
@@ -490,6 +452,7 @@ const server = http.createServer((request, response) => {
     if (received > MAX_UPLOAD_BYTES) {
       uploadRejected = true;
       sendJson(request, response, 413, { error: `图片不能超过 ${MAX_UPLOAD_BYTES / 1024 / 1024}MB` });
+      request.resume();
       return;
     }
     chunks.push(chunk);
@@ -509,7 +472,6 @@ const server = http.createServer((request, response) => {
     }
 
     const imagePath = path.join(os.tmpdir(), `gameops-ocr-${crypto.randomUUID()}${image.ext}`);
-
     activeOcrJobs += 1;
     try {
       let ocrResult;
@@ -520,11 +482,9 @@ const server = http.createServer((request, response) => {
         ocrResult = await runMacOcr(imagePath);
       }
       const text = ocrResult.text || "";
-      const metrics = parseMetrics(text);
-
       sendJson(request, response, 200, {
         text,
-        metrics,
+        metrics: parseMetrics(text),
         imageFormat: image.ext,
         provider: OCR_PROVIDER
       });
@@ -542,7 +502,7 @@ const server = http.createServer((request, response) => {
   });
 });
 
-server.requestTimeout = OCR_TIMEOUT_MS;
+server.requestTimeout = Math.max(OCR_TIMEOUT_MS + 5000, 60000);
 server.headersTimeout = Math.min(OCR_TIMEOUT_MS, 60000);
 
 server.listen(PORT, "127.0.0.1", () => {

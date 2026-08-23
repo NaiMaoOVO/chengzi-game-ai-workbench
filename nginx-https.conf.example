@@ -35,6 +35,7 @@ server {
         try_files $uri $uri/ /index.html;
     }
 
+    location = /api/hotspot/probe { return 404; }
     location /api/hotspot/ {
         limit_req zone=gameops_api burst=10 nodelay;
         limit_conn gameops_conn 10;
@@ -44,6 +45,7 @@ server {
         proxy_read_timeout 60s;
     }
 
+    location = /api/comment/probe { return 404; }
     location /api/comment/ {
         limit_req zone=gameops_api burst=10 nodelay;
         limit_conn gameops_conn 10;

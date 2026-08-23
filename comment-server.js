@@ -1,5 +1,8 @@
 const http = require("node:http");
+require("./lib/env-file").loadProjectEnv(__dirname);
 const crypto = require("node:crypto");
+const { parseRequestUrl } = require("./lib/safe-request-url");
+const { createRateLimiter } = require("./lib/http-guards");
 
 const PORT = Number(process.env.COMMENT_PORT || 8791);
 const VIDEO_INFO_URL = "https://api.bilibili.com/x/web-interface/view";
@@ -14,7 +17,11 @@ const CACHE_TTL_MS = Math.max(0, Number(process.env.CACHE_TTL_MS || 30000));
 const UPSTREAM_TIMEOUT_MS = Math.max(1000, Number(process.env.UPSTREAM_TIMEOUT_MS || 8000));
 const UPSTREAM_RETRIES = Math.max(0, Math.min(3, Number(process.env.UPSTREAM_RETRIES || 2)));
 const SESSION_COOKIE = getBilibiliCookieValue();
-const rateLimits = new Map();
+const allowRateLimitedRequest = createRateLimiter({
+  windowMs: RATE_LIMIT_WINDOW_MS,
+  max: RATE_LIMIT_MAX,
+  trustProxy: process.env.TRUST_PROXY === "1"
+});
 const responseCache = new Map();
 
 function randomHex(size) {
@@ -35,7 +42,6 @@ function getBilibiliCookieValue() {
 function getBilibiliCookie() {
   return BILIBILI_COOKIE || SESSION_COOKIE;
 }
-
 function getBilibiliHeaders() {
   return {
     "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
@@ -51,9 +57,10 @@ function getBilibiliHeaders() {
 
 function corsHeaders(request) {
   const origin = request.headers.origin;
-  if (!origin || (!ALLOWED_ORIGINS.has("*") && !ALLOWED_ORIGINS.has(origin))) return {};
+  const nullOrigin = origin === "null";
+  if (!origin || (!nullOrigin && !ALLOWED_ORIGINS.has("*") && !ALLOWED_ORIGINS.has(origin))) return {};
   return {
-    "Access-Control-Allow-Origin": ALLOWED_ORIGINS.has("*") ? "*" : origin,
+    "Access-Control-Allow-Origin": ALLOWED_ORIGINS.has("*") ? "*" : (nullOrigin ? "null" : origin),
     "Access-Control-Allow-Methods": "GET, OPTIONS",
     "Access-Control-Allow-Headers": "Content-Type",
     "Vary": "Origin"
@@ -70,25 +77,7 @@ function sendJson(request, response, statusCode, payload, extraHeaders = {}) {
 }
 
 function allowRequest(request) {
-  const now = Date.now();
-  const forwarded = String(request.headers["x-forwarded-for"] || "").split(",")[0].trim();
-  const key = forwarded || request.socket.remoteAddress || "unknown";
-  const current = rateLimits.get(key);
-  if (!current || now >= current.resetAt) {
-    if (rateLimits.size > 1000) {
-      for (const [ip, entry] of rateLimits) {
-        if (entry.resetAt <= now) rateLimits.delete(ip);
-      }
-    }
-    rateLimits.set(key, { count: 1, resetAt: now + RATE_LIMIT_WINDOW_MS });
-    return true;
-  }
-  current.count += 1;
-  return current.count <= RATE_LIMIT_MAX;
-}
-
-function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+  return allowRateLimitedRequest(request).allowed;
 }
 
 async function fetchWithRetry(url, options = {}) {
@@ -183,8 +172,11 @@ async function fetchVideoInfo({ bvid, aid }) {
 async function fetchComments(aid, limit) {
   const replies = [];
   let next = 0;
+  let pages = 0;
+  const maxPages = Math.ceil(limit / 20) + 2;
 
-  while (replies.length < limit) {
+  while (replies.length < limit && pages < maxPages) {
+    pages += 1;
     const params = new URLSearchParams({
       type: "1",
       oid: String(aid),
@@ -203,6 +195,7 @@ async function fetchComments(aid, limit) {
 
     const cursor = payload.data?.cursor;
     if (!cursor || cursor.is_end || !pageReplies.length) break;
+    if (cursor.next === next || cursor.next === undefined || cursor.next === null) break;
     next = cursor.next;
   }
 
@@ -240,7 +233,11 @@ async function fetchCommentsFallback(aid, limit) {
 }
 
 async function handleComments(request, response) {
-  const url = new URL(request.url, `http://${request.headers.host}`);
+  const url = parseRequestUrl(request);
+  if (!url) {
+    sendJson(request, response, 400, { error: "invalid_request_url" });
+    return;
+  }
   const input = String(url.searchParams.get("url") || url.searchParams.get("bvid") || url.searchParams.get("aid") || "").trim();
   if (!input || input.length > 500) {
     sendJson(request, response, 400, { error: "视频链接或编号长度不合法" });
@@ -292,7 +289,11 @@ async function handleComments(request, response) {
 }
 
 async function handleProbe(request, response) {
-  const url = new URL(request.url, `http://${request.headers.host}`);
+  const url = parseRequestUrl(request);
+  if (!url) {
+    sendJson(request, response, 400, { ok: false, error: "invalid_request_url" });
+    return;
+  }
   const input = String(url.searchParams.get("url") || DEFAULT_PROBE_URL).trim();
   const limit = boundedInteger(url.searchParams.get("limit"), 1, 1, 3);
 

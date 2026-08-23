@@ -81,6 +81,7 @@ function renderLauncherOnlineMode(status) {
 }
 
 async function checkLauncherStatus() {
+  var modeGeneration = typeof serviceModeGuard !== "undefined" ? serviceModeGuard.current() : 0;
   var status = document.querySelector("#launcher-status");
   if (!status) return;
   if (renderLauncherOnlineMode(status)) return;
@@ -90,6 +91,7 @@ async function checkLauncherStatus() {
     var response = await fetch(LAUNCHER_SERVICE_URL + "/status");
     if (!response.ok) throw new Error("HTTP " + response.status);
     var data = await response.json();
+    if (typeof serviceModeGuard !== "undefined" && !serviceModeGuard.isCurrent(modeGeneration)) return;
     if (data.service !== "gameops-local-controller") throw new Error("服务身份不匹配");
     if (data.services && data.services.length) {
       var text = data.services.map(function(s) { return s.name + (s.running ? " ✅" : " ❌"); }).join(" / ");
@@ -97,6 +99,7 @@ async function checkLauncherStatus() {
       status.className = "source-status source-real";
     }
   } catch (error) {
+    if (typeof serviceModeGuard !== "undefined" && !serviceModeGuard.isCurrent(modeGeneration)) return;
     status.textContent = getLauncherOfflineMessage();
     status.className = "source-status source-mock";
   }

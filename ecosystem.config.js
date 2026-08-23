@@ -1,4 +1,5 @@
 const path = require("node:path");
+require("./lib/env-file").loadProjectEnv(__dirname);
 
 const cwd = __dirname;
 const allowedOrigin = process.env.ALLOWED_ORIGIN || "";
@@ -37,6 +38,11 @@ module.exports = {
     app("gameops-hotspot", "hotspot-server.js", {
       HOTSPOT_PORT: process.env.HOTSPOT_PORT || "8790",
       BILIBILI_COOKIE: process.env.BILIBILI_COOKIE || "",
+      DOUYIN_PROVIDER_URL: process.env.DOUYIN_PROVIDER_URL || "",
+      DOUYIN_PROVIDER_TOKEN: process.env.DOUYIN_PROVIDER_TOKEN || "",
+      XIAOHONGSHU_PROVIDER_URL: process.env.XIAOHONGSHU_PROVIDER_URL || "",
+      XIAOHONGSHU_PROVIDER_TOKEN: process.env.XIAOHONGSHU_PROVIDER_TOKEN || "",
+      PLATFORM_PROVIDER_TIMEOUT_MS: process.env.PLATFORM_PROVIDER_TIMEOUT_MS || "15000",
       RATE_LIMIT_MAX: process.env.RATE_LIMIT_MAX || "60",
       RATE_LIMIT_WINDOW_MS: process.env.RATE_LIMIT_WINDOW_MS || "60000",
       CACHE_TTL_MS: process.env.CACHE_TTL_MS || "60000",

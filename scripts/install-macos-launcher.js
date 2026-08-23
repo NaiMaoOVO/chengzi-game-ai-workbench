@@ -2,6 +2,7 @@ const { execFileSync } = require("node:child_process");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
+const { preserveRuntimeEnv, replaceDirectoryWithRollback } = require("../lib/launcher-runtime");
 
 const APP_NAME = "GameOpsLauncher.app";
 const BUNDLE_ID = "local.gameops.launcher";
@@ -12,7 +13,15 @@ const RUNTIME_FILES = [
   "comment-server.js",
   "ocr-server.js",
   "llm-server.js",
-  "ocr.swift"
+  "ocr.swift",
+  "xiaohongshu-bridge.js",
+  "lib/env-file.js",
+  "lib/hotspot-ranking.js",
+  "lib/platform-provider.js",
+  "lib/service-supervisor.js",
+  "lib/launcher-runtime.js",
+  "lib/safe-request-url.js",
+  "lib/http-guards.js"
 ];
 
 function fail(message) {
@@ -73,8 +82,12 @@ fs.rmSync(stagingPath, { recursive: true, force: true });
 fs.rmSync(runtimeStagingPath, { recursive: true, force: true });
 fs.mkdirSync(runtimeStagingPath, { recursive: true });
 for (const fileName of RUNTIME_FILES) {
-  fs.copyFileSync(path.join(projectPath, fileName), path.join(runtimeStagingPath, fileName));
+  const destination = path.join(runtimeStagingPath, fileName);
+  fs.mkdirSync(path.dirname(destination), { recursive: true });
+  fs.copyFileSync(path.join(projectPath, fileName), destination);
 }
+const envSource = path.join(projectPath, ".env");
+preserveRuntimeEnv(envSource, runtimePath, runtimeStagingPath);
 fs.writeFileSync(sourcePath, source, { mode: 0o600 });
 
 try {
@@ -117,10 +130,8 @@ try {
   execFileSync("/usr/bin/plutil", ["-lint", path.join(contentsPath, "Info.plist")], {
     stdio: "pipe"
   });
-  fs.rmSync(runtimePath, { recursive: true, force: true });
-  fs.renameSync(runtimeStagingPath, runtimePath);
-  fs.rmSync(appPath, { recursive: true, force: true });
-  fs.renameSync(stagingPath, appPath);
+  replaceDirectoryWithRollback(runtimePath, runtimeStagingPath);
+  replaceDirectoryWithRollback(appPath, stagingPath);
   if (process.env.GAMEOPS_LAUNCHER_SKIP_REGISTER !== "1") {
     execFileSync(
       "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister",

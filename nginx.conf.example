@@ -27,6 +27,7 @@ server {
     }
 
     location = /api/hotspot { return 301 /api/hotspot/; }
+    location = /api/hotspot/probe { return 404; }
     location /api/hotspot/ {
         limit_req zone=gameops_api burst=10 nodelay;
         limit_conn gameops_conn 10;
@@ -38,6 +39,7 @@ server {
     }
 
     location = /api/comment { return 301 /api/comment/; }
+    location = /api/comment/probe { return 404; }
     location /api/comment/ {
         limit_req zone=gameops_api burst=10 nodelay;
         limit_conn gameops_conn 10;

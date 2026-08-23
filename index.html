@@ -79,9 +79,9 @@
                 <button class="secondary-button" id="save-project-state" type="button">保存当前项目</button><div class="project-slots-panel">
   <strong>项目槽位</strong>
   <div class="project-slots">
-    <div class="project-slot" data-slot="1"><span class="slot-label">槽位 1</span><span class="slot-name" id="slot-name-1">空</span></div>
-    <div class="project-slot" data-slot="2"><span class="slot-label">槽位 2</span><span class="slot-name" id="slot-name-2">空</span></div>
-    <div class="project-slot" data-slot="3"><span class="slot-label">槽位 3</span><span class="slot-name" id="slot-name-3">空</span></div>
+    <div class="project-slot" data-slot="1"><span class="slot-label">槽位 1</span><span class="slot-name" id="slot-name-1">空</span><button class="slot-action slot-save" type="button" title="保存当前项目到槽位 1">保存</button><button class="slot-action slot-load" type="button" title="载入槽位 1 的项目">载入</button></div>
+    <div class="project-slot" data-slot="2"><span class="slot-label">槽位 2</span><span class="slot-name" id="slot-name-2">空</span><button class="slot-action slot-save" type="button" title="保存当前项目到槽位 2">保存</button><button class="slot-action slot-load" type="button" title="载入槽位 2 的项目">载入</button></div>
+    <div class="project-slot" data-slot="3"><span class="slot-label">槽位 3</span><span class="slot-name" id="slot-name-3">空</span><button class="slot-action slot-save" type="button" title="保存当前项目到槽位 3">保存</button><button class="slot-action slot-load" type="button" title="载入槽位 3 的项目">载入</button></div>
   </div>
 </div>
                 <button class="secondary-button" id="load-project-state" type="button">载入上次项目</button>
@@ -108,7 +108,7 @@
   <button class="secondary-button" type="button" id="refresh-conclusion">刷新结论</button>
   <span class="conclusion-tip">点击刷新后可按运营链路汇总最新判断。</span>
 </div>
-<hr class="conclusion-divider"/></div><p class="source-status" id="overview-status">总览状态：可载入案例或直接进入各模块操作。</p>
+<hr class="conclusion-divider"/></div><p class="source-status" id="overview-status" aria-live="polite">总览状态：可载入案例或直接进入各模块操作。</p>
               <div class="demo-check-panel" id="demo-check-panel" aria-live="polite"></div>
             </section>
 
@@ -121,7 +121,8 @@
                 <button class="secondary-button" id="restart-local-launcher" type="button">重启本地服务</button>
                 <button class="secondary-button" id="check-launcher" type="button">刷新状态</button>
               </div>
-              <p class="source-status" id="launcher-status">控制台状态：等待检查</p>
+              <p class="source-status" id="launcher-status" aria-live="polite">控制台状态：等待检查</p>
+              <p class="runtime-mode-badge" id="runtime-mode-badge">运行环境：检测中…</p>
             </section>
 
             <section class="service-status-panel" aria-label="本地服务状态">
@@ -178,15 +179,15 @@
                     </tr>
                     <tr>
                       <td><strong>抖音</strong></td>
-                      <td><code>DOUYIN_COOKIE</code></td>
-                      <td>平台接口限制严格，暂不支持公开 API 抓取</td>
-                      <td>始终使用样例兜底数据</td>
+                      <td><code>DOUYIN_PROVIDER_URL</code></td>
+                      <td>连接已登录的只读插件或自建 HTTP 提供器</td>
+                      <td>未配置时明确显示样例兜底</td>
                     </tr>
                     <tr>
                       <td><strong>小红书</strong></td>
-                      <td><code>XIAOHONGSHU_COOKIE</code></td>
-                      <td>平台接口限制严格，暂不支持公开 API 抓取</td>
-                      <td>始终使用样例兜底数据</td>
+                      <td><code>XIAOHONGSHU_PROVIDER_URL</code></td>
+                      <td>连接 OpenCLI、xiaohongshu-mcp 桥接服务或自建提供器</td>
+                      <td>未配置时明确显示样例兜底</td>
                     </tr>
                   </tbody>
                 </table>
@@ -449,10 +450,10 @@
                   活动方案/节点
                   <textarea id="stream-brief" rows="5">巅峰极速版本节点直播活动：围绕新车上线和赛季福利，邀请生态内 KOC 主播与跨品类 KOL 在抖音开播，通过福利口播、组队竞速、抽奖互动提升内容曝光和直播间承接。</textarea>
                 </label>
-                <div class="drop-zone" id="stream-drop-zone" tabindex="0">
+                <div class="drop-zone" id="stream-drop-zone" role="button" aria-label="选择或拖入主播直播数据截图" tabindex="0">
                   <strong>拖入主播直播数据截图</strong>
                   <span>支持多张图片；当前模式对应的 OCR 服务会识别活动场数据，识别后可继续校正 ACU、PCU、曝光量、进房人数和近期均值。</span>
-                  <input id="stream-screenshots" type="file" accept="image/*" multiple />
+                  <input id="stream-screenshots" type="file" accept="image/*" aria-label="选择主播直播数据截图" multiple />
                 </div>
                 <p class="muted-copy ocr-privacy-note">线上远程 OCR 会把原始截图发送给配置的第三方服务，请勿上传包含账号、收入或内部经营信息的敏感截图。</p>
                 <div class="ocr-server-status" id="ocr-server-status">
@@ -925,6 +926,9 @@
 </div>
 
     <script src="./utils.js"></script>
+    <script src="./lib/project-slots.js"></script>
+    <script src="./lib/ui-guards.js"></script>
+    <script src="./lib/safe-storage.js"></script>
     <script src="./launcher.js"></script>
     <script src="./app.js"></script>
 </body>

@@ -3,10 +3,11 @@ const fs = require("node:fs");
 const http = require("node:http");
 const os = require("node:os");
 const path = require("node:path");
+require("./lib/env-file").loadProjectEnv(__dirname);
 
 const ROOT = __dirname;
 const STATE_FILE = path.join(os.tmpdir(), `gameops-workbench-${process.getuid?.() || "user"}.json`);
-const CONTROLLER_PORT = 8793;
+const CONTROLLER_PORT = Number(process.env.CONTROLLER_PORT) || 8793;
 const START_SCRIPT = path.join(ROOT, "start-demo.js");
 
 function isProjectController(pid) {

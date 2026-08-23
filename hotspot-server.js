@@ -1,10 +1,19 @@
 const http = require("node:http");
 const crypto = require("node:crypto");
+require("./lib/env-file").loadProjectEnv(__dirname);
+const { calculateHeatScore, rankHotspots } = require("./lib/hotspot-ranking");
+const { fetchPlatformProvider } = require("./lib/platform-provider");
+const { parseRequestUrl } = require("./lib/safe-request-url");
 
 const PORT = Number(process.env.HOTSPOT_PORT || 8790);
 const BILIBILI_SEARCH_URL = "https://api.bilibili.com/x/web-interface/search/type";
 const BILIBILI_HTML_SEARCH_URL = "https://search.bilibili.com/video";
 const BILIBILI_COOKIE = process.env.BILIBILI_COOKIE || "";
+const DOUYIN_PROVIDER_URL = process.env.DOUYIN_PROVIDER_URL || "";
+const DOUYIN_PROVIDER_TOKEN = process.env.DOUYIN_PROVIDER_TOKEN || "";
+const XIAOHONGSHU_PROVIDER_URL = process.env.XIAOHONGSHU_PROVIDER_URL || "";
+const XIAOHONGSHU_PROVIDER_TOKEN = process.env.XIAOHONGSHU_PROVIDER_TOKEN || "";
+const PLATFORM_PROVIDER_TIMEOUT_MS = Math.max(1000, Number(process.env.PLATFORM_PROVIDER_TIMEOUT_MS) || 15000);
 const ALLOWED_ORIGINS = new Set((process.env.ALLOWED_ORIGIN || "null,http://localhost:3000,http://localhost:5173,http://localhost:8793,http://127.0.0.1:3000,http://127.0.0.1:5173,http://127.0.0.1:8793").split(",").map((value) => value.trim()).filter(Boolean));
 const RATE_LIMIT_WINDOW_MS = Math.max(1000, Number(process.env.RATE_LIMIT_WINDOW_MS || 60000));
 const RATE_LIMIT_MAX = Math.max(1, Number(process.env.RATE_LIMIT_MAX || 60));
@@ -46,9 +55,10 @@ function getBilibiliHeaders(referer = "https://search.bilibili.com/") {
 
 function corsHeaders(request) {
   const origin = request.headers.origin;
-  if (!origin || (!ALLOWED_ORIGINS.has("*") && !ALLOWED_ORIGINS.has(origin))) return {};
+  const nullOrigin = origin === "null";
+  if (!origin || (!nullOrigin && !ALLOWED_ORIGINS.has("*") && !ALLOWED_ORIGINS.has(origin))) return {};
   return {
-    "Access-Control-Allow-Origin": ALLOWED_ORIGINS.has("*") ? "*" : origin,
+    "Access-Control-Allow-Origin": ALLOWED_ORIGINS.has("*") ? "*" : (nullOrigin ? "null" : origin),
     "Access-Control-Allow-Methods": "GET, OPTIONS",
     "Access-Control-Allow-Headers": "Content-Type",
     "Vary": "Origin"
@@ -66,7 +76,9 @@ function sendJson(request, response, statusCode, payload, extraHeaders = {}) {
 
 function clientIp(request) {
   const forwarded = String(request.headers["x-forwarded-for"] || "").split(",")[0].trim();
-  return forwarded || request.socket.remoteAddress || "unknown";
+  const socketAddress = request.socket.remoteAddress || "unknown";
+  const localProxy = socketAddress === "127.0.0.1" || socketAddress === "::1" || socketAddress === "::ffff:127.0.0.1";
+  return localProxy && forwarded ? forwarded : socketAddress;
 }
 
 function allowRequest(request) {
@@ -196,17 +208,6 @@ function isWithinRange(item, range) {
   if (!pubdate) return false;
   const { begin, end } = rangeToSeconds(range);
   return pubdate >= begin && pubdate <= end + 300;
-}
-
-function calculateHeatScore(item) {
-  const views = Number(item.play || 0);
-  const danmaku = Number(item.video_review || 0);
-  const favorites = Number(item.favorites || 0);
-  const pubdate = normalizeTimestamp(item.pubdate || 0);
-  const ageHours = pubdate ? Math.max((Date.now() / 1000 - pubdate) / 3600, 1) : 24;
-  const freshness = Math.max(0.35, Math.min(1.2, 24 / ageHours));
-
-  return Math.round((views + danmaku * 8 + favorites * 12) * freshness);
 }
 
 function normalizeKeyword(value) {
@@ -405,9 +406,7 @@ function buildHotspotPayload(rawItems, game, limit, range, sourceLabel, notePref
   const fallbackItems = rangedRawItems
     .map((item, index) => toBilibiliVideo(item, index, game));
   const matchedItems = mappedItems.length ? mappedItems : fallbackItems;
-  const items = matchedItems
-    .sort((a, b) => (b.heat - a.heat) || (b.relevanceScore - a.relevanceScore))
-    .slice(0, limit)
+  const items = rankHotspots(matchedItems, limit)
     .map((item, index) => ({ ...item, rank: index + 1 }));
   const noteParts = [];
   if (outOfRangeCount > 0) {
@@ -481,15 +480,41 @@ function generateXiaohongshuSample(game, limit) {
 }
 
 async function fetchDouyinHotspots(game, limit, range) {
-  throw new Error("抖音真实热点需要登录 Cookie、微信/QQ登录或开放平台权限。可通过环境变量 DOUYIN_COOKIE 配置。");
+  if (!DOUYIN_PROVIDER_URL) {
+    throw new Error("抖音真实热点需要配置 DOUYIN_PROVIDER_URL，连接已登录的只读插件或自建提供器。");
+  }
+  return fetchPlatformProvider({
+    providerUrl: DOUYIN_PROVIDER_URL,
+    providerToken: DOUYIN_PROVIDER_TOKEN,
+    platform: "抖音",
+    game,
+    range,
+    limit,
+    timeoutMs: PLATFORM_PROVIDER_TIMEOUT_MS
+  });
 }
 
 async function fetchXiaohongshuHotspots(game, limit, range) {
-  throw new Error("小红书真实热点需要登录 Cookie或开放平台权限。可通过环境变量 XIAOHONGSHU_COOKIE 配置。");
+  if (!XIAOHONGSHU_PROVIDER_URL) {
+    throw new Error("小红书真实热点需要配置 XIAOHONGSHU_PROVIDER_URL，连接 OpenCLI、xiaohongshu-mcp 桥接服务或自建提供器。");
+  }
+  return fetchPlatformProvider({
+    providerUrl: XIAOHONGSHU_PROVIDER_URL,
+    providerToken: XIAOHONGSHU_PROVIDER_TOKEN,
+    platform: "小红书",
+    game,
+    range,
+    limit,
+    timeoutMs: PLATFORM_PROVIDER_TIMEOUT_MS
+  });
 }
 
 async function handleHotspots(request, response) {
-  const url = new URL(request.url, `http://${request.headers.host}`);
+  const url = parseRequestUrl(request);
+  if (!url) {
+    sendJson(request, response, 400, { error: "invalid_request_url" });
+    return;
+  }
   const platform = url.searchParams.get("platform") || "B站";
   const game = (url.searchParams.get("game") || "").trim();
   const limit = boundedInteger(url.searchParams.get("limit"), 10, 1, 20);
@@ -529,13 +554,17 @@ async function handleHotspots(request, response) {
         var now = Date.now();
         return { rank: i + 1, title: game + " " + ["新内容", "版本动态", "玩家讨论", "活动曝光", "评测对比"][i % 5], author: "UP主" + String.fromCharCode(65 + i), tag: sampleTags[i % sampleTags.length], heat: "模拟热度", views: 10000 - i * 800, danmaku: 100 - i * 8, url: "", source: "sample", trend: { icon: "▸", label: "常规", cls: "trend-flat" }, risk: { level: "正常", cls: "risk-low", advice: "该平台无公开抓取接口，使用模拟榜单演示。" }, publishedAt: now - i * 3600000, suffix: platform };
       });
-      result = { items: sampleItems, sourceLabel: platform + " 样例兜底", note: "" };
+      result = { platform, source: "mock", items: sampleItems, sourceLabel: platform + " 样例兜底", note: "该平台当前使用样例数据。" };
     }
     setCached(cacheKey, result);
     sendJson(request, response, 200, result, { "X-Cache": "MISS" });
   } catch (error) {
     var fallback = platform === "抖音" ? generateDouyinSample(game, limit) : platform === "小红书" ? generateXiaohongshuSample(game, limit) : [];
     sendJson(request, response, 200, {
+      platform,
+      source: "mock",
+      range,
+      updatedAt: new Date().toISOString(),
       items: fallback,
       sourceLabel: platform + " 样例兜底（真实抓取不可用）",
       note: error.message + "；已使用样例兜底榜单。"
@@ -544,7 +573,11 @@ async function handleHotspots(request, response) {
 }
 
 async function handleProbe(request, response) {
-  const url = new URL(request.url, `http://${request.headers.host}`);
+  const url = parseRequestUrl(request);
+  if (!url) {
+    sendJson(request, response, 400, { ok: false, error: "invalid_request_url" });
+    return;
+  }
   const game = (url.searchParams.get("game") || "原神").trim();
   const limit = boundedInteger(url.searchParams.get("limit"), 1, 1, 3);
 

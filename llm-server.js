@@ -1,6 +1,8 @@
 const http = require("node:http");
 const https = require("node:https");
 const crypto = require("node:crypto");
+const { createRateLimiter, stableSerialize, createSingleFlightCache } = require("./lib/http-guards");
+require("./lib/env-file").loadProjectEnv(__dirname);
 
 const PORT = Number(process.env.LLM_PORT) || 8794;
 const LLM_API_KEY = process.env.LLM_API_KEY || "";
@@ -14,8 +16,12 @@ const RATE_LIMIT_MAX = Number(process.env.LLM_RATE_LIMIT_MAX) || 20;
 const MAX_REQUEST_BYTES = 256 * 1024;
 
 const ALLOWED_ORIGINS = new Set((process.env.ALLOWED_ORIGIN || "null,http://localhost:3000,http://localhost:5173,http://localhost:8793,http://127.0.0.1:3000,http://127.0.0.1:5173,http://127.0.0.1:8793").split(",").map((value) => value.trim()).filter(Boolean));
-const rateLimits = new Map();
-const responseCache = new Map();
+const checkRateLimit = createRateLimiter({
+  windowMs: RATE_LIMIT_WINDOW_MS,
+  max: RATE_LIMIT_MAX,
+  trustProxy: process.env.TRUST_PROXY === "1"
+});
+const responseCache = createSingleFlightCache({ ttlMs: CACHE_TTL_MS, maxEntries: 200 });
 let activeJobs = 0;
 
 /* ---- 身份与 CORS ---- */
@@ -28,7 +34,7 @@ function providerStatus() {
 
 function corsHeaders(request) {
   const origin = request.headers.origin;
-  const allowed = ALLOWED_ORIGINS.has("*") || !origin || ALLOWED_ORIGINS.has(origin);
+  const allowed = ALLOWED_ORIGINS.has("*") || !origin || origin === "null" || ALLOWED_ORIGINS.has(origin);
   return {
     "Access-Control-Allow-Origin": allowed ? (ALLOWED_ORIGINS.has("*") ? "*" : (origin || "null")) : "null",
     "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
@@ -47,23 +53,12 @@ function sendJson(request, response, statusCode, payload, extraHeaders = {}) {
 }
 
 function isOriginAllowed(request) {
-  return ALLOWED_ORIGINS.has("*") || !request.headers.origin || ALLOWED_ORIGINS.has(request.headers.origin);
+  const origin = request.headers.origin;
+  return ALLOWED_ORIGINS.has("*") || !origin || origin === "null" || ALLOWED_ORIGINS.has(origin);
 }
 
-function checkRateLimit(request) {
-  const now = Date.now();
-  const forwarded = String(request.headers["x-forwarded-for"] || "").split(",")[0].trim();
-  const ip = forwarded || request.socket.remoteAddress || "unknown";
-  const current = rateLimits.get(ip);
-  if (!current || current.resetAt <= now) {
-    rateLimits.set(ip, { count: 1, resetAt: now + RATE_LIMIT_WINDOW_MS });
-    return { allowed: true };
-  }
-  current.count += 1;
-  return {
-    allowed: current.count <= RATE_LIMIT_MAX,
-    retryAfter: Math.max(1, Math.ceil((current.resetAt - now) / 1000))
-  };
+function checkRateLimitRequest(request) {
+  return checkRateLimit(request);
 }
 
 /* ---- Prompt 设计（服务端内聚） ---- */
@@ -189,27 +184,7 @@ function callUpstream(prompt, options) {
 /* ---- 缓存 ---- */
 
 function cacheKey(task, data) {
-  return crypto.createHash("sha256").update(`${task}::${JSON.stringify(data)}`).digest("hex");
-}
-
-function getCached(key) {
-  const entry = responseCache.get(key);
-  if (!entry || entry.expiresAt <= Date.now()) {
-    responseCache.delete(key);
-    return null;
-  }
-  return entry.payload;
-}
-
-function setCached(key, payload) {
-  if (CACHE_TTL_MS <= 0) return;
-  if (responseCache.size > 200) {
-    const now = Date.now();
-    for (const [k, entry] of responseCache) {
-      if (entry.expiresAt <= now) responseCache.delete(k);
-    }
-  }
-  responseCache.set(key, { payload, expiresAt: Date.now() + CACHE_TTL_MS });
+  return crypto.createHash("sha256").update(task + "::" + stableSerialize(data)).digest("hex");
 }
 
 /* ---- HTTP 服务 ---- */
@@ -239,7 +214,6 @@ const server = http.createServer((request, response) => {
     sendJson(request, response, 200, { ok: true, service: "gameops-llm" });
     return;
   }
-
   if (request.method !== "POST" || request.url !== "/generate") {
     sendJson(request, response, 404, { error: "not found" });
     return;
@@ -250,28 +224,26 @@ const server = http.createServer((request, response) => {
     sendJson(request, response, 503, { error: status.detail, llm: status.llm });
     return;
   }
-
   const rateLimit = checkRateLimit(request);
   if (!rateLimit.allowed) {
-    sendJson(request, response, 429, { error: "too many requests" }, { "Retry-After": rateLimit.retryAfter });
+    sendJson(request, response, 429, { error: "too many requests" }, { "Retry-After": String(rateLimit.retryAfter) });
     return;
   }
 
   const chunks = [];
   let received = 0;
   let rejected = false;
-
   request.on("data", (chunk) => {
     if (rejected) return;
     received += chunk.length;
     if (received > MAX_REQUEST_BYTES) {
       rejected = true;
       sendJson(request, response, 413, { error: "请求体过大" });
+      request.resume();
       return;
     }
     chunks.push(chunk);
   });
-
   request.on("end", async () => {
     if (rejected) return;
     let body;
@@ -281,13 +253,11 @@ const server = http.createServer((request, response) => {
       sendJson(request, response, 400, { error: "请求体不是合法 JSON" });
       return;
     }
-
-    const task = TASKS[body.task];
+    const task = Object.hasOwn(TASKS, body.task) ? TASKS[body.task] : null;
     if (!task) {
-      sendJson(request, response, 400, { error: `不支持的任务：${body.task}` });
+      sendJson(request, response, 400, { error: "不支持的任务" });
       return;
     }
-
     let prompt;
     try {
       prompt = task.build(body.data || {});
@@ -295,23 +265,20 @@ const server = http.createServer((request, response) => {
       sendJson(request, response, 400, { error: error.message });
       return;
     }
-
-    const key = cacheKey(body.task, body.data);
-    const cached = getCached(key);
+    const key = cacheKey(body.task, body.data || {});
+    const cached = responseCache.get(key);
     if (cached) {
       sendJson(request, response, 200, { task: body.task, result: cached, model: LLM_MODEL, cached: true });
       return;
     }
-
-    if (activeJobs >= LLM_MAX_CONCURRENCY) {
+    if (activeJobs >= LLM_MAX_CONCURRENCY && !responseCache.hasInFlight(key)) {
       sendJson(request, response, 503, { error: "LLM 服务繁忙，请稍后重试" }, { "Retry-After": "2" });
       return;
     }
-
-    activeJobs += 1;
+    const sharedInFlight = responseCache.hasInFlight(key);
+    if (!sharedInFlight) activeJobs += 1;
     try {
-      const result = await callUpstream(prompt, task);
-      setCached(key, result);
+      const result = await responseCache.getOrCreate(key, () => callUpstream(prompt, task));
       sendJson(request, response, 200, { task: body.task, result, model: LLM_MODEL, cached: false });
     } catch (error) {
       sendJson(request, response, 502, {
@@ -319,7 +286,7 @@ const server = http.createServer((request, response) => {
         hint: "请检查 LLM_API_KEY 是否有效、账户余额与 LLM_BASE_URL 网络"
       });
     } finally {
-      activeJobs -= 1;
+      if (!sharedInFlight) activeJobs -= 1;
     }
   });
 });
