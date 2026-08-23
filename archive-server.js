@@ -13,6 +13,10 @@ const ALLOWED_ORIGINS = new Set((process.env.ALLOWED_ORIGIN || "null,http://loca
 const RATE_LIMIT_WINDOW_MS = Math.max(1000, Number(process.env.RATE_LIMIT_WINDOW_MS || 60000));
 const RATE_LIMIT_MAX = Math.max(1, Number(process.env.ARCHIVE_RATE_LIMIT_MAX || 120));
 const checkRateLimit = createRateLimiter({ windowMs: RATE_LIMIT_WINDOW_MS, max: RATE_LIMIT_MAX, trustProxy: process.env.TRUST_PROXY === "1" });
+const MORNING_SCHEDULE = (process.env.MORNING_SCHEDULE || "09:00").trim();
+const MORNING_GAMES = (process.env.MORNING_GAMES || "").split(",").map((value) => value.trim()).filter(Boolean);
+const MORNING_PLATFORM = process.env.MORNING_PLATFORM || "B站";
+const HOTSPOT_SOURCE_URL = process.env.HOTSPOT_SOURCE_URL || "http://127.0.0.1:8790";
 
 function corsHeaders(request) {
   const origin = request.headers.origin;
@@ -23,6 +27,38 @@ function corsHeaders(request) {
     "Access-Control-Allow-Headers": "Content-Type",
     "Vary": "Origin"
   };
+}
+
+function dayKey(iso) {
+  return String(iso).slice(0, 10);
+}
+
+function computeStats(kind, days, game) {
+  const since = new Date(Date.now() - days * 86400000).toISOString();
+  const rows = game
+    ? db.prepare("SELECT payload, source, created_at FROM snapshots WHERE kind = ? AND game = ? AND created_at >= ? ORDER BY created_at ASC").all(kind, game, since)
+    : db.prepare("SELECT payload, source, created_at FROM snapshots WHERE kind = ? AND created_at >= ? ORDER BY created_at ASC").all(kind, since);
+  const byDay = new Map();
+  for (const row of rows) {
+    const key = dayKey(row.created_at);
+    if (!byDay.has(key)) byDay.set(key, { date: key, count: 0, realCount: 0, extra: { negative: 0, samples: 0, highRisk: 0, topics: 0 } });
+    const entry = byDay.get(key);
+    entry.count += 1;
+    if (row.source === "real") entry.realCount += 1;
+    const p = typeof row.payload === "string" ? JSON.parse(row.payload) : (row.payload || {});
+    if (kind === "feedback") {
+      const s = p.sentiment || {};
+      const total = (s["正向"] || 0) + (s["中性"] || 0) + (s["负向"] || 0);
+      entry.extra.samples += total;
+      entry.extra.negative += s["负向"] || 0;
+      const rk = p.risk || {};
+      entry.extra.highRisk += rk["高风险"] || 0;
+    }
+    if (kind === "trending" || kind === "morning-trending") {
+      entry.extra.topics += Array.isArray(p.topics) ? p.topics.length : 0;
+    }
+  }
+  return [...byDay.values()].sort((a, b) => a.date.localeCompare(b.date));
 }
 
 function isOriginAllowed(request) {
@@ -123,6 +159,17 @@ const server = http.createServer((request, response) => {
     }
     return;
   }
+  if (request.method === "GET" && url.pathname === "/stats") {
+    try {
+      const kind = url.searchParams.get("kind") || "feedback";
+      const days = Math.min(90, Math.max(1, Number.parseInt(url.searchParams.get("days"), 10) || 14));
+      const game = (url.searchParams.get("game") || "").trim();
+      sendJson(request, response, 200, { ok: true, kind, days, series: computeStats(kind, days, game) });
+    } catch (error) {
+      sendJson(request, response, 400, { ok: false, error: error.message });
+    }
+    return;
+  }
   if (request.method === "GET" && url.pathname === "/latest") {
     try {
       sendJson(request, response, 200, { ok: true, snapshot: latestSnapshot(url) });
@@ -151,6 +198,60 @@ const server = http.createServer((request, response) => {
   });
   request.on("end", () => {
     if (rejected) return;
+
+
+/* ---- 定时晨报抓取：每天 MORNING_SCHEDULE 抓取各游戏今日热点并落库 ---- */
+
+let lastMorningRunDate = "";
+let morningRunning = false;
+
+async function runMorningFetch() {
+  if (!MORNING_GAMES.length) return;
+  morningRunning = true;
+  try {
+    for (const game of MORNING_GAMES) {
+      const params = new URLSearchParams({ game, platform: MORNING_PLATFORM, range: "today", limit: "10" });
+      const response = await fetch(HOTSPOT_SOURCE_URL + "/hotspots?" + params.toString(), { signal: AbortSignal.timeout(20000) });
+      if (!response.ok) throw new Error("hotspot HTTP " + response.status);
+      const payload = await response.json();
+      const items = Array.isArray(payload?.items) ? payload.items : [];
+      const source = items.length && payload.source === "real" ? "real" : "sample";
+      insertStatement.run(
+        "morning-trending",
+        game,
+        source,
+        JSON.stringify({
+          platform: MORNING_PLATFORM,
+          topics: items.slice(0, 10).map((item, index) => ({
+            rank: item.rank || index + 1,
+            title: item.title,
+            tag: item.tag || "",
+            heat: item.heat || "",
+            risk: item.risk?.level || "正常",
+            author: item.author || ""
+          }))
+        }),
+        new Date().toISOString()
+      );
+      console.log("晨报抓取完成：" + game + "（" + source + "，" + items.length + " 条）");
+    }
+  } catch (error) {
+    console.error("晨报抓取失败（下一分钟自动重试）：" + error.message);
+  } finally {
+    morningRunning = false;
+  }
+}
+
+setInterval(() => {
+  const now = new Date();
+  const hhmm = String(now.getHours()).padStart(2, "0") + ":" + String(now.getMinutes()).padStart(2, "0");
+  const today = now.toISOString().slice(0, 10);
+  if (hhmm < MORNING_SCHEDULE || lastMorningRunDate === today || morningRunning) return;
+  if (!MORNING_GAMES.length) return;
+  lastMorningRunDate = today;
+  runMorningFetch();
+}, 60000).unref?.();
+
     let body;
     try {
       body = JSON.parse(Buffer.concat(chunks).toString("utf8"));

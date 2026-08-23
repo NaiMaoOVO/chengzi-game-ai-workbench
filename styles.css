@@ -3017,6 +3017,43 @@ body[data-service-mode="online"] .launcher-panel {
 .briefing-archive-item {
   display: flex;
   align-items: center;
+
+.trend-section {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border: 1px solid rgba(123, 132, 151, 0.16);
+  border-radius: 8px;
+}
+
+.trend-section h4 {
+  margin: 0 0 6px;
+  font-size: 13px;
+}
+
+.trend-chart {
+  display: flex;
+  align-items: flex-end;
+  gap: 3px;
+  height: 56px;
+  margin: 6px 0 2px;
+}
+
+.trend-bar {
+  flex: 1;
+  min-height: 3px;
+  background: #7fb5a3;
+  border-radius: 2px 2px 0 0;
+  position: relative;
+}
+
+.trend-bar.negative {
+  background: #d98a7e;
+}
+
+.trend-conclusion {
+  font-size: 12.5px;
+}
+
   justify-content: space-between;
   gap: 10px;
   padding: 6px 10px;

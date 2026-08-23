@@ -417,6 +417,88 @@ function renderLauncherSyncWarning() {
 
 renderRuntimeModeBadge();
 renderLauncherSyncWarning();
+
+let lastTrendStats = null;
+loadTrendStats();
+
+function renderTrendBarChart(containerId, series, valueExtractor, labelBuilder) {
+  const container = document.querySelector(containerId);
+  if (!container || !series.length) { if (container) container.innerHTML = '<p class="muted-copy">暂无数据</p>'; return; }
+  const max = Math.max(1, ...series.map((entry) => valueExtractor(entry)));
+  container.innerHTML = series.map((entry) => {
+    const value = valueExtractor(entry);
+    const height = Math.max(4, Math.round((value / max) * 100));
+    const label = labelBuilder(entry);
+    return '<div class="trend-bar' + (label.negative ? " negative" : "") + '" style="height:' + height + '%" data-label="' + escapeHtml(label.text) + '"></div>';
+  }).join("");
+}
+
+async function loadTrendStats() {
+  const section = document.querySelector("#trend-section");
+  if (!section || isOnlineServiceMode()) return;
+  try {
+    const game = document.querySelector("#trending-game")?.value.trim() || "";
+    const [feedbackRes, trendingRes] = await Promise.all([
+      fetch(ARCHIVE_SERVICE_URL + "/stats?kind=feedback&days=14" + (game ? "&game=" + encodeURIComponent(game) : ""), { cache: "no-store" }),
+      fetch(ARCHIVE_SERVICE_URL + "/stats?kind=trending&days=14" + (game ? "&game=" + encodeURIComponent(game) : ""), { cache: "no-store" })
+    ]);
+    const feedback = await feedbackRes.json();
+    const trending = await trendingRes.json();
+    const fbSeries = (feedback.series || []).filter((entry) => entry.extra.samples > 0);
+    const tdSeries = trending.series || [];
+    lastTrendStats = { fbSeries, tdSeries };
+    section.hidden = false;
+    renderTrendBarChart("#trend-chart-feedback", fbSeries, (entry) => entry.extra.samples ? Math.round((entry.extra.negative / entry.extra.samples) * 100) : 0, (entry) => ({ text: entry.date + "：负向 " + (entry.extra.samples ? Math.round((entry.extra.negative / entry.extra.samples) * 100) : 0) + "%（" + entry.extra.samples + " 条）", negative: true }));
+    renderTrendBarChart("#trend-chart-trending", tdSeries, (entry) => entry.extra.topics, (entry) => ({ text: entry.date + "：" + entry.extra.topics + " 条热点" }));
+    renderTrendConclusion(fbSeries, tdSeries);
+  } catch (_error) {
+    section.hidden = true;
+  }
+}
+
+function splitWeeks(series) {
+  const today = new Date().toISOString().slice(0, 10);
+  const weekAgo = new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10);
+  const current = series.filter((entry) => entry.date > weekAgo && entry.date <= today);
+  const previous = series.filter((entry) => entry.date <= weekAgo);
+  return { current, previous };
+}
+
+function negativeRatio(series) {
+  const samples = series.reduce((sum, entry) => sum + entry.extra.samples, 0);
+  const negative = series.reduce((sum, entry) => sum + entry.extra.negative, 0);
+  return samples ? negative / samples : null;
+}
+
+function topicTotal(series) {
+  return series.reduce((sum, entry) => sum + entry.extra.topics, 0);
+}
+
+function renderTrendConclusion(feedbackSeries, trendingSeries) {
+  const target = document.querySelector("#trend-conclusion");
+  if (!target) return;
+  const lines = [];
+  if (feedbackSeries.length >= 2) {
+    const weeks = splitWeeks(feedbackSeries);
+    const nowRatio = negativeRatio(weeks.current);
+    const prevRatio = negativeRatio(weeks.previous);
+    if (nowRatio !== null && prevRatio !== null) {
+      const diff = Math.round((nowRatio - prevRatio) * 1000) / 10;
+      const direction = diff > 0.5 ? "上升 " + diff + " 个百分点，建议加强舆情监测" : diff < -0.5 ? "下降 " + Math.abs(diff) + " 个百分点，口碑企稳" : "基本持平";
+      lines.push("负向评论占比 " + (nowRatio * 100).toFixed(1) + "%，较上一周期" + direction + "。");
+    }
+  }
+  if (trendingSeries.length >= 2) {
+    const weeks = splitWeeks(trendingSeries);
+    const nowTopics = topicTotal(weeks.current);
+    const prevTopics = topicTotal(weeks.previous);
+    if (prevTopics > 0) {
+      const change = Math.round(((nowTopics - prevTopics) / prevTopics) * 100);
+      lines.push("热点快照条数环比 " + (change >= 0 ? "+" : "") + change + "%（" + nowTopics + " vs " + prevTopics + "）。");
+    }
+  }
+  target.textContent = lines.length ? "环比结论：" + lines.join(" ") : "积累更多存档后，这里会自动给出周环比结论。";
+}
 /* ---- LLM 增强服务 ---- */
 
 function gamePlatformLabel() {
@@ -487,7 +569,7 @@ function renderBriefing(briefing) {
   const dataSourceLabel = briefing.dataSource === "real" ? "真实数据" : "含样例/兜底数据";
   body.innerHTML = `
     <h4>${escapeHtml(briefing.game)} · 运营简报</h4>
-    <p class="muted-copy">生成时间：${escapeHtml(new Date(briefing.generatedAt).toLocaleString())} · 数据状态：${dataSourceLabel}</p>
+    <p class="muted-copy">生成时间：${escapeHtml(new Date(briefing.generatedAt).toLocaleString())} · 数据状态：${dataSourceLabel}${briefing.weekOverWeek ? " · 负向占比 " + (briefing.weekOverWeek.negativeRatio * 100).toFixed(1) + "%（环比 " + (briefing.weekOverWeek.changePoints >= 0 ? "+" : "") + briefing.weekOverWeek.changePoints + " 个百分点）" : ""}</p>
     <h5>今日热点 TOP${briefing.topics.length}</h5>
     <ul>${topicLines}</ul>
     <h5>舆情动态</h5>
@@ -497,18 +579,30 @@ function renderBriefing(briefing) {
     <ul>${todoLines}</ul>
   `;
 }
-
 async function generateDailyBriefing() {
   const status = document.querySelector("#briefing-status");
   if (status) {
     status.textContent = "简报状态：正在汇总各模块数据…";
     status.className = "source-status";
   }
+  loadTrendStats();
   try {
     if (!currentTrendingTopics.length) await analyzeTrending();
     analyzeFeedback();
   } catch (_error) { /* 各模块失败时按现有兜底展示 */ }
   lastBriefing = collectBriefingData();
+  if (lastTrendStats) {
+    const weeks = splitWeeks(lastTrendStats.fbSeries);
+    const nowRatio = negativeRatio(weeks.current);
+    const prevRatio = negativeRatio(weeks.previous);
+    if (nowRatio !== null && prevRatio !== null) {
+      const diff = Math.round((nowRatio - prevRatio) * 1000) / 10;
+      lastBriefing.weekOverWeek = {
+        negativeRatio: nowRatio,
+        changePoints: diff
+      };
+    }
+  }
   renderBriefing(lastBriefing);
   if (status) {
     status.textContent = lastBriefing.dataSource === "real"
