@@ -78,6 +78,11 @@ module.exports = {
       LLM_CACHE_TTL_MS: process.env.LLM_CACHE_TTL_MS || "600000",
       LLM_RATE_LIMIT_MAX: process.env.LLM_RATE_LIMIT_MAX || "20",
       LLM_MAX_CONCURRENCY: process.env.LLM_MAX_CONCURRENCY || "2"
+    }),
+    app("gameops-archive", "archive-server.js", {
+      ARCHIVE_PORT: process.env.ARCHIVE_PORT || "8796",
+      ARCHIVE_DB_PATH: process.env.ARCHIVE_DB_PATH || "",
+      ARCHIVE_RATE_LIMIT_MAX: process.env.ARCHIVE_RATE_LIMIT_MAX || "120"
     })
   ]
 };

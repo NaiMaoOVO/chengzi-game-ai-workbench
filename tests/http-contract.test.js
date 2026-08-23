@@ -25,7 +25,24 @@ const serviceCases = [
   { script: "hotspot-server.js", envPort: "HOTSPOT_PORT", service: "gameops-hotspot" },
   { script: "comment-server.js", envPort: "COMMENT_PORT", service: "gameops-comments" },
   { script: "ocr-server.js", envPort: "PORT", service: "gameops-ocr" },
-  { script: "llm-server.js", envPort: "LLM_PORT", service: "gameops-llm" }
+  { script: "llm-server.js", envPort: "LLM_PORT", service: "gameops-llm" },
+  {
+    script: "archive-server.js",
+    envPort: "ARCHIVE_PORT",
+    service: "gameops-archive",
+    extraCheck(port) {
+      return (async () => {
+        const post = await fetch(`http://127.0.0.1:${port}/snapshots`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ kind: "smoke", game: "测试", source: "sample", payload: { ok: true } })
+        });
+        assert.equal(post.status, 201);
+        const list = await fetch(`http://127.0.0.1:${port}/snapshots?kind=smoke`).then((r) => r.json());
+        assert.equal(list.items.length >= 1, true);
+      })();
+    }
+  }
 ];
 
 async function waitForHealth(port, timeoutMs = 10000) {
@@ -45,10 +62,12 @@ for (const [index, item] of serviceCases.entries()) {
     const port = 18800 + index * 7;
     const child = spawn(process.execPath, [path.join(projectRoot, item.script)], {
       cwd: projectRoot,
-      env: { ...process.env, [item.envPort]: String(port) },
+      env: { ...process.env, [item.envPort]: String(port), ...(item.script === "archive-server.js" ? { ARCHIVE_DB_PATH: path.join(require("node:os").tmpdir(), "gameops-archive-smoke-" + Date.now() + ".db") } : {}) },
       stdio: ["ignore", "pipe", "pipe"]
     });
     let stderrText = "";
+    let exited = false;
+    child.on("exit", () => { exited = true; });
     child.stderr.on("data", (chunk) => { stderrText += chunk.toString("utf8"); });
     try {
       const payload = await waitForHealth(port);
@@ -62,8 +81,12 @@ for (const [index, item] of serviceCases.entries()) {
     } catch (error) {
       assert.fail(`${error.message}\nstderr: ${stderrText.slice(-800)}`);
     } finally {
-      child.kill("SIGTERM");
-      await new Promise((resolve) => child.once("exit", resolve));
+      if (!exited) child.kill("SIGTERM");
+      await new Promise((resolve) => {
+        if (exited) return resolve();
+        child.once("exit", resolve);
+        setTimeout(resolve, 3000);
+      });
     }
   });
 }
@@ -79,6 +102,7 @@ test("local controller serves CORS headers for file pages and supervises child s
       COMMENT_PORT: String(ports.comment),
       PORT: String(ports.ocr),
       LLM_PORT: String(ports.llm),
+      ARCHIVE_DB_PATH: path.join(require("node:os").tmpdir(), "gameops-chain-smoke-" + Date.now() + ".db"),
       GAMEOPS_NO_OPEN: "1"
     },
     stdio: ["ignore", "pipe", "pipe"]

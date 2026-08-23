@@ -46,6 +46,7 @@ hotspot-server.js   热点抓取服务（B站搜索 + 热度排序，端口 8790
 comment-server.js   评论抓取服务（B站视频评论，端口 8791）
 ocr-server.js       本地截图识别服务（macOS Vision，端口 8787）
 llm-server.js       LLM 增强网关（OpenAI 兼容，端口 8794）
+archive-server.js   本地存档服务：简报与分析快照持久化（SQLite，端口 8796）
 start-demo.js       一键启动全部本地服务 + 打开页面
 restart-demo.js     安全重启（PID 状态文件 + 脚本路径校验，不误杀进程）
 scripts/            构建与启动器安装脚本
@@ -165,6 +166,7 @@ Nginx 配置见 `nginx.conf.example` / `nginx-https.conf.example`（含 API 限�
 curl -fsS http://example.com/api/hotspot/health
 curl -fsS http://example.com/api/comment/health
 curl -fsS http://example.com/api/ocr/health
+curl -fsS http://example.com/api/archive/health
 curl -fsS http://example.com/api/llm/health
 ```
 

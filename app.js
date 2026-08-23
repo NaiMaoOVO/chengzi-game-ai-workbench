@@ -419,7 +419,197 @@ renderRuntimeModeBadge();
 renderLauncherSyncWarning();
 /* ---- LLM 增强服务 ---- */
 
+function gamePlatformLabel() {
+  return document.querySelector("#trending-platform")?.value || "B站";
+}
+
+function archiveSnapshot(kind, game, payload) {
+  if (isOnlineServiceMode()) return;
+  const body = JSON.stringify({ kind, game, source: payload.source || "sample", payload });
+  fetch(ARCHIVE_SERVICE_URL + "/snapshots", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body
+  }).catch(() => { /* 存档失败不影响主流程 */ });
+}
+
 let llmServiceState = "down";
+
+/* ---- 今日运营简报 ---- */
+
+let lastBriefing = null;
+
+function collectBriefingData() {
+  const game = document.querySelector("#trending-game")?.value.trim()
+    || document.querySelector("#version-game")?.value.trim() || "未设置";
+  const topics = currentTrendingTopics.slice(0, 5).map((topic) => ({
+    rank: topic.rank,
+    title: topic.title,
+    tag: topic.tag,
+    risk: topic.risk?.level || "正常",
+    heat: topic.heat || "",
+    author: topic.author || ""
+  }));
+  const riskText = document.querySelector("#feedback-risk-summary")?.textContent?.trim() || "";
+  const emotionText = document.querySelector("#emotion-summary")?.textContent?.trim() || "";
+  const sourceTexts = ["#trending-source-status", "#feedback-source-status"]
+    .map((selector) => document.querySelector(selector)?.textContent || "");
+  const usesSample = /样例|兜底|演示/.test(sourceTexts.join("；"))
+    || currentTrendingTopics.some((topic) => topic.source !== "real");
+  return {
+    game,
+    generatedAt: new Date().toISOString(),
+    dataSource: usesSample ? "sample" : "real",
+    topics,
+    feedback: { risk: riskText, emotion: emotionText },
+    riskEventCount: collectRiskEventsText() ? (currentFeedbackRows || []).length : 0,
+    todoSuggestions: buildBriefingTodos(topics, riskText)
+  };
+}
+
+function buildBriefingTodos(topics, riskText) {
+  const todos = [];
+  if (/风险|负向|预警/.test(riskText)) todos.push("优先处理舆情预警项，2 小时内跟进最新评论走向。");
+  if (topics.length) todos.push("从热点 TOP3 中选择 1 个选题，套用竞品拆解的标题结构产出今日内容。");
+  if (!topics.length) todos.push("先运行热点追踪，确认今日可蹭的赛道热度。");
+  todos.push("检查版本节点：确认本周是否有需要提前铺垫的内容排期。");
+  return todos;
+}
+
+function renderBriefing(briefing) {
+  const body = document.querySelector("#briefing-body");
+  if (!body) return;
+  body.hidden = false;
+  const topicLines = briefing.topics.length
+    ? briefing.topics.map((topic) => `<li>TOP${topic.rank} ${escapeHtml(topic.title)}（${escapeHtml(topic.tag)} · 风险：${escapeHtml(topic.risk)}）</li>`).join("")
+    : "<li>暂无热点数据，请先运行热点追踪。</li>";
+  const todoLines = briefing.todoSuggestions.map((item) => `<li>${escapeHtml(item)}</li>`).join("");
+  const dataSourceLabel = briefing.dataSource === "real" ? "真实数据" : "含样例/兜底数据";
+  body.innerHTML = `
+    <h4>${escapeHtml(briefing.game)} · 运营简报</h4>
+    <p class="muted-copy">生成时间：${escapeHtml(new Date(briefing.generatedAt).toLocaleString())} · 数据状态：${dataSourceLabel}</p>
+    <h5>今日热点 TOP${briefing.topics.length}</h5>
+    <ul>${topicLines}</ul>
+    <h5>舆情动态</h5>
+    <p>${escapeHtml(briefing.feedback.risk || "暂无舆情数据，请先运行评论分析。")}</p>
+    <p>${escapeHtml(briefing.feedback.emotion)}</p>
+    <h5>待办建议</h5>
+    <ul>${todoLines}</ul>
+  `;
+}
+
+async function generateDailyBriefing() {
+  const status = document.querySelector("#briefing-status");
+  if (status) {
+    status.textContent = "简报状态：正在汇总各模块数据…";
+    status.className = "source-status";
+  }
+  try {
+    if (!currentTrendingTopics.length) await analyzeTrending();
+    analyzeFeedback();
+  } catch (_error) { /* 各模块失败时按现有兜底展示 */ }
+  lastBriefing = collectBriefingData();
+  renderBriefing(lastBriefing);
+  if (status) {
+    status.textContent = lastBriefing.dataSource === "real"
+      ? "简报状态：已基于真实数据生成。可直接存档形成工作日志。"
+      : "简报状态：已生成（部分为样例/兜底数据），存档时会保留该标记。";
+    status.className = "source-status " + (lastBriefing.dataSource === "real" ? "source-real" : "source-mock");
+  }
+}
+
+async function archiveCurrentBriefing() {
+  const status = document.querySelector("#briefing-status");
+  if (!lastBriefing) {
+    if (status) {
+      status.textContent = "简报状态：请先生成今日简报，再执行存档。";
+      status.className = "source-status source-mock";
+    }
+    return;
+  }
+  if (isOnlineServiceMode()) {
+    if (status) {
+      status.textContent = "简报状态：线上模式暂不支持本地存档，请切换本地模式或导出内容。";
+      status.className = "source-status source-mock";
+    }
+    return;
+  }
+  try {
+    const response = await fetch(ARCHIVE_SERVICE_URL + "/snapshots", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        kind: "briefing",
+        game: lastBriefing.game,
+        source: lastBriefing.dataSource,
+        payload: lastBriefing
+      })
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || !payload.ok) throw new Error(payload.error || "HTTP " + response.status);
+    if (status) {
+      status.textContent = `简报状态：已存档（编号 #${payload.id}）。可点击“查看最近存档”回看。`;
+      status.className = "source-status source-real";
+    }
+    await loadBriefingArchive();
+  } catch (error) {
+    if (status) {
+      status.textContent = `简报状态：存档失败（${error.message}）。请确认本机存档服务已启动。`;
+      status.className = "source-status source-mock";
+    }
+  }
+}
+
+function renderBriefArchiveItem(briefing) {
+  const container = document.querySelector("#briefing-archive-list");
+  if (!container) return;
+  const entry = document.createElement("article");
+  entry.className = "briefing-archive-item";
+  const dateLabel = new Date(briefing.created_at).toLocaleString();
+  const summary = (briefing.payload.topics || [])
+    .slice(0, 2)
+    .map((topic) => escapeHtml(topic.title))
+    .join("、") || "无热点条目";
+  const button = document.createElement("button");
+  button.className = "secondary-button";
+  button.type = "button";
+  button.textContent = "查看";
+  button.addEventListener("click", () => {
+    lastBriefing = briefing.payload;
+    renderBriefing(briefing.payload);
+    const status = document.querySelector("#briefing-status");
+    if (status) {
+      status.textContent = `简报状态：已载入 ${dateLabel} 的存档（${briefing.source === "real" ? "真实数据" : "样例数据"}）。`;
+      status.className = "source-status source-real";
+    }
+  });
+  const text = document.createElement("div");
+  text.innerHTML = `<strong>${escapeHtml(dateLabel)} · ${escapeHtml(briefing.game)}</strong><small>${summary}</small>`;
+  entry.append(text, button);
+  container.prepend(entry);
+}
+
+async function loadBriefingArchive() {
+  const container = document.querySelector("#briefing-archive-list");
+  if (!container || isOnlineServiceMode()) return;
+  try {
+    const response = await fetch(ARCHIVE_SERVICE_URL + "/snapshots?kind=briefing&limit=7", { cache: "no-store" });
+    const payload = await response.json();
+    container.innerHTML = "";
+    for (const item of payload.items || []) {
+      renderBriefArchiveItem({ ...item, payload: item.payload });
+    }
+    if (!(payload.items || []).length) {
+      container.innerHTML = '<p class="muted-copy">暂无历史简报。生成并存档后，这里会保留最近 7 份。</p>';
+    }
+  } catch (_error) {
+    container.innerHTML = '<p class="muted-copy">存档服务不可用（本机 8796 端口）。历史回看功能需在本地模式运行存档服务。</p>';
+  }
+}
+
+document.querySelector("#generate-briefing")?.addEventListener("click", generateDailyBriefing);
+document.querySelector("#archive-briefing")?.addEventListener("click", archiveCurrentBriefing);
+document.querySelector("#load-briefing-archive")?.addEventListener("click", loadBriefingArchive);
 let llmModelName = "";
 
 async function checkLlmHealth(expectedModeGeneration = serviceModeGuard.current()) {
@@ -1547,6 +1737,18 @@ function analyzeFeedback() {
   renderList(document.querySelector("#action-list"), generateFeedbackActions(labels, sentimentCounts, riskCounts, currentFeedbackRows, cleanResult));
   renderFeedbackSourceGroups(currentFeedbackRows);
   if (typeof enhanceFeedbackWithLlm === "function") enhanceFeedbackWithLlm();
+
+  if (lines.length >= 3) {
+    archiveSnapshot("feedback", game || "未设置", {
+      source: document.querySelector("#feedback-source-status")?.className?.includes("source-real") ? "real" : "sample",
+      sampleCount: lines.length,
+      sentiment: sentimentCounts,
+      risk: riskCounts,
+      topLabel: topLabel?.[0] || "",
+      summary: document.querySelector("#emotion-summary")?.textContent?.slice(0, 300) || "",
+      representative: representativeRows.slice(0, 5).map((row) => ({ comment: row.comment.slice(0, 120), risk: row.risk, sentiment: row.sentiment }))
+    });
+  }
 }
 
 function importFeedbackComments(comments) {
@@ -2353,6 +2555,7 @@ function generateFollowUpTopics(gameName, topic) {
 
   return map[tag] || [
     `${gameName}热点复盘：为什么这条内容能起量？`,
+
     `${gameName}同主题选题延展：标题、封面、评论区三点拆解`,
     `${gameName}今日内容跟进脚本：用热点做轻量二创`
   ];
@@ -2510,10 +2713,20 @@ function renderTrendingList(gameName, platform, options = {}) {
     updateChainBar(getActiveViewName(), `${options.source === "real" ? "真实数据" : "样例兜底"} · ${platform} · ${rangeMap[range] || range} · 旧视频过滤`);
   }
 
-  document.querySelector("#trending-insight").textContent = options.source === "real"
-    ? generateRealTrendingInsight(gameName, platform, topics)
-    : generateTrendingInsight(gameName, platform, topics);
   renderTrendingDetail(gameName, platform, topics[selectedTrendingIndex]);
+
+  archiveSnapshot("trending", gameName, {
+    source: options.source === "real" ? "real" : "sample",
+    platform,
+    topics: topics.slice(0, 10).map((topic) => ({
+      rank: topic.rank,
+      title: topic.title,
+      tag: topic.tag,
+      heat: topic.heat,
+      risk: topic.risk?.level || "正常",
+      author: topic.author || ""
+    }))
+  });
 }
 
 function generateRealTrendingInsight(gameName, platform, topics) {

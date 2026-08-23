@@ -14,7 +14,8 @@ const CORE_SERVICES = [
   { name: "热点服务", script: "hotspot-server.js", port: Number(process.env.HOTSPOT_PORT) || 8790, identity: "gameops-hotspot" },
   { name: "评论服务", script: "comment-server.js", port: Number(process.env.COMMENT_PORT) || 8791, identity: "gameops-comments" },
   { name: "OCR 服务", script: "ocr-server.js", port: Number(process.env.PORT) || 8787, identity: "gameops-ocr" },
-  { name: "AI 增强服务", script: "llm-server.js", port: Number(process.env.LLM_PORT) || 8794, identity: "gameops-llm" }
+  { name: "AI 增强服务", script: "llm-server.js", port: Number(process.env.LLM_PORT) || 8794, identity: "gameops-llm" },
+  { name: "存档服务", script: "archive-server.js", port: Number(process.env.ARCHIVE_PORT) || 8796, identity: "gameops-archive" }
 ];
 function isLocalXhsBridgeConfigured() {
   if (!process.env.XIAOHONGSHU_PROVIDER_URL) return false;

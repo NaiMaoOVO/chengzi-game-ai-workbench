@@ -10,6 +10,7 @@
     "start:comment": "node comment-server.js",
     "start:ocr": "node ocr-server.js",
     "start:xhs-bridge": "node xiaohongshu-bridge.js",
+    "start:archive": "node archive-server.js",
     "build:public": "node scripts/build-public.js",
     "check:public": "node scripts/check-public.js",
     "launcher:install": "node scripts/install-macos-launcher.js",
@@ -19,7 +20,7 @@
     "deploy:stop": "pm2 stop ecosystem.config.js",
     "deploy:logs": "pm2 logs gameops-hotspot gameops-comment gameops-ocr gameops-llm",
     "deploy:check": "node -e \"require('./ecosystem.config.js'); console.log('deployment environment ok')\" && node scripts/check-public.js",
-    "check": "node --check utils.js && node --check launcher.js && node --check app.js && node --check hotspot-server.js && node --check comment-server.js && node --check ocr-server.js && node --check llm-server.js && node --check start-demo.js && node --check restart-demo.js && node --check ecosystem.config.js && node --check xiaohongshu-bridge.js && node --check lib/env-file.js && node --check lib/hotspot-ranking.js && node --check lib/platform-provider.js && node --check lib/project-slots.js && node --check lib/service-supervisor.js && node --check lib/ui-guards.js && node --check lib/safe-storage.js && node --check lib/safe-request-url.js && node --check lib/launcher-runtime.js && node --check scripts/build-public.js && node --check scripts/check-public.js && node --check scripts/check-launcher-runtime.js && node --check scripts/install-macos-launcher.js",
+    "check": "node --check utils.js && node --check launcher.js && node --check app.js && node --check hotspot-server.js && node --check comment-server.js && node --check ocr-server.js && node --check llm-server.js && node --check archive-server.js && node --check start-demo.js && node --check restart-demo.js && node --check ecosystem.config.js && node --check xiaohongshu-bridge.js && node --check lib/env-file.js && node --check lib/hotspot-ranking.js && node --check lib/platform-provider.js && node --check lib/project-slots.js && node --check lib/service-supervisor.js && node --check lib/ui-guards.js && node --check lib/safe-storage.js && node --check lib/safe-request-url.js && node --check lib/launcher-runtime.js && node --check scripts/build-public.js && node --check scripts/check-public.js && node --check scripts/check-launcher-runtime.js && node --check scripts/install-macos-launcher.js",
     "test": "node --test tests/*.test.js"
   },
   "engines": {
