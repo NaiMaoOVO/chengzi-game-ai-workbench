@@ -704,6 +704,75 @@ async function loadBriefingArchive() {
 document.querySelector("#generate-briefing")?.addEventListener("click", generateDailyBriefing);
 document.querySelector("#archive-briefing")?.addEventListener("click", archiveCurrentBriefing);
 document.querySelector("#load-briefing-archive")?.addEventListener("click", loadBriefingArchive);
+
+async function copyTextToClipboard(text) {
+  if (navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch (_error) { /* 权限受限时降级为 execCommand */ }
+  }
+  const textarea = document.createElement("textarea");
+  textarea.value = text;
+  textarea.setAttribute("readonly", "");
+  textarea.style.position = "fixed";
+  textarea.style.left = "-9999px";
+  document.body.appendChild(textarea);
+  textarea.select();
+  if (typeof textarea.setSelectionRange === "function") {
+    textarea.setSelectionRange(0, text.length);
+  }
+  let copied = false;
+  try {
+    copied = document.execCommand("copy");
+  } catch (_error) {
+    copied = false;
+  }
+  textarea.remove();
+  return copied;
+}
+
+function buildBriefingImText(briefing) {
+  const generatedAt = briefing.generatedAt ? new Date(briefing.generatedAt) : null;
+  const dateLabel = generatedAt && !Number.isNaN(generatedAt.getTime()) ? generatedAt.toLocaleDateString() : "未知日期";
+  const topics = Array.isArray(briefing.topics) ? briefing.topics : [];
+  const todos = Array.isArray(briefing.todoSuggestions) ? briefing.todoSuggestions.filter(Boolean) : [];
+  const lines = [];
+  lines.push("【" + (briefing.game || "未设置") + "】运营晨报 " + dateLabel);
+  lines.push("▍今日热点");
+  topics.forEach((topic, index) => {
+    const rank = topic.rank || index + 1;
+    const tagText = topic.tag ? "（" + topic.tag + "）" : "";
+    lines.push(rank + ". " + (topic.title || "无标题") + tagText);
+  });
+  if (!topics.length) lines.push("暂无");
+  lines.push("▍舆情动态");
+  lines.push(briefing.feedback?.risk || "暂无");
+  lines.push("▍待办建议");
+  todos.forEach((item, index) => {
+    lines.push((index + 1) + ". " + item);
+  });
+  if (!todos.length) lines.push("暂无");
+  lines.push("▍数据状态：" + (briefing.dataSource === "real" ? "真实数据" : "含样例/兜底，仅供内部参考"));
+  return lines.join("\n");
+}
+
+async function copyBriefingForIm() {
+  const status = document.querySelector("#briefing-status");
+  if (!lastBriefing) {
+    if (status) { status.textContent = "简报状态：请先生成简报再复制。"; status.className = "source-status source-mock"; }
+    return;
+  }
+  try {
+    const copied = await copyTextToClipboard(buildBriefingImText(lastBriefing));
+    if (!copied) throw new Error("浏览器剪贴板不可用");
+    if (status) { status.textContent = "简报状态：已按飞书/企微消息格式复制到剪贴板，可直接粘贴发送。"; status.className = "source-status source-real"; }
+  } catch (error) {
+    if (status) { status.textContent = "简报状态：复制失败（" + error.message + "）。"; status.className = "source-status source-mock"; }
+  }
+}
+
+document.querySelector("#copy-briefing-im")?.addEventListener("click", copyBriefingForIm);
 let llmModelName = "";
 
 async function checkLlmHealth(expectedModeGeneration = serviceModeGuard.current()) {
@@ -715,6 +784,7 @@ function collectProfileFromPage() {
     versionNote: document.querySelector("#version-theme")?.value.trim() || "",
     competitors: (document.querySelector("#content-competitor")?.value || "").split(/\n+/).map(s=>s.trim()).filter(Boolean).slice(0,10),
     kolNames: currentCreatorRows.slice(0, 20).map((row) => row.name),
+    cooperationNotes: document.querySelector("#profile-coop-notes")?.value || "",
     savedAt: new Date().toISOString()
   };
 }
@@ -783,6 +853,8 @@ function loadSelectedProfile() {
   try {
     const profile = JSON.parse(option.dataset.payload || "{}");
     fillGameInputs(option.value);
+    const notesArea = document.querySelector("#profile-coop-notes");
+    if (notesArea) notesArea.value = profile.cooperationNotes || "";
     analyzeTrending();
     if (status) { status.textContent = "项目档案：已载入「" + option.value + "」，各模块游戏名已同步并刷新热点。"; status.className = "source-status source-real"; }
   } catch (error) {
