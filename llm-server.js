@@ -8,6 +8,7 @@ const PORT = Number(process.env.LLM_PORT) || 8794;
 const LLM_API_KEY = process.env.LLM_API_KEY || "";
 const LLM_BASE_URL = (process.env.LLM_BASE_URL || "https://api.deepseek.com/v1").replace(/\/+$/, "");
 const LLM_MODEL = process.env.LLM_MODEL || "deepseek-chat";
+const LLM_JSON_MODE = ["auto", "force", "off"].includes(process.env.LLM_JSON_MODE) ? process.env.LLM_JSON_MODE : "auto";
 const LLM_TIMEOUT_MS = Number(process.env.LLM_TIMEOUT_MS) || 45000;
 const LLM_MAX_CONCURRENCY = Math.max(1, Number(process.env.LLM_MAX_CONCURRENCY) || 2);
 const CACHE_TTL_MS = Math.max(0, Number(process.env.LLM_CACHE_TTL_MS) || 600000);
@@ -124,7 +125,7 @@ function extractJsonObject(text) {
   }
 }
 
-function callUpstream(prompt, options) {
+function callUpstream(prompt, options = {}) {
   return new Promise((resolve, reject) => {
     const payload = {
       model: LLM_MODEL,
@@ -133,9 +134,11 @@ function callUpstream(prompt, options) {
         { role: "user", content: prompt.user }
       ],
       temperature: options.temperature,
-      max_tokens: options.maxTokens,
-      response_format: { type: "json_object" }
+      max_tokens: options.maxTokens
     };
+    if (LLM_JSON_MODE !== "off" && options.jsonMode !== false) {
+      payload.response_format = { type: "json_object" };
+    }
 
     const upstreamUrl = new URL(`${LLM_BASE_URL}/chat/completions`);
     const transport = upstreamUrl.protocol === "https:" ? https : http;
@@ -280,7 +283,7 @@ const server = http.createServer((request, response) => {
     try {
       const result = await responseCache.getOrCreate(key, async () => {
         try {
-          return await callUpstream(prompt, task);
+          return await callUpstream(prompt, {});
         } catch (firstError) {
           const canRetryWithoutJsonMode =
             LLM_JSON_MODE === "auto" &&

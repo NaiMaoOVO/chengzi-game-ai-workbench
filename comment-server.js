@@ -3,6 +3,8 @@ require("./lib/env-file").loadProjectEnv(__dirname);
 const crypto = require("node:crypto");
 const { parseRequestUrl } = require("./lib/safe-request-url");
 const { createRateLimiter, createRetryBudget } = require("./lib/http-guards");
+const { extractBvid, extractAid } = require("./lib/bilibili-url");
+const { createFetchWithRetry } = require("./lib/fetch-with-retry");
 
 const PORT = Number(process.env.COMMENT_PORT || 8791);
 const VIDEO_INFO_URL = "https://api.bilibili.com/x/web-interface/view";
@@ -17,6 +19,11 @@ const CACHE_TTL_MS = Math.max(0, Number(process.env.CACHE_TTL_MS || 30000));
 const UPSTREAM_TIMEOUT_MS = Math.max(1000, Number(process.env.UPSTREAM_TIMEOUT_MS || 8000));
 const UPSTREAM_RETRIES = Math.max(0, Math.min(3, Number(process.env.UPSTREAM_RETRIES || 2)));
 const upstreamRetryBudget = createRetryBudget({ capacity: 3, refillIntervalMs: 1000 });
+const fetchWithRetry = createFetchWithRetry({
+  retries: UPSTREAM_RETRIES,
+  timeoutMs: UPSTREAM_TIMEOUT_MS,
+  retryBudget: upstreamRetryBudget
+});
 const SESSION_COOKIE_TTL_MS = 24 * 60 * 60 * 1000;
 let sessionCookieCache = { value: "", generatedAt: 0 };
 const allowRateLimitedRequest = createRateLimiter({
@@ -87,30 +94,7 @@ function allowRequest(request) {
   return allowRateLimitedRequest(request).allowed;
 }
 
-async function fetchWithRetry(url, options = {}) {
-async function fetchWithRetry(url, options = {}) {
-  let lastError;
-  for (let attempt = 0; attempt <= UPSTREAM_RETRIES; attempt += 1) {
-    try {
-      const response = await fetch(url, { ...options, signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS) });
-      if (response.status !== 429 && response.status < 500) return response;
-      const retryAfterSeconds = Number(response.headers.get("retry-after"));
-      if (Number.isFinite(retryAfterSeconds) && retryAfterSeconds > 0) {
-        lastError = new Error(`HTTP ${response.status}`);
-        lastError.retryAfterSeconds = Math.min(retryAfterSeconds, 30);
-      } else {
-        lastError = new Error(`HTTP ${response.status}`);
-      }
-      await response.body?.cancel();
-    } catch (error) {
-      lastError = error.name === "TimeoutError" ? new Error("上游请求超时") : error;
-    }
-    if (attempt >= UPSTREAM_RETRIES) break;
-    if (!upstreamRetryBudget.trySpend()) break;
-    await sleep(lastError.retryAfterSeconds ? lastError.retryAfterSeconds * 1000 : Math.min(5000, 200 * (2 ** attempt)));
-  }
-  throw lastError;
-}
+function getCached(key) {
   const entry = responseCache.get(key);
   if (!entry || entry.expiresAt <= Date.now()) {
     responseCache.delete(key);
@@ -136,23 +120,6 @@ function setCached(key, payload) {
 function boundedInteger(rawValue, fallback, min, max) {
   const parsed = Number.parseInt(rawValue, 10);
   return Number.isFinite(parsed) ? Math.min(max, Math.max(min, parsed)) : fallback;
-}
-
-function extractBvid(input) {
-  const value = String(input || "").trim();
-  const match = value.match(/BV[a-zA-Z0-9]{10}/i);
-  return match ? match[0].replace(/^bv/i, "BV") : "";
-}
-
-function extractAid(input) {
-  const value = String(input || "").trim();
-  const queryMatch = value.match(/(?:^|[?&])aid=(\d+)/i);
-  if (queryMatch) return queryMatch[1];
-
-  const avMatch = value.match(/(?:^|[/?&=\s])av(\d+)\b/i);
-  if (avMatch) return avMatch[1];
-
-  return "";
 }
 
 async function fetchJson(url) {
