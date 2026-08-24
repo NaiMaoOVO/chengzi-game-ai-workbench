@@ -154,7 +154,6 @@ npm install -g pm2
 cp .env.example .env
 npm run build:public     # 仅复制前端所需静态文件到 public/
 npm run deploy:check     # 校验环境变量与构建产物，配置不完整拒绝启动
-set -a; . ./.env; set +a
 npm run deploy:start && pm2 save && pm2 startup
 ```
 
