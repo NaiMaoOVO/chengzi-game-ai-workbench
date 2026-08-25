@@ -2,6 +2,7 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const { spawn } = require("node:child_process");
 const http = require("node:http");
+const net = require("node:net");
 const path = require("node:path");
 const { parseRequestUrl } = require("../lib/safe-request-url");
 
@@ -303,13 +304,59 @@ test("ocr: disallowed Origin -> 403, wrong content type -> 415, undetectable ima
     assert.equal(garbageImage.status, 415);
     assert.match(garbageImage.text, /无法识别或不支持的图片格式/);
 
-    const tooBig = await httpRequest(port, "/ocr", {
-      method: "POST",
-      headers: { "Content-Type": "image/png" },
-      body: Buffer.alloc(12 * 1024 * 1024 + 1, 0x61)
+    // F6 回归锁：413 之后服务端必须主动断开连接。用裸 socket 发送完整超大请求体，
+    // 客户端收到 413 后不做任何关闭动作，观察对端是否在宽限期后拆除连接；
+    // 修复前服务端只 resume() 吸干数据，连接会悬挂到空闲超时。
+    const tooBigBody = Buffer.alloc(12 * 1024 * 1024 + 1, 0x61);
+    const tooBigHead = [
+      "POST /ocr HTTP/1.1",
+      "Host: 127.0.0.1",
+      "Content-Type: image/png",
+      `Content-Length: ${tooBigBody.length}`,
+      "",
+      ""
+    ].join("\r\n");
+    const tooBig = await new Promise((resolveTooBig, rejectTooBig) => {
+      let settled = false;
+      const socket = net.connect({ host: "127.0.0.1", port });
+      const chunks = [];
+      let sawResponseHeadAt = 0;
+      const settle = (settleFn, value) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(deadline);
+        socket.destroy();
+        settleFn(value);
+      };
+      const deadline = setTimeout(() => {
+        settle(rejectTooBig, new Error("413 后服务端未在 3 秒内断开连接，上传 socket 疑似悬挂"));
+      }, 3000);
+      socket.on("error", (error) => {
+        // 服务端主动断开常表现为 RST；已读到 413 后的 ECONNRESET/EPIPE 同样算清理成功
+        if (sawResponseHeadAt > 0 && ["ECONNRESET", "EPIPE"].includes(error.code)) {
+          settle(resolveTooBig, { elapsedMs: Date.now() - sawResponseHeadAt, chunks });
+          return;
+        }
+        settle(rejectTooBig, error);
+      });
+      socket.on("data", (chunk) => {
+        chunks.push(chunk);
+        if (sawResponseHeadAt === 0 && Buffer.concat(chunks).includes("\r\n\r\n")) {
+          sawResponseHeadAt = Date.now();
+        }
+      });
+      socket.on("close", () => {
+        if (settled) return;
+        if (sawResponseHeadAt > 0) settle(resolveTooBig, { elapsedMs: Date.now() - sawResponseHeadAt, chunks });
+        else settle(rejectTooBig, new Error("连接在收到响应前被关闭"));
+      });
+      socket.write(tooBigHead);
+      socket.write(tooBigBody);
     });
-    assert.equal(tooBig.status, 413);
-    assert.match(tooBig.text, /12MB/);
+    const tooBigRaw = Buffer.concat(tooBig.chunks).toString("latin1");
+    assert.match(tooBigRaw.split("\r\n", 1)[0], /^HTTP\/1\.1 413/, "状态行应为 413");
+    assert.match(tooBigRaw.slice(tooBigRaw.indexOf("\r\n\r\n") + 4), /12MB/);
+    assert.ok(tooBig.elapsedMs <= 2500, `服务端应在 413 后 2.5 秒内断开（实际 ${tooBig.elapsedMs}ms）`);
   });
 });
 

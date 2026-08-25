@@ -12,6 +12,7 @@ const { parseChineseNumber, detectImage } = require("./lib/ocr-heuristics");
 const PORT = Number(process.env.PORT) || 8787;
 const MAX_UPLOAD_BYTES = 12 * 1024 * 1024;
 const MAX_REMOTE_RESPONSE_BYTES = 2 * 1024 * 1024;
+const UPLOAD_REJECT_GRACE_MS = 500;
 const OCR_PROVIDER = (process.env.OCR_PROVIDER || "macos").toLowerCase();
 const OCR_TIMEOUT_MS = Number(process.env.OCR_TIMEOUT_MS) || 15000;
 const OCR_READINESS_TIMEOUT_MS = Number(process.env.OCR_READINESS_TIMEOUT_MS) || 90000;
@@ -131,6 +132,15 @@ function sendJson(request, response, statusCode, payload, extraHeaders = {}) {
     ...extraHeaders
   });
   response.end(JSON.stringify(payload));
+}
+// 上传类请求的提前拒绝（413/415/503）：先声明 Connection: close 并把错误响应送达对端，
+// 短暂宽限后主动断开。否则客户端会把整个大文件继续发完，连接也会悬挂到空闲超时。
+function rejectUpload(request, response, statusCode, payload, extraHeaders = {}) {
+  sendJson(request, response, statusCode, payload, { "Connection": "close", ...extraHeaders });
+  request.resume();
+  const tearDown = () => setTimeout(() => request.destroy(), UPLOAD_REJECT_GRACE_MS).unref?.();
+  if (response.writableFinished) tearDown();
+  else response.once("finish", tearDown);
 }
 function checkRateLimit(request) {
   return rateLimiter(request);
@@ -403,7 +413,7 @@ const server = http.createServer((request, response) => {
 
   const readiness = providerStatus();
   if (!readiness.ready) {
-    sendJson(request, response, 503, {
+    rejectUpload(request, response, 503, {
       error: readiness.preparing ? "OCR 服务正在准备，请稍后重试" : readiness.detail,
       ocr: readiness.preparing ? "preparing" : "not_ready"
     }, readiness.preparing ? { "Retry-After": "2" } : {});
@@ -415,12 +425,12 @@ const server = http.createServer((request, response) => {
     "image/jpeg", "image/jpg", "image/png", "image/gif", "image/heic", "image/heif", "image/webp"
   ]);
   if (!acceptedTypes.has(declaredType)) {
-    sendJson(request, response, 415, { error: "仅支持图片上传" });
+    rejectUpload(request, response, 415, { error: "仅支持图片上传" });
     return;
   }
 
   if (activeOcrJobs >= OCR_MAX_CONCURRENCY) {
-    sendJson(request, response, 503, { error: "OCR 服务繁忙，请稍后重试" }, { "Retry-After": "2" });
+    rejectUpload(request, response, 503, { error: "OCR 服务繁忙，请稍后重试" }, { "Retry-After": "2" });
     return;
   }
 
@@ -433,8 +443,7 @@ const server = http.createServer((request, response) => {
     received += chunk.length;
     if (received > MAX_UPLOAD_BYTES) {
       uploadRejected = true;
-      sendJson(request, response, 413, { error: `图片不能超过 ${MAX_UPLOAD_BYTES / 1024 / 1024}MB` });
-      request.resume();
+      rejectUpload(request, response, 413, { error: `图片不能超过 ${MAX_UPLOAD_BYTES / 1024 / 1024}MB` });
       return;
     }
     chunks.push(chunk);
