@@ -26,6 +26,16 @@ server {
         try_files $uri $uri/ /index.html;
     }
 
+    # 指纹化静态资源：内容变化时 URL 随 ?v= 变化，可长缓存；HTML 本身禁缓存保证发版即生效。
+    location ~* \.(js|css)$ {
+        expires 30d;
+        add_header Cache-Control "public, immutable";
+    }
+
+    location = /index.html {
+        add_header Cache-Control "no-cache";
+    }
+
     location = /api/hotspot { return 301 /api/hotspot/; }
     location = /api/hotspot/probe { return 404; }
     location /api/hotspot/ {
