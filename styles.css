@@ -901,6 +901,18 @@ button[type="submit"]:hover {
   color: var(--accent);
 }
 
+.handoff-flash {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(33, 124, 107, 0.25);
+  animation: handoff-pulse 0.9s ease-in-out 2;
+}
+
+@keyframes handoff-pulse {
+  50% {
+    box-shadow: 0 0 0 7px rgba(33, 124, 107, 0.12);
+  }
+}
+
 .streamer-list {
   display: grid;
   gap: 14px;

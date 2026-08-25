@@ -2386,17 +2386,8 @@ function exportFeedbackAnalysis() {
     ]);
   });
 
-  const csv = rows
-    .map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(","))
-    .join("\n");
-  const blob = new Blob([`\uFEFF${csv}`], { type: "text/csv;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
   const date = new Date().toISOString().slice(0, 10);
-  link.href = url;
-  link.download = `玩家评论分析-${date}.csv`;
-  link.click();
-  URL.revokeObjectURL(url);
+  downloadFile(`玩家评论分析-${date}.csv`, `\uFEFF${toCsv(rows)}`, "text/csv;charset=utf-8");
 }
 
 /* ========================================
@@ -3158,8 +3149,72 @@ function renderTrendingDetail(gameName, platform, topic) {
     <p class="detail-advice">风险判断：${escapeHtml(risk.advice || "当前未命中明显负面词，可作为常规热点跟进。")}</p>
     <div class="detail-actions">
       <button class="secondary-button" id="copy-topic-plan" type="button">复制选题方案</button>
+      <button class="secondary-button topic-handoff-button" type="button" data-handoff-target="content">→ 竞品拆解</button>
+      <button class="secondary-button topic-handoff-button" type="button" data-handoff-target="version">→ 生成版本文案</button>
     </div>
   `;
+}
+
+const topicHandoffTargets = {
+  content: {
+    view: "content",
+    sectionId: "content-view",
+    statusId: "content-handoff-status",
+    buttonSelector: "#content-form button[type=\"submit\"]",
+    label: "竞品内容拆解",
+    actionLabel: "生成拆解",
+    apply(game, topic) {
+      fillGameInputs(game);
+      const gameInput = document.querySelector("#game-name");
+      if (gameInput) gameInput.value = game;
+      const input = document.querySelector("#content-input");
+      if (input) input.value = topic.tag ? topic.title + "（" + topic.tag + "）" : topic.title;
+    }
+  },
+  version: {
+    view: "version",
+    sectionId: "version-view",
+    statusId: "version-handoff-status",
+    buttonSelector: "#version-form button[type=\"submit\"]",
+    label: "版本包装助手",
+    actionLabel: "生成包装方案",
+    apply(game, topic) {
+      fillGameInputs(game);
+      const theme = document.querySelector("#version-theme");
+      if (theme) theme.value = topic.title;
+    }
+  }
+};
+
+function handoffTopicToModule(targetName) {
+  const target = topicHandoffTargets[targetName];
+  const topic = currentTrendingTopics[selectedTrendingIndex];
+  if (!target || !topic) return;
+
+  const game = document.querySelector("#trending-game")?.value.trim() || "鸣潮";
+  target.apply(game, topic);
+  navigateToView(target.view);
+
+  const section = document.querySelector("#" + target.sectionId);
+  if (section?.scrollIntoView) {
+    section.scrollIntoView({ block: "start", behavior: "smooth" });
+  }
+
+  const primaryButton = document.querySelector(target.buttonSelector);
+  if (primaryButton?.classList.contains("handoff-flash")) {
+    primaryButton.classList.remove("handoff-flash");
+    void primaryButton.offsetWidth;
+  }
+  primaryButton?.classList.add("handoff-flash");
+  try { primaryButton?.focus({ preventScroll: true }); } catch (_error) { /* older engines */ }
+  window.setTimeout(() => primaryButton?.classList.remove("handoff-flash"), 1800);
+
+  const status = document.querySelector("#" + target.statusId);
+  if (status) {
+    status.hidden = false;
+    status.textContent = "已将「" + topic.title + "」带入" + target.label + "，点击「" + (target.actionLabel || "生成") + "」即可生成。";
+    status.className = "source-status source-real";
+  }
 }
 
 function buildTopicPlan(gameName, platform, topic) {
@@ -3201,16 +3256,12 @@ async function copySelectedTopicPlan() {
   const plan = buildTopicPlan(game, platform, topic);
 
   try {
-    await navigator.clipboard.writeText(plan);
+    const copied = await copyTextToClipboard(plan);
+    if (!copied) throw new Error("浏览器剪贴板不可用");
     showSourceStatus("已复制当前热点选题方案。", "source-real");
   } catch (error) {
-    showSourceStatus("复制失败：浏览器未开放剪贴板权限。", "source-mock");
+    showSourceStatus("复制失败（" + error.message + "）。", "source-mock");
   }
-}
-
-function csvEscape(value) {
-  const text = String(value ?? "");
-  return `"${text.replace(/"/g, '""')}"`;
 }
 
 function exportTrendingCsv() {
@@ -3240,15 +3291,8 @@ function exportTrendingCsv() {
     ]);
   });
 
-  const csv = rows.map((row) => row.map(csvEscape).join(",")).join("\n");
-  const blob = new Blob([`\uFEFF${csv}`], { type: "text/csv;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
   const date = new Date().toISOString().slice(0, 10);
-  link.href = url;
-  link.download = `${game}-${platform}-热点榜单-${date}.csv`;
-  link.click();
-  URL.revokeObjectURL(url);
+  downloadFile(`${game}-${platform}-热点榜单-${date}.csv`, `\uFEFF${toCsv(rows)}`, "text/csv;charset=utf-8");
   showSourceStatus("已导出当前热点榜单 CSV。", "source-real");
 }
 
@@ -3623,25 +3667,22 @@ function buildVersionPackageText() {
 }
 
 async function copyVersionPackage() {
+  const status = document.querySelector("#overview-status");
   generateVersionPackage();
   try {
-    await navigator.clipboard.writeText(buildVersionPackageText());
+    const copied = await copyTextToClipboard(buildVersionPackageText());
+    if (!copied) throw new Error("浏览器剪贴板不可用");
+    if (status) { status.textContent = "总览状态：版本包装方案已复制到剪贴板。"; status.className = "source-status source-real"; }
   } catch (error) {
-    return;
+    if (status) { status.textContent = "总览状态：复制失败（" + error.message + "）。"; status.className = "source-status source-mock"; }
   }
 }
 
 function exportVersionPackage() {
   generateVersionPackage();
   const game = document.querySelector("#version-game").value.trim() || "目标游戏";
-  const blob = new Blob([buildVersionPackageText()], { type: "text/plain;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
   const date = new Date().toISOString().slice(0, 10);
-  link.href = url;
-  link.download = `${game}-版本包装方案-${date}.txt`;
-  link.click();
-  URL.revokeObjectURL(url);
+  downloadFile(`${game}-版本包装方案-${date}.txt`, buildVersionPackageText(), "text/plain;charset=utf-8");
 }
 
 
@@ -3922,22 +3963,19 @@ function buildSegmentPlanText() {
 }
 
 async function copySegmentPlan() {
+  const status = document.querySelector("#overview-status");
   try {
-    await navigator.clipboard.writeText(buildSegmentPlanText());
+    const copied = await copyTextToClipboard(buildSegmentPlanText());
+    if (!copied) throw new Error("浏览器剪贴板不可用");
+    if (status) { status.textContent = "总览状态：分层策略方案已复制到剪贴板。"; status.className = "source-status source-real"; }
   } catch (error) {
-    return;
+    if (status) { status.textContent = "总览状态：复制失败（" + error.message + "）。"; status.className = "source-status source-mock"; }
   }
 }
 
 function exportSegmentPlan() {
-  const blob = new Blob([buildSegmentPlanText()], { type: "text/plain;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
   const date = new Date().toISOString().slice(0, 10);
-  link.href = url;
-  link.download = `玩家分层运营策略-${date}.txt`;
-  link.click();
-  URL.revokeObjectURL(url);
+  downloadFile(`玩家分层运营策略-${date}.txt`, buildSegmentPlanText(), "text/plain;charset=utf-8");
 }
 
 /* ---- 模块7：KOL/KOC 合作筛选 ---- */
@@ -4659,15 +4697,8 @@ function exportCreatorCsv() {
       getCreatorBriefDetail(row)
     ]);
   });
-  const csv = rows.map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(",")).join("\n");
-  const blob = new Blob([`\uFEFF${csv}`], { type: "text/csv;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
   const date = new Date().toISOString().slice(0, 10);
-  link.href = url;
-  link.download = `KOL-KOC合作筛选表-${date}.csv`;
-  link.click();
-  URL.revokeObjectURL(url);
+  downloadFile(`KOL-KOC合作筛选表-${date}.csv`, `\uFEFF${toCsv(rows)}`, "text/csv;charset=utf-8");
 }
 
 function downloadCreatorTemplate() {
@@ -4676,14 +4707,7 @@ function downloadCreatorTemplate() {
     ["示例攻略UP主", "B站", "18万", "4.5万", "7.2%", "攻略/测评", "开放世界/二游", "高", "12000", "低"],
     ["示例直播KOC", "抖音", "6万", "1.8万", "9%", "直播切片/整活", "竞速/动作", "中", "3500", "中"]
   ];
-  const csv = rows.map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(",")).join("\n");
-  const blob = new Blob([`\uFEFF${csv}`], { type: "text/csv;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = "KOL-KOC导入模板.csv";
-  link.click();
-  URL.revokeObjectURL(url);
+  downloadFile("KOL-KOC导入模板.csv", `\uFEFF${toCsv(rows)}`, "text/csv;charset=utf-8");
 }
 
 /* ---- 总览：案例载入与完整方案导出 ---- */
@@ -5212,14 +5236,8 @@ async function exportFullOperationReport() {
 
   const text = buildFullOperationReportText();
   const game = document.querySelector("#version-game")?.value.trim() || "目标游戏";
-  const blob = new Blob([text], { type: "text/markdown;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
   const date = new Date().toISOString().slice(0, 10);
-  link.href = url;
-  link.download = `${game}-完整运营方案-${date}.md`;
-  link.click();
-  URL.revokeObjectURL(url);
+  downloadFile(`${game}-完整运营方案-${date}.md`, text, "text/markdown;charset=utf-8");
 
   if (status) {
     status.textContent = "总览状态：已导出完整运营方案。";
@@ -5362,14 +5380,7 @@ function downloadStreamerTemplate() {
     ["示例主播 A", "286", "1240", "188000", "21400", "210", "860", "132000", "15800"],
     ["示例主播 B", "168", "690", "246000", "18200", "152", "720", "198000", "17100"]
   ];
-  const csv = rows.map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(",")).join("\n");
-  const blob = new Blob([`\uFEFF${csv}`], { type: "text/csv;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = "主播活动数据模板.csv";
-  link.click();
-  URL.revokeObjectURL(url);
+  downloadFile("主播活动数据模板.csv", `\uFEFF${toCsv(rows)}`, "text/csv;charset=utf-8");
   updateStreamerImportStatus("主播数据来源：模板已下载，可按字段要求填充后再导入。", "source-status source-real");
 }
 
@@ -5500,6 +5511,11 @@ document.querySelector("#demo-mode-toggle")?.addEventListener("change", () => {
 });
 
 document.querySelector("#trending-detail")?.addEventListener("click", (event) => {
+  const handoffButton = event.target.closest("[data-handoff-target]");
+  if (handoffButton) {
+    handoffTopicToModule(handoffButton.dataset.handoffTarget);
+    return;
+  }
   if (event.target.closest("#copy-topic-plan")) {
     copySelectedTopicPlan();
   }

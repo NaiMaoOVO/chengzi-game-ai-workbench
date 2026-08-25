@@ -182,6 +182,22 @@ function pickRowValue(row, headerMap, aliases, fallbackIndex) {
 }
 
 
+function toCsv(rows) {
+  return rows
+    .map((row) => row.map((cell) => `"${String(cell ?? "").replace(/"/g, '""')}"`).join(","))
+    .join("\n");
+}
+
+function downloadFile(filename, content, mime) {
+  const blob = new Blob([content], { type: mime || "application/octet-stream" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
 function formatChange(current, baseline, threshold = getReviewPolicy().metricThreshold) {
   if (!baseline) {
     return {
