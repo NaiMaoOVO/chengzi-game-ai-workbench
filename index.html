@@ -382,12 +382,17 @@
                   <option value="7d">近 7 天</option>
                 </select>
               </label>
+              <div class="segmented-control" aria-label="评论导入平台" id="feedback-platform-switch">
+                <button class="segment-button active" type="button" data-feedback-import-target="bili" aria-pressed="true">B站视频</button>
+                <button class="segment-button" type="button" data-feedback-import-target="xhs" aria-pressed="false">小红书笔记</button>
+              </div>
               <label>
-                B站视频链接或 BV 号
+                <span id="feedback-import-url-label">B站视频链接或 BV 号</span>
                 <input id="bili-comment-url" placeholder="例如：https://www.bilibili.com/video/BV... 或 BV..." />
               </label>
               <div class="trending-actions">
                 <button class="secondary-button" id="fetch-bili-comments" type="button">抓取 B站评论</button>
+                <button class="secondary-button" id="fetch-xhs-note-comments" type="button" hidden>小红书笔记导入</button>
                 <button class="secondary-button" id="fetch-hot-video-comments" type="button">抓取热门视频评论</button>
                 <button class="secondary-button" id="check-comment-services" type="button">服务自检</button>
                 <button class="secondary-button" id="export-feedback" type="button">导出分析</button>

@@ -79,6 +79,8 @@ let selectedTrendingIndex = 0;
 const trendingRequestGuard = createGenerationGuard();
 const serviceModeGuard = createGenerationGuard();
 let currentFeedbackRows = [];
+const FEEDBACK_XHS_SOURCE = "小红书笔记";
+let feedbackImportTarget = "bili";
 let currentCreatorRows = [];
 let streamers = [
   {
@@ -2127,6 +2129,24 @@ function importFeedbackComments(comments) {
   return cleanResult;
 }
 
+function setFeedbackImportTarget(target) {
+  feedbackImportTarget = target === "xhs" ? "xhs" : "bili";
+  const isXhs = feedbackImportTarget === "xhs";
+  document.querySelectorAll("#feedback-platform-switch .segment-button").forEach((button) => {
+    const active = button.dataset.feedbackImportTarget === feedbackImportTarget;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-pressed", String(active));
+  });
+  const label = document.querySelector("#feedback-import-url-label");
+  if (label) label.textContent = isXhs ? "小红书笔记链接或笔记 ID" : "B站视频链接或 BV 号";
+  const input = document.querySelector("#bili-comment-url");
+  if (input) input.placeholder = isXhs
+    ? "例如：https://www.xiaohongshu.com/explore/...?xsec_token=... 或 32 位笔记 ID"
+    : "例如：https://www.bilibili.com/video/BV... 或 BV...";
+  document.querySelector("#fetch-bili-comments")?.toggleAttribute("hidden", isXhs);
+  document.querySelector("#fetch-xhs-note-comments")?.toggleAttribute("hidden", !isXhs);
+}
+
 async function fetchBiliComments() {
   const input = document.querySelector("#bili-comment-url").value.trim();
   const status = document.querySelector("#feedback-source-status");
@@ -2187,6 +2207,81 @@ async function fetchBiliComments() {
   }
 }
 
+function normalizeXhsNoteErrorMessage(message) {
+  const text = String(message || "");
+  if (/Failed to fetch|NetworkError|load failed/i.test(text)) {
+    return "小红书桥接服务未启动，请先运行 npm run start:xhs-bridge。";
+  }
+  return text || "小红书桥接服务未启动";
+}
+
+async function fetchXhsNoteComments() {
+  const input = document.querySelector("#bili-comment-url").value.trim();
+  const status = document.querySelector("#feedback-source-status");
+  const tokenMatch = input.match(/[?&]xsec_token=([^&\s]+)/);
+  const xsecToken = tokenMatch ? decodeURIComponent(tokenMatch[1]) : "";
+
+  if (!input) {
+    status.textContent = "评论来源：请输入小红书笔记链接或笔记 ID。";
+    status.className = "source-status source-mock";
+    setFetchDiagnostic("#feedback-fetch-diagnostic", "warning", "等待输入", "请输入带 xsec_token 的完整笔记链接，或笔记 ID 加 xsec_token；桥接服务只读取公开笔记内容。");
+    return;
+  }
+
+  status.textContent = "评论来源：正在读取小红书笔记...";
+  status.className = "source-status";
+  setFetchDiagnostic("#feedback-fetch-diagnostic", "loading", "正在抓取笔记评论", "正在连接本机小红书桥接服务，并请求笔记详情与评论。");
+
+  try {
+    const params = new URLSearchParams({ url: input, load_all_comments: "1", limit: "120" });
+    if (xsecToken) params.set("xsec_token", xsecToken);
+    const response = await fetch(`${XHS_SERVICE_URL}/note?${params}`);
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(payload.message || payload.error || "小红书桥接服务请求失败");
+    }
+
+    const note = payload.note || {};
+    const comments = (note.comments || [])
+      .map((item) => (typeof item === "string" ? item : item.content))
+      .filter(Boolean)
+      .map((content) => `【${FEEDBACK_XHS_SOURCE}】${content}`);
+    if (!comments.length && document.querySelector("#demo-mode-toggle")?.checked) {
+      const game = document.querySelector("#feedback-game")?.value.trim() || "目标游戏";
+      const fallback = importFeedbackComments(buildDemoFeedbackComments(game, currentTrendingTopics.slice(0, 3)));
+      status.textContent = `评论来源：真实笔记评论为空，已自动切换为样例兜底 · ${note.title || "小红书笔记"} · ${fallback.lines.length} 条样例评论。`;
+      status.className = "source-status source-mock";
+      setFetchDiagnostic("#feedback-fetch-diagnostic", "mock", "样例兜底", "真实接口返回为空，已保留演示模式，继续走评论清洗、舆情识别和运营建议链路。");
+      analyzeFeedback();
+      return;
+    }
+
+    const cleanResult = importFeedbackComments(comments);
+    status.textContent = `评论来源：小红书笔记 · ${note.title || "未命名笔记"} · 已导入 ${cleanResult.lines.length} 条有效评论，过滤 ${cleanResult.removedTotal} 条`;
+    status.className = cleanResult.lines.length ? "source-status source-real" : "source-status source-mock";
+    setFetchDiagnostic(
+      "#feedback-fetch-diagnostic",
+      cleanResult.lines.length ? "real" : "warning",
+      cleanResult.lines.length ? "笔记评论已导入" : "笔记评论为空",
+      `已完成评论清洗：有效 ${cleanResult.lines.length} 条，过滤 ${cleanResult.removedTotal} 条。`
+    );
+    analyzeFeedback();
+  } catch (error) {
+    const normalized = normalizeXhsNoteErrorMessage(error.message);
+    if (document.querySelector("#demo-mode-toggle")?.checked) {
+      const game = document.querySelector("#feedback-game")?.value.trim() || "目标游戏";
+      const cleanResult = importFeedbackComments(buildDemoFeedbackComments(game, currentTrendingTopics.slice(0, 3)));
+      status.textContent = `评论来源：真实抓取失败，已自动切换为样例兜底 · ${normalized}`;
+      status.className = "source-status source-mock";
+      setFetchDiagnostic("#feedback-fetch-diagnostic", "mock", "真实抓取失败，已兜底", normalized);
+      analyzeFeedback();
+      return;
+    }
+    status.textContent = `评论来源：抓取失败，${normalized}`;
+    status.className = "source-status source-mock";
+    setFetchDiagnostic("#feedback-fetch-diagnostic", "error", "抓取失败", normalized);
+  }
+}
 async function fetchCommentsByVideoUrl(url, limit = 40) {
   const params = new URLSearchParams({ url, limit: String(limit) });
   const response = await fetch(`${COMMENT_SERVICE_URL}/comments?${params}`);
@@ -5425,7 +5520,11 @@ document.querySelector("#feedback-form").addEventListener("submit", (event) => {
   analyzeFeedback();
 });
 
+document.querySelectorAll("#feedback-platform-switch .segment-button").forEach((button) => {
+  button.addEventListener("click", () => setFeedbackImportTarget(button.dataset.feedbackImportTarget));
+});
 document.querySelector("#fetch-bili-comments")?.addEventListener("click", fetchBiliComments);
+document.querySelector("#fetch-xhs-note-comments")?.addEventListener("click", fetchXhsNoteComments);
 document.querySelector("#fetch-hot-video-comments")?.addEventListener("click", fetchHotVideoComments);
 document.querySelector("#check-comment-services")?.addEventListener("click", checkCommentServices);
 document.querySelector("#export-feedback")?.addEventListener("click", exportFeedbackAnalysis);

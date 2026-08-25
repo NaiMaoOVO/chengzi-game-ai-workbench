@@ -23,7 +23,8 @@ const SERVICE_URL_PRESETS = {
     comment: "http://127.0.0.1:8791",
     launcher: "http://127.0.0.1:8793",
     llm: "http://127.0.0.1:8794",
-    archive: "http://127.0.0.1:8796"
+    archive: "http://127.0.0.1:8796",
+    xiaohongshu: "http://127.0.0.1:8805"
   },
   online: {
     ocr: "/api/ocr",
@@ -31,7 +32,8 @@ const SERVICE_URL_PRESETS = {
     comment: "/api/comment",
     launcher: "",
     llm: "/api/llm",
-    archive: "/api/archive"
+    archive: "/api/archive",
+    xiaohongshu: "/api/xiaohongshu"
   }
 };
 
@@ -41,6 +43,7 @@ let COMMENT_SERVICE_URL = SERVICE_URL_PRESETS.local.comment;
 let LAUNCHER_SERVICE_URL = SERVICE_URL_PRESETS.local.launcher;
 let LLM_SERVICE_URL = SERVICE_URL_PRESETS.local.llm;
 let ARCHIVE_SERVICE_URL = SERVICE_URL_PRESETS.local.archive;
+let XHS_SERVICE_URL = SERVICE_URL_PRESETS.local.xiaohongshu;
 
 function inferDefaultServiceMode() {
   if (typeof window === "undefined" || !window.location) return "local";
@@ -84,6 +87,7 @@ function applyServiceMode(mode = getServiceMode()) {
   LAUNCHER_SERVICE_URL = urls.launcher;
   LLM_SERVICE_URL = urls.llm;
   ARCHIVE_SERVICE_URL = urls.archive;
+  XHS_SERVICE_URL = urls.xiaohongshu || "";
   return mode;
 }
 
