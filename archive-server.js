@@ -23,7 +23,7 @@ function corsHeaders(request) {
   const allowed = ALLOWED_ORIGINS.has("*") || !origin || origin === "null" || ALLOWED_ORIGINS.has(origin);
   return {
     "Access-Control-Allow-Origin": allowed ? (ALLOWED_ORIGINS.has("*") ? "*" : (origin === "null" ? "null" : (origin || "null"))) : "null",
-    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+    "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
     "Access-Control-Allow-Headers": "Content-Type",
     "Vary": "Origin"
   };
@@ -101,9 +101,27 @@ CREATE TABLE IF NOT EXISTS project_profiles (
   payload TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS publications (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  game TEXT NOT NULL,
+  title TEXT NOT NULL,
+  channel TEXT NOT NULL,
+  url TEXT NOT NULL DEFAULT '',
+  related_topic TEXT NOT NULL DEFAULT '',
+  published_at TEXT,
+  metrics_json TEXT NOT NULL DEFAULT '{}',
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_publications_game ON publications(game);
 `);
 
 const insertStatement = db.prepare("INSERT INTO snapshots (kind, game, source, payload, created_at) VALUES (?, ?, ?, ?, ?)");
+
+const insertPublicationStatement = db.prepare("INSERT INTO publications (game, title, channel, url, related_topic, published_at, metrics_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
+const updatePublicationStatement = db.prepare("UPDATE publications SET game = ?, title = ?, channel = ?, url = ?, related_topic = ?, published_at = ?, metrics_json = ?, updated_at = ? WHERE id = ?");
+const getPublicationStatement = db.prepare("SELECT id, game, title, channel, url, related_topic, published_at, metrics_json, created_at, updated_at FROM publications WHERE id = ?");
+const deletePublicationStatement = db.prepare("DELETE FROM publications WHERE id = ?");
 
 const KIND_PATTERN = /^[a-z][a-z0-9_-]{0,40}$/;
 
@@ -127,6 +145,49 @@ function latestSnapshot(url) {
     ? db.prepare("SELECT id, kind, game, source, payload, created_at FROM snapshots WHERE kind = ? AND game = ? ORDER BY id DESC LIMIT 1").get(kind, game)
     : db.prepare("SELECT id, kind, game, source, payload, created_at FROM snapshots WHERE kind = ? ORDER BY id DESC LIMIT 1").get(kind);
   return row ? { ...row, payload: JSON.parse(row.payload) } : null;
+}
+
+/* ---- 发布台账（P-2）：记录内容发布与效果数据回流 ---- */
+
+function publicationIdOf(pathname) {
+  const match = /^\/publications\/(\d{1,15})$/.exec(pathname);
+  return match ? Number.parseInt(match[1], 10) : null;
+}
+
+function serializeMetrics(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("metrics_json 必须是对象");
+  try {
+    return JSON.stringify(value);
+  } catch (_error) {
+    throw new Error("metrics_json 无法序列化");
+  }
+}
+
+function formatPublication(row) {
+  let metrics;
+  try {
+    metrics = JSON.parse(row.metrics_json || "{}");
+  } catch (_error) {
+    metrics = {};
+  }
+  return { ...row, metrics_json: metrics };
+}
+
+function listPublications(url) {
+  const game = (url.searchParams.get("game") || "").trim();
+  const channel = (url.searchParams.get("channel") || "").trim();
+  const filters = [];
+  const params = [];
+  if (game) { filters.push("game = ?"); params.push(game); }
+  if (channel) { filters.push("channel = ?"); params.push(channel); }
+  const whereSql = filters.length ? " WHERE " + filters.join(" AND ") : "";
+  const limitRaw = Number.parseInt(url.searchParams.get("limit"), 10);
+  const limit = Number.isFinite(limitRaw) ? Math.min(200, Math.max(1, limitRaw)) : 20;
+  const offsetRaw = Number.parseInt(url.searchParams.get("offset"), 10);
+  const offset = Number.isFinite(offsetRaw) ? Math.max(0, offsetRaw) : 0;
+  const total = db.prepare("SELECT COUNT(*) AS count FROM publications" + whereSql).get(...params).count;
+  const rows = db.prepare("SELECT id, game, title, channel, url, related_topic, published_at, metrics_json, created_at, updated_at FROM publications" + whereSql + " ORDER BY id DESC LIMIT ? OFFSET ?").all(...params, limit, offset);
+  return { items: rows.map(formatPublication), total };
 }
 
 const server = http.createServer((request, response) => {
@@ -218,6 +279,125 @@ const server = http.createServer((request, response) => {
       } catch (error) {
         sendJson(request, response, 400, { error: error.message });
       }
+    });
+    return;
+  }
+  if (request.method === "GET" && url.pathname === "/publications") {
+    try {
+      sendJson(request, response, 200, { ok: true, ...listPublications(url) });
+    } catch (error) {
+      sendJson(request, response, 400, { ok: false, error: error.message });
+    }
+    return;
+  }
+  if (request.method === "DELETE" && publicationIdOf(url.pathname) !== null) {
+    const info = deletePublicationStatement.run(publicationIdOf(url.pathname));
+    if (Number(info.changes) === 0) {
+      sendJson(request, response, 404, { ok: false, error: "发布记录不存在" });
+      return;
+    }
+    sendJson(request, response, 200, { ok: true });
+    return;
+  }
+  if (request.method === "PUT" && publicationIdOf(url.pathname) !== null) {
+    const chunksUpd = [];
+    let receivedUpd = 0;
+    let rejectedUpd = false;
+    request.on("data", (chunk) => {
+      if (rejectedUpd) return;
+      receivedUpd += chunk.length;
+      if (receivedUpd > MAX_BODY_BYTES) {
+        rejectedUpd = true;
+        sendJson(request, response, 413, { error: "台账内容过大（上限 5MB）" });
+        request.resume();
+        return;
+      }
+      chunksUpd.push(chunk);
+    });
+    request.on("end", () => {
+      if (rejectedUpd) return;
+      try {
+        const body = JSON.parse(Buffer.concat(chunksUpd).toString("utf8"));
+        if (!body || typeof body !== "object" || Array.isArray(body)) {
+          sendJson(request, response, 400, { ok: false, error: "请求体必须是 JSON 对象" });
+          return;
+        }
+        const id = publicationIdOf(url.pathname);
+        const current = getPublicationStatement.get(id);
+        if (!current) {
+          sendJson(request, response, 404, { ok: false, error: "发布记录不存在" });
+          return;
+        }
+        updatePublicationStatement.run(
+          typeof body.game === "string" && body.game.trim() ? body.game.trim() : current.game,
+          typeof body.title === "string" && body.title.trim() ? body.title.trim() : current.title,
+          typeof body.channel === "string" && body.channel.trim() ? body.channel.trim() : current.channel,
+          typeof body.url === "string" ? body.url.trim() : current.url,
+          typeof body.related_topic === "string" ? body.related_topic.trim() : current.related_topic,
+          typeof body.published_at === "string" ? body.published_at.trim() : current.published_at,
+          Object.hasOwn(body, "metrics_json") ? serializeMetrics(body.metrics_json) : current.metrics_json,
+          new Date().toISOString(),
+          id
+        );
+        sendJson(request, response, 200, { ok: true, publication: formatPublication(getPublicationStatement.get(id)) });
+      } catch (error) {
+        sendJson(request, response, 400, { ok: false, error: error.message });
+      }
+    });
+    return;
+  }
+  if (request.method === "POST" && url.pathname === "/publications") {
+    const chunksPub = [];
+    let receivedPub = 0;
+    let rejectedPub = false;
+    request.on("data", (chunk) => {
+      if (rejectedPub) return;
+      receivedPub += chunk.length;
+      if (receivedPub > MAX_BODY_BYTES) {
+        rejectedPub = true;
+        sendJson(request, response, 413, { error: "台账内容过大（上限 5MB）" });
+        request.resume();
+        return;
+      }
+      chunksPub.push(chunk);
+    });
+    request.on("end", () => {
+      if (rejectedPub) return;
+      let body;
+      try {
+        body = JSON.parse(Buffer.concat(chunksPub).toString("utf8"));
+      } catch (_error) {
+        sendJson(request, response, 400, { ok: false, error: "请求体不是合法 JSON" });
+        return;
+      }
+      const game = typeof body?.game === "string" ? body.game.trim() : "";
+      const title = typeof body?.title === "string" ? body.title.trim() : "";
+      const channel = typeof body?.channel === "string" ? body.channel.trim() : "";
+      const missing = [!game && "game", !title && "title", !channel && "channel"].filter(Boolean);
+      if (missing.length) {
+        sendJson(request, response, 400, { ok: false, error: "缺少必填字段：" + missing.join("、") });
+        return;
+      }
+      let metricsJson;
+      try {
+        metricsJson = serializeMetrics(body?.metrics_json ?? {});
+      } catch (error) {
+        sendJson(request, response, 400, { ok: false, error: error.message });
+        return;
+      }
+      const now = new Date().toISOString();
+      const info = insertPublicationStatement.run(
+        game,
+        title,
+        channel,
+        typeof body?.url === "string" ? body.url.trim() : "",
+        typeof body?.related_topic === "string" ? body.related_topic.trim() : "",
+        typeof body?.published_at === "string" && body.published_at.trim() ? body.published_at.trim() : null,
+        metricsJson,
+        now,
+        now
+      );
+      sendJson(request, response, 201, { ok: true, publication: formatPublication(getPublicationStatement.get(Number(info.lastInsertRowid))) });
     });
     return;
   }
