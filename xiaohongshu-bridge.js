@@ -44,6 +44,14 @@ function resolveMcporterBin(command, options = {}) {
 
 const MCPORTER_BIN = resolveMcporterBin(process.env.MCPORTER_BIN || "mcporter");
 
+// GUI 启动链的 PATH 常常没有 node；mcporter 的 shebang 依赖 `#!/usr/bin/env node`。
+function buildChildEnv(baseEnv = process.env) {
+  const nodeBinDir = path.dirname(process.execPath);
+  const entries = String(baseEnv.PATH || "").split(path.delimiter).filter(Boolean);
+  if (!entries.includes(nodeBinDir)) entries.unshift(nodeBinDir);
+  return { ...baseEnv, PATH: entries.join(path.delimiter) };
+}
+
 function mcpPublishTime(range) {
   return {
     today: "一天内",
@@ -121,7 +129,7 @@ function runMcpSearch(keyword, range = "24h", options = {}) {
     const timeoutMs = options.timeoutMs || BRIDGE_TIMEOUT_MS;
     const child = spawnImpl(MCPORTER_BIN, buildSearchArgs(MCP_SERVER, keyword, range), {
       cwd: __dirname,
-      env: process.env,
+      env: buildChildEnv(options.baseEnv),
       stdio: ["ignore", "pipe", "pipe"]
     });
     const chunks = [];
@@ -213,4 +221,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { buildSearchArgs, parseMcpJsonOutput, runMcpSearch, mcpPublishTime, createSearchGate, resolveMcporterBin };
+module.exports = { buildSearchArgs, parseMcpJsonOutput, runMcpSearch, mcpPublishTime, createSearchGate, resolveMcporterBin, buildChildEnv };

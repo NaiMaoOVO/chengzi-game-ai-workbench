@@ -3,12 +3,15 @@ const assert = require("node:assert/strict");
 const { EventEmitter } = require("node:events");
 const { PassThrough } = require("node:stream");
 
+const path = require("node:path");
+
 const {
   buildSearchArgs,
   parseMcpJsonOutput,
   createSearchGate,
   resolveMcporterBin,
-  runMcpSearch
+  runMcpSearch,
+  buildChildEnv
 } = require("../xiaohongshu-bridge");
 
 test("bridge builds a fixed read-only MCP search command", () => {
@@ -55,6 +58,16 @@ test("bridge resolves mcporter from the npm global directory when PATH is minima
     exists: (value) => value === "/Users/demo/.npm-global/bin/mcporter"
   });
   assert.equal(resolved, "/Users/demo/.npm-global/bin/mcporter");
+});
+
+// 回归锁：GUI 启动链 PATH 没有 node 时，mcporter 的 shebang 会直接失败。
+test("bridge spawn env prepends the running node bin dir to PATH without duplicating it", () => {
+  const nodeBinDir = path.dirname(process.execPath);
+  const minimal = buildChildEnv({ PATH: "/usr/bin:/bin", HOME: "/Users/demo" });
+  assert.equal(minimal.PATH.split(path.delimiter)[0], nodeBinDir);
+
+  const alreadyListed = buildChildEnv({ PATH: `${nodeBinDir}${path.delimiter}/usr/bin` });
+  assert.equal(alreadyListed.PATH.split(path.delimiter).filter((entry) => entry === nodeBinDir).length, 1);
 });
 
 test("bridge kills a hung mcporter process after its own timeout", async () => {
