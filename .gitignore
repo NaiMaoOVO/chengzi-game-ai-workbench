@@ -3,8 +3,8 @@
 !.env.example
 node_modules/
 public/
-# xiaohongshu-mcp 官方二进制，本地下载，不进仓库
-tools/xhs-mcp/
+# xiaohongshu-mcp 二进制/源码/Go 工具链与构建缓存，本地使用，不进仓库
+/tools/
 *.log
 .DS_Store
 # 内部文档，仅本地保留，不进仓库
