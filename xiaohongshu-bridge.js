@@ -27,6 +27,8 @@ function createSearchGate() {
   };
 }
 const searchGate = createSearchGate();
+// xiaohongshu-mcp 底层是单个浏览器会话，详情读取与搜索共用同一把单飞锁的语义。
+const noteGate = createSearchGate();
 
 function resolveMcporterBin(command, options = {}) {
   const pathValue = options.pathValue ?? process.env.PATH ?? "";
@@ -67,6 +69,68 @@ function buildSearchArgs(server, keyword, range = "24h") {
     `${server}.search_feeds`,
     "--args",
     JSON.stringify({ keyword, filters: { publish_time: mcpPublishTime(range) } }),
+    "--output",
+    "json",
+    "--timeout",
+    "120000"
+  ];
+}
+
+// 笔记详情和评论由同一个只读工具 get_feed_detail 返回；xsec_token 只能取自
+// Feed 列表或分享链接本身。xhslink 短链依赖浏览器跳转，服务端不做解析。
+// 真实笔记 ID 有两种形态：24 位（时间戳前缀）与 32 位；均限十六进制字符。
+const NOTE_ID_PATTERN = /^([0-9a-f]{24}|[0-9a-f]{32})$/i;
+
+function parseNoteTarget(rawValue, options = {}) {
+  const fail = (code) => ({ ok: false, code });
+  const value = String(rawValue || "").trim();
+  if (!value) return fail("note_url_required");
+  const explicitToken = String(options.token || "").trim();
+
+  if (NOTE_ID_PATTERN.test(value)) {
+    if (!explicitToken) return fail("xsec_token_required");
+    return { ok: true, feedId: value.toLowerCase(), xsecToken: explicitToken, source: "id" };
+  }
+
+  if (!/^https?:\/\//i.test(value)) return fail("invalid_note_url");
+  let parsed;
+  try {
+    parsed = new URL(value);
+  } catch (_error) {
+    return fail("invalid_note_url");
+  }
+  const host = parsed.hostname.toLowerCase();
+  if (host === "xhslink.com" || host.endsWith(".xhslink.com")) return fail("xhslink_unsupported");
+  if (host !== "xiaohongshu.com" && !host.endsWith(".xiaohongshu.com")) return fail("unsupported_host");
+
+  const token = explicitToken || String(parsed.searchParams.get("xsec_token") || "").trim();
+  const match = parsed.pathname.match(/^\/(?:explore|discovery\/item)\/([0-9a-f]{24}|[0-9a-f]{32})\/?$/i)
+    || parsed.pathname.match(/^\/user\/profile\/[0-9a-f]{32}\/([0-9a-f]{24}|[0-9a-f]{32})\/?$/i);
+  if (!match) return fail("note_id_not_found");
+  if (!token) return fail("xsec_token_required");
+  return { ok: true, feedId: match[1].toLowerCase(), xsecToken: token, source: "url" };
+}
+
+const NOTE_TARGET_ERRORS = {
+  note_url_required: { status: 400, message: "缺少笔记地址：请提供完整的小红书笔记链接或笔记 ID。" },
+  invalid_note_url: { status: 400, message: "无法解析的小红书笔记地址。" },
+  unsupported_host: { status: 400, message: "仅支持 xiaohongshu.com 域名下的笔记链接。" },
+  xhslink_unsupported: { status: 400, message: "暂不支持 xhslink 短链：请提供含 xsec_token 的完整链接，或笔记 ID 加 xsec_token。" },
+  note_id_not_found: { status: 400, message: "链接中未找到笔记 ID：支持 /explore/<id>、/discovery/item/<id> 等形式。" },
+  xsec_token_required: { status: 400, message: "缺少 xsec_token：请使用带 xsec_token 的完整链接，或在请求中附加 &xsec_token=..." }
+};
+
+function buildNoteArgs(server, feedId, xsecToken, options = {}) {
+  const loadAllComments = Boolean(options.loadAllComments);
+  const args = { feed_id: feedId, xsec_token: xsecToken, load_all_comments: loadAllComments };
+  if (loadAllComments && Number.isInteger(options.commentLimit)) {
+    args.limit = Math.min(Math.max(options.commentLimit, 1), 200);
+  }
+  return [
+    "call",
+    `${server}.get_feed_detail`,
+    "--args",
+    JSON.stringify(args),
     "--output",
     "json",
     "--timeout",
@@ -123,11 +187,12 @@ function isAuthorized(request) {
   return request.headers.authorization === `Bearer ${BRIDGE_TOKEN}`;
 }
 
-function runMcpSearch(keyword, range = "24h", options = {}) {
+function runMcpCall(argv, options = {}) {
   return new Promise((resolve, reject) => {
     const spawnImpl = options.spawnImpl || spawn;
     const timeoutMs = options.timeoutMs || BRIDGE_TIMEOUT_MS;
-    const child = spawnImpl(MCPORTER_BIN, buildSearchArgs(MCP_SERVER, keyword, range), {
+    const label = String(argv[1] || "").split(".").pop() || "mcp";
+    const child = spawnImpl(MCPORTER_BIN, argv, {
       cwd: __dirname,
       env: buildChildEnv(options.baseEnv),
       stdio: ["ignore", "pipe", "pipe"]
@@ -144,7 +209,7 @@ function runMcpSearch(keyword, range = "24h", options = {}) {
       error ? reject(error) : resolve(value);
     };
     timer = setTimeout(() => {
-      finish(new Error(`xiaohongshu-mcp 搜索超时（${timeoutMs}ms）`));
+      finish(new Error(`xiaohongshu-mcp ${label} 超时（${timeoutMs}ms）`));
       child.kill?.("SIGTERM");
     }, timeoutMs);
 
@@ -174,6 +239,10 @@ function runMcpSearch(keyword, range = "24h", options = {}) {
   });
 }
 
+function runMcpSearch(keyword, range = "24h", options = {}) {
+  return runMcpCall(buildSearchArgs(MCP_SERVER, keyword, range), options);
+}
+
 const server = http.createServer(async (request, response) => {
   const url = new URL(request.url, `http://${request.headers.host}`);
   if (request.method === "GET" && url.pathname === "/health") {
@@ -184,8 +253,39 @@ const server = http.createServer(async (request, response) => {
     sendJson(response, 401, { error: "unauthorized" });
     return;
   }
-  if (request.method !== "GET" || url.pathname !== "/search") {
+  const isSearch = request.method === "GET" && url.pathname === "/search";
+  const isNote = request.method === "GET" && url.pathname === "/note";
+  if (!isSearch && !isNote) {
     sendJson(response, 404, { error: "not found" });
+    return;
+  }
+
+  if (isNote) {
+    const target = parseNoteTarget(url.searchParams.get("url"), { token: url.searchParams.get("xsec_token") });
+    if (!target.ok) {
+      const mapped = NOTE_TARGET_ERRORS[target.code] || { status: 400, message: "无效的笔记请求。" };
+      sendJson(response, mapped.status, { error: target.code, message: mapped.message });
+      return;
+    }
+    const loadAllComments = url.searchParams.get("load_all_comments") === "1" || url.searchParams.get("load_all_comments") === "true";
+    let commentLimit;
+    if (loadAllComments) {
+      const rawLimit = Number(url.searchParams.get("limit"));
+      commentLimit = Number.isInteger(rawLimit) && rawLimit > 0 ? rawLimit : undefined;
+    }
+
+    if (!noteGate.tryAcquire()) {
+      sendJson(response, 429, { error: "note_busy", message: "小红书笔记读取正在进行，请稍后重试。", "Retry-After": 3 });
+      return;
+    }
+    try {
+      const payload = await runMcpCall(buildNoteArgs(MCP_SERVER, target.feedId, target.xsecToken, { loadAllComments, commentLimit }));
+      sendJson(response, 200, { note: payload });
+    } catch (error) {
+      sendJson(response, 502, { error: "xiaohongshu_mcp_failed", message: error.message });
+    } finally {
+      noteGate.release();
+    }
     return;
   }
 
@@ -196,11 +296,11 @@ const server = http.createServer(async (request, response) => {
     return;
   }
 
+  if (!searchGate.tryAcquire()) {
+    sendJson(response, 429, { error: "search_busy", message: "小红书搜索正在进行，请稍后重试。", "Retry-After": 3 });
+    return;
+  }
   try {
-    if (!searchGate.tryAcquire()) {
-      sendJson(response, 429, { error: "search_busy", message: "小红书搜索正在进行，请稍后重试。" , "Retry-After": 3 });
-      return;
-    }
     const payload = await runMcpSearch(keyword, range);
     const exactRange = range === "24h" || range === "7d";
     const result = Array.isArray(payload)
@@ -221,4 +321,16 @@ if (require.main === module) {
   });
 }
 
-module.exports = { buildSearchArgs, parseMcpJsonOutput, runMcpSearch, mcpPublishTime, createSearchGate, resolveMcporterBin, buildChildEnv };
+module.exports = {
+  buildSearchArgs,
+  buildNoteArgs,
+  parseMcpJsonOutput,
+  runMcpCall,
+  runMcpSearch,
+  parseNoteTarget,
+  NOTE_TARGET_ERRORS,
+  mcpPublishTime,
+  createSearchGate,
+  resolveMcporterBin,
+  buildChildEnv
+};
