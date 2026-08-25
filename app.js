@@ -920,6 +920,81 @@ async function requestLlmTask(task, data, timeoutMs = 60000) {
   }
 }
 
+function parseSseFrame(frame) {
+  let eventName = "";
+  const dataLines = [];
+  frame.split("\n").forEach((line) => {
+    if (line.startsWith("event:")) eventName = line.slice(6).trim();
+    else if (line.startsWith("data:")) dataLines.push(line.slice(5).trim());
+  });
+  if (!dataLines.length) return null;
+  return { event: eventName || "message", data: dataLines.join("\n") };
+}
+
+// P1-2：SSE 流式调用，仅版本包装助手使用；其他模块继续走 requestLlmTask 的非流式端点。
+async function requestLlmStreamTask(task, data, handlers = {}) {
+  const onDelta = typeof handlers.onDelta === "function" ? handlers.onDelta : null;
+  const timeoutMs = handlers.timeoutMs || 60000;
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
+  const decoder = new TextDecoder();
+  let buffered = "";
+  let partial = "";
+  try {
+    const response = await fetch(LLM_SERVICE_URL + "/generate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ task: task, data: data, stream: true }),
+      signal: controller.signal
+    });
+    const contentType = response.headers.get("content-type") || "";
+    if (!contentType.includes("text/event-stream")) {
+      // 网关未启用流式（或返回错误 JSON）：回退为一次性解析，保持界面行为可用。
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        return { ok: false, reason: payload.llm === "no_key" ? "no_key" : "error", message: payload.error || ("HTTP " + response.status), partial: partial };
+      }
+      return { ok: true, result: payload.result, model: payload.model, cached: Boolean(payload.cached), partial: partial };
+    }
+    const reader = response.body.getReader();
+    let donePayload = null;
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffered += decoder.decode(value, { stream: true });
+      let separatorAt = buffered.indexOf("\n\n");
+      while (separatorAt >= 0) {
+        const frame = parseSseFrame(buffered.slice(0, separatorAt));
+        buffered = buffered.slice(separatorAt + 2);
+        if (frame && frame.event === "delta") {
+          try {
+            const deltaPayload = JSON.parse(frame.data);
+            if (typeof deltaPayload.delta === "string" && deltaPayload.delta) {
+              partial += deltaPayload.delta;
+              if (onDelta) onDelta(partial, deltaPayload.delta);
+            }
+          } catch (_error) { /* 忽略坏帧 */ }
+        } else if (frame && frame.event === "done") {
+          try { donePayload = JSON.parse(frame.data); } catch (_error) { donePayload = null; }
+        } else if (frame && frame.event === "error") {
+          let errorPayload = {};
+          try { errorPayload = JSON.parse(frame.data); } catch (_error) { /* keep empty */ }
+          return { ok: false, reason: "error", message: errorPayload.error || "生成中断", partial: partial };
+        }
+        separatorAt = buffered.indexOf("\n\n");
+      }
+    }
+    if (donePayload) {
+      return { ok: true, result: donePayload.result, model: donePayload.model, cached: Boolean(donePayload.cached), partial: partial };
+    }
+    return { ok: false, reason: "error", message: "流式响应未正常结束", partial: partial };
+  } catch (error) {
+    return { ok: false, reason: error.name === "AbortError" ? "timeout" : "down", message: error.message, partial: partial };
+  } finally {
+    window.clearTimeout(timeout);
+  }
+}
+
 let feedbackLlmGeneration = 0;
 let versionLlmGeneration = 0;
 
@@ -1020,12 +1095,28 @@ async function enhanceVersionWithLlm() {
     const style = document.querySelector("#version-style").value;
     const audience = document.querySelector("#version-audience").value;
 
-    panel.innerHTML = `<p class="muted-copy">AI 正在生成「${escapeHtml(theme)}」版本文案…</p>`;
     const startedAt = Date.now();
-    const response = await requestLlmTask("version-copy", { game, theme, points, style, audience });
+    const expectedModeGeneration = serviceModeGuard.current();
+    panel.innerHTML = `
+      <p class="muted-copy">AI 正在流式生成「${escapeHtml(theme)}」版本文案…</p>
+      <p class="ai-insight-summary" id="version-stream-preview" hidden></p>
+    `;
+    const streamPreview = document.querySelector("#version-stream-preview");
+    const response = await requestLlmStreamTask("version-copy", { game, theme, points, style, audience }, {
+      onDelta(accumulated) {
+        if (generation !== versionLlmGeneration || !serviceModeGuard.isCurrent(expectedModeGeneration)) return;
+        if (!streamPreview) return;
+        if (streamPreview.hidden) streamPreview.hidden = false;
+        streamPreview.textContent = accumulated;
+      }
+    });
     if (generation !== versionLlmGeneration) return;
     if (!response.ok) {
-      panel.innerHTML = `<p class="muted-copy">AI 文案生成失败（${escapeHtml(response.message || response.reason)}），已保留模板结果。</p>`;
+      const partialText = String(response.partial || "");
+      panel.innerHTML = `
+        ${partialText ? `<h4>AI 文案（传输中断，原始内容如下）</h4><p class="ai-insight-summary">${escapeHtml(partialText)}</p>` : ""}
+        <p class="muted-copy">${partialText ? "流式传输中断，上方为已接收的部分内容；" : ""}AI 文案生成失败（${escapeHtml(response.message || response.reason)}），模板结果保持可用。</p>
+      `;
       return;
     }
 
