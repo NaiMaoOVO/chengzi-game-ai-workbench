@@ -3,6 +3,8 @@
 !.env.example
 node_modules/
 public/
+# xiaohongshu-mcp 官方二进制，本地下载，不进仓库
+tools/xhs-mcp/
 *.log
 .DS_Store
 # 内部文档，仅本地保留，不进仓库
@@ -11,3 +13,4 @@ HANDOFF.md
 AI_PROJECT_CONTEXT.md
 OPTIMIZATION.md
 launcher-sync-status.js
+cookies.json
