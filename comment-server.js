@@ -352,6 +352,10 @@ server.on("error", (error) => {
   process.exit(1);
 });
 
+// 慢速请求显式上限：与 hotspot 保持一致的防御默认值。
+server.headersTimeout = Math.max(UPSTREAM_TIMEOUT_MS, 10000);
+server.requestTimeout = Math.max(UPSTREAM_TIMEOUT_MS + 5000, 30000);
+
 server.listen(PORT, "127.0.0.1", () => {
   console.log(`Comment service running at http://127.0.0.1:${PORT}`);
 });
