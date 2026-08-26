@@ -114,6 +114,21 @@ CREATE TABLE IF NOT EXISTS publications (
   updated_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_publications_game ON publications(game);
+CREATE TABLE IF NOT EXISTS risk_events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  game TEXT NOT NULL,
+  title TEXT NOT NULL,
+  source TEXT NOT NULL DEFAULT '评论分析',
+  level TEXT NOT NULL DEFAULT '中',
+  url TEXT NOT NULL DEFAULT '',
+  detail TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'open',
+  notes TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_risk_events_game ON risk_events(game);
+CREATE INDEX IF NOT EXISTS idx_risk_events_status ON risk_events(status);
 `);
 
 const insertStatement = db.prepare("INSERT INTO snapshots (kind, game, source, payload, created_at) VALUES (?, ?, ?, ?, ?)");
@@ -188,6 +203,40 @@ function listPublications(url) {
   const total = db.prepare("SELECT COUNT(*) AS count FROM publications" + whereSql).get(...params).count;
   const rows = db.prepare("SELECT id, game, title, channel, url, related_topic, published_at, metrics_json, created_at, updated_at FROM publications" + whereSql + " ORDER BY id DESC LIMIT ? OFFSET ?").all(...params, limit, offset);
   return { items: rows.map(formatPublication), total };
+}
+
+/* ---- 风险事件工单（P-8）：评论/舆情风险按 open → processing → resolved 三态跟踪 ---- */
+
+const RISK_EVENT_LEVELS = new Set(["低", "中", "高"]);
+const RISK_EVENT_STATUSES = new Set(["open", "processing", "resolved", "dropped"]);
+
+const insertRiskEventStatement = db.prepare("INSERT INTO risk_events (game, title, source, url, detail, level, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
+const updateRiskEventStatement = db.prepare("UPDATE risk_events SET title = ?, url = ?, detail = ?, level = ?, status = ?, notes = ?, updated_at = ? WHERE id = ?");
+const getRiskEventStatement = db.prepare("SELECT id, game, title, source, url, detail, level, status, notes, created_at, updated_at FROM risk_events WHERE id = ?");
+const deleteRiskEventStatement = db.prepare("DELETE FROM risk_events WHERE id = ?");
+
+function riskEventIdOf(pathname) {
+  const match = /^\/risk-events\/(\d{1,15})$/.exec(pathname);
+  return match ? Number.parseInt(match[1], 10) : null;
+}
+
+function listRiskEvents(url) {
+  const game = (url.searchParams.get("game") || "").trim();
+  const status = (url.searchParams.get("status") || "").trim();
+  const level = (url.searchParams.get("level") || "").trim();
+  const filters = [];
+  const params = [];
+  if (game) { filters.push("game = ?"); params.push(game); }
+  if (status) { filters.push("status = ?"); params.push(status); }
+  if (level) { filters.push("level = ?"); params.push(level); }
+  const whereSql = filters.length ? " WHERE " + filters.join(" AND ") : "";
+  const limitRaw = Number.parseInt(url.searchParams.get("limit"), 10);
+  const limit = Number.isFinite(limitRaw) ? Math.min(200, Math.max(1, limitRaw)) : 20;
+  const offsetRaw = Number.parseInt(url.searchParams.get("offset"), 10);
+  const offset = Number.isFinite(offsetRaw) ? Math.max(0, offsetRaw) : 0;
+  const total = db.prepare("SELECT COUNT(*) AS count FROM risk_events" + whereSql).get(...params).count;
+  const rows = db.prepare("SELECT id, game, title, source, url, detail, level, status, notes, created_at, updated_at FROM risk_events" + whereSql + " ORDER BY id DESC LIMIT ? OFFSET ?").all(...params, limit, offset);
+  return { items: rows, total };
 }
 
 const server = http.createServer((request, response) => {
@@ -398,6 +447,146 @@ const server = http.createServer((request, response) => {
         now
       );
       sendJson(request, response, 201, { ok: true, publication: formatPublication(getPublicationStatement.get(Number(info.lastInsertRowid))) });
+    });
+    return;
+  }
+  if (request.method === "GET" && url.pathname === "/risk-events") {
+    try {
+      sendJson(request, response, 200, { ok: true, ...listRiskEvents(url) });
+    } catch (error) {
+      sendJson(request, response, 400, { ok: false, error: error.message });
+    }
+    return;
+  }
+  if (request.method === "DELETE" && riskEventIdOf(url.pathname) !== null) {
+    const info = deleteRiskEventStatement.run(riskEventIdOf(url.pathname));
+    if (Number(info.changes) === 0) {
+      sendJson(request, response, 404, { ok: false, error: "风险事件不存在" });
+      return;
+    }
+    sendJson(request, response, 200, { ok: true });
+    return;
+  }
+  if (request.method === "PUT" && riskEventIdOf(url.pathname) !== null) {
+    const chunksRiskUpd = [];
+    let receivedRiskUpd = 0;
+    let rejectedRiskUpd = false;
+    request.on("data", (chunk) => {
+      if (rejectedRiskUpd) return;
+      receivedRiskUpd += chunk.length;
+      if (receivedRiskUpd > MAX_BODY_BYTES) {
+        rejectedRiskUpd = true;
+        sendJson(request, response, 413, { ok: false, error: "风险事件内容过大（上限 5MB）" });
+        request.resume();
+        return;
+      }
+      chunksRiskUpd.push(chunk);
+    });
+    request.on("end", () => {
+      if (rejectedRiskUpd) return;
+      let body;
+      try {
+        body = JSON.parse(Buffer.concat(chunksRiskUpd).toString("utf8"));
+      } catch (_error) {
+        sendJson(request, response, 400, { ok: false, error: "请求体不是合法 JSON" });
+        return;
+      }
+      if (!body || typeof body !== "object" || Array.isArray(body)) {
+        sendJson(request, response, 400, { ok: false, error: "请求体必须是 JSON 对象" });
+        return;
+      }
+      const id = riskEventIdOf(url.pathname);
+      const current = getRiskEventStatement.get(id);
+      if (!current) {
+        sendJson(request, response, 404, { ok: false, error: "风险事件不存在" });
+        return;
+      }
+      let level = current.level;
+      if (Object.hasOwn(body, "level")) {
+        const raw = typeof body.level === "string" ? body.level.trim() : "";
+        if (!RISK_EVENT_LEVELS.has(raw)) {
+          sendJson(request, response, 400, { ok: false, error: "level 不合法（允许：低、中、高）" });
+          return;
+        }
+        level = raw;
+      }
+      let status = current.status;
+      if (Object.hasOwn(body, "status")) {
+        const raw = typeof body.status === "string" ? body.status.trim() : "";
+        if (!RISK_EVENT_STATUSES.has(raw)) {
+          sendJson(request, response, 400, { ok: false, error: "status 不合法（允许：open、processing、resolved、dropped）" });
+          return;
+        }
+        status = raw;
+      }
+      updateRiskEventStatement.run(
+        typeof body.title === "string" && body.title.trim() ? body.title.trim() : current.title,
+        typeof body.url === "string" ? body.url.trim() : current.url,
+        typeof body.detail === "string" ? body.detail.trim() : current.detail,
+        level,
+        status,
+        typeof body.notes === "string" ? body.notes.trim() : current.notes,
+        new Date().toISOString(),
+        id
+      );
+      sendJson(request, response, 200, { ok: true, risk_event: getRiskEventStatement.get(id) });
+    });
+    return;
+  }
+  if (request.method === "POST" && url.pathname === "/risk-events") {
+    const chunksRisk = [];
+    let receivedRisk = 0;
+    let rejectedRisk = false;
+    request.on("data", (chunk) => {
+      if (rejectedRisk) return;
+      receivedRisk += chunk.length;
+      if (receivedRisk > MAX_BODY_BYTES) {
+        rejectedRisk = true;
+        sendJson(request, response, 413, { ok: false, error: "风险事件内容过大（上限 5MB）" });
+        request.resume();
+        return;
+      }
+      chunksRisk.push(chunk);
+    });
+    request.on("end", () => {
+      if (rejectedRisk) return;
+      let body;
+      try {
+        body = JSON.parse(Buffer.concat(chunksRisk).toString("utf8"));
+      } catch (_error) {
+        sendJson(request, response, 400, { ok: false, error: "请求体不是合法 JSON" });
+        return;
+      }
+      const game = typeof body?.game === "string" ? body.game.trim() : "";
+      const title = typeof body?.title === "string" ? body.title.trim() : "";
+      const missing = [!game && "game", !title && "title"].filter(Boolean);
+      if (missing.length) {
+        sendJson(request, response, 400, { ok: false, error: "缺少必填字段：" + missing.join("、") });
+        return;
+      }
+      const level = typeof body?.level === "string" ? body.level.trim() : "";
+      if (level && !RISK_EVENT_LEVELS.has(level)) {
+        sendJson(request, response, 400, { ok: false, error: "level 不合法（允许：低、中、高）" });
+        return;
+      }
+      const status = typeof body?.status === "string" ? body.status.trim() : "";
+      if (status && !RISK_EVENT_STATUSES.has(status)) {
+        sendJson(request, response, 400, { ok: false, error: "status 不合法（允许：open、processing、resolved、dropped）" });
+        return;
+      }
+      const now = new Date().toISOString();
+      const info = insertRiskEventStatement.run(
+        game,
+        title,
+        typeof body?.source === "string" && body.source.trim() ? body.source.trim() : "评论分析",
+        typeof body?.url === "string" ? body.url.trim() : "",
+        typeof body?.detail === "string" ? body.detail.trim() : "",
+        level || "中",
+        status || "open",
+        now,
+        now
+      );
+      sendJson(request, response, 201, { ok: true, risk_event: getRiskEventStatement.get(Number(info.lastInsertRowid)) });
     });
     return;
   }
