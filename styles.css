@@ -3182,6 +3182,42 @@ body[data-service-mode="online"] .launcher-panel {
   }
 }
 
+/* ---- 风险工单（P-8） ---- */
+
+.risk-event-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.risk-level-badge,
+.risk-status-badge {
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.risk-level-high {
+  background: rgba(255, 59, 48, 0.14);
+  color: #c92a22;
+}
+
+.risk-level-medium {
+  background: rgba(255, 159, 10, 0.16);
+  color: #b06200;
+}
+
+.risk-level-low {
+  background: rgba(123, 132, 151, 0.14);
+  color: #5d6678;
+}
+
+.risk-status-badge {
+  background: rgba(33, 124, 107, 0.08);
+  color: #1f6f5a;
+}
+
 /* 尊重系统「减弱动态效果」：关闭装饰性动画与过渡，保留必要的可见反馈。 */
 @media (prefers-reduced-motion: reduce) {
   *,

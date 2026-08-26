@@ -1011,6 +1011,171 @@ const publicationDateInput = document.querySelector("#publication-date");
 if (publicationDateInput && !publicationDateInput.value) publicationDateInput.value = new Date().toISOString().slice(0, 10);
 loadPublications();
 
+/* ---- 风险工单（P-8）：风险事件 open → processing → resolved 三态跟踪 ---- */
+
+const RISK_TICKET_STATUS_LABELS = {
+  open: "待处理",
+  processing: "处理中",
+  resolved: "已解决",
+  dropped: "已放弃"
+};
+
+let currentRiskTickets = [];
+
+function setRiskTicketStatus(text, tone) {
+  const status = document.querySelector("#risk-ticket-status");
+  if (!status) return;
+  status.textContent = "风险工单：" + text;
+  status.className = "source-status" + (tone === "real" ? " source-real" : tone === "mock" ? " source-mock" : "");
+}
+
+function riskTicketActionButton(label, handler) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "secondary-button";
+  button.textContent = label;
+  button.addEventListener("click", handler);
+  return button;
+}
+
+function buildRiskTicketRow(item) {
+  const row = document.createElement("article");
+  row.className = "briefing-archive-item publication-item";
+  row.dataset.riskTicketId = String(item.id);
+
+  const text = document.createElement("div");
+  const titleLine = document.createElement("strong");
+  titleLine.textContent = item.title || "未命名风险";
+  text.append(titleLine);
+
+  const meta = document.createElement("div");
+  meta.className = "publication-meta";
+  const levelBadge = document.createElement("span");
+  levelBadge.className = "risk-level-badge risk-level-" + (item.level === "高" ? "high" : item.level === "低" ? "low" : "medium");
+  levelBadge.textContent = (item.level || "中") + "风险";
+  meta.append(levelBadge);
+
+  if (item.game) {
+    const gameSpan = document.createElement("span");
+    gameSpan.textContent = item.game;
+    meta.append(gameSpan);
+  }
+
+  const sourceSpan = document.createElement("span");
+  sourceSpan.textContent = "来源：" + (item.source || "评论分析");
+  meta.append(sourceSpan);
+
+  const createdText = formatPublicationDate(item.created_at);
+  if (createdText) {
+    const created = document.createElement("span");
+    created.textContent = createdText;
+    meta.append(created);
+  }
+
+  const url = safeExternalUrl(item.url);
+  if (url) {
+    const link = document.createElement("a");
+    link.href = url;
+    link.target = "_blank";
+    link.rel = "noreferrer";
+    link.textContent = "打开链接";
+    meta.append(link);
+  }
+
+  const statusBadge = document.createElement("span");
+  statusBadge.className = "risk-status-badge";
+  statusBadge.textContent = RISK_TICKET_STATUS_LABELS[item.status] || item.status || "待处理";
+  meta.append(statusBadge);
+  text.append(meta);
+  row.append(text);
+
+  const actions = document.createElement("div");
+  actions.className = "publication-actions";
+  if (item.status === "open") {
+    actions.append(riskTicketActionButton("开始处理", () => updateRiskTicketStatus(item.id, "processing")));
+    actions.append(riskTicketActionButton("放弃", () => updateRiskTicketStatus(item.id, "dropped")));
+  } else if (item.status === "processing") {
+    actions.append(riskTicketActionButton("标记解决", () => updateRiskTicketStatus(item.id, "resolved")));
+    actions.append(riskTicketActionButton("放弃", () => updateRiskTicketStatus(item.id, "dropped")));
+  }
+  actions.append(riskTicketActionButton("删除", () => deleteRiskTicket(item.id)));
+  row.append(actions);
+  return row;
+}
+
+function renderRiskTicketList(items) {
+  const container = document.querySelector("#risk-ticket-list");
+  if (!container) return;
+  currentRiskTickets = items || [];
+  container.innerHTML = "";
+  if (!currentRiskTickets.length) {
+    container.innerHTML = '<p class="muted-copy">暂无风险工单</p>';
+    return;
+  }
+  for (const item of currentRiskTickets) {
+    container.append(buildRiskTicketRow(item));
+  }
+}
+
+async function loadRiskTickets() {
+  const container = document.querySelector("#risk-ticket-list");
+  if (!container) return;
+  if (isOnlineServiceMode()) {
+    container.innerHTML = '<p class="muted-copy">风险工单依赖本地存档服务，线上模式下暂不可用。</p>';
+    return;
+  }
+  const game = document.querySelector("#risk-ticket-game")?.value.trim() || "";
+  const statusFilter = document.querySelector("#risk-ticket-status-filter")?.value.trim() || "";
+  const params = new URLSearchParams();
+  if (game) params.set("game", game);
+  if (statusFilter) params.set("status", statusFilter);
+  params.set("limit", "20");
+  try {
+    const response = await fetch(ARCHIVE_SERVICE_URL + "/risk-events?" + params.toString(), { cache: "no-store" });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || !payload.ok) throw new Error(payload.error || "HTTP " + response.status);
+    renderRiskTicketList(payload.items || []);
+  } catch (_error) {
+    currentRiskTickets = [];
+    container.innerHTML = '<p class="muted-copy">存档服务不可用（本机 8796 端口）。启动 archive-server 后点击「刷新」重试。</p>';
+  }
+}
+
+async function updateRiskTicketStatus(id, nextStatus) {
+  const item = currentRiskTickets.find((entry) => entry.id === id);
+  setRiskTicketStatus("正在更新「" + (item && item.title ? item.title : "工单 #" + id) + "」状态…", "");
+  try {
+    const response = await fetch(ARCHIVE_SERVICE_URL + "/risk-events/" + id, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status: nextStatus })
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || !payload.ok) throw new Error(payload.error || "HTTP " + response.status);
+    setRiskTicketStatus("「" + payload.risk_event.title + "」已更新为「" + RISK_TICKET_STATUS_LABELS[payload.risk_event.status] + "」。", "real");
+    await loadRiskTickets();
+  } catch (error) {
+    setRiskTicketStatus("状态更新失败（" + error.message + "）。", "mock");
+  }
+}
+
+async function deleteRiskTicket(id) {
+  const item = currentRiskTickets.find((entry) => entry.id === id);
+  try {
+    const response = await fetch(ARCHIVE_SERVICE_URL + "/risk-events/" + id, { method: "DELETE" });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || !payload.ok) throw new Error(payload.error || "HTTP " + response.status);
+    setRiskTicketStatus("已删除「" + (item && item.title ? item.title : "工单 #" + id) + "」。", "real");
+    await loadRiskTickets();
+  } catch (error) {
+    setRiskTicketStatus("删除失败（" + error.message + "）。", "mock");
+  }
+}
+
+document.querySelector("#query-risk-tickets")?.addEventListener("click", loadRiskTickets);
+document.querySelector("#refresh-risk-tickets")?.addEventListener("click", loadRiskTickets);
+loadRiskTickets();
+
 let llmModelName = "";
 
 async function checkLlmHealth(expectedModeGeneration = serviceModeGuard.current()) {
@@ -2281,26 +2446,106 @@ function renderFeedbackRiskHero(riskResult) {
   `;
 }
 
+function setFeedbackRiskTicketStatus(text, tone) {
+  const status = document.querySelector("#feedback-risk-ticket-status");
+  if (!status) return;
+  status.textContent = text;
+  status.className = "source-status" + (tone === "real" ? " source-real" : tone === "mock" ? " source-mock" : "");
+}
+
+function buildFeedbackRiskEventDetail(event) {
+  const parts = [
+    "模块：" + event.module,
+    "命中 " + (event.count || 0) + " 条 · 来源 " + (event.sourceCount || 0) + " 个",
+    "建议：" + event.response
+  ];
+  if (event.sample) parts.push("样本：" + event.sample);
+  return parts.join("\n");
+}
+
+async function convertFeedbackRiskToTicket(event, button) {
+  if (!button || button.disabled) return;
+  const game = document.querySelector("#feedback-game")?.value.trim() || "";
+  if (!game) {
+    setFeedbackRiskTicketStatus("请先填写游戏名，再转工单。", "mock");
+    return;
+  }
+  if (isOnlineServiceMode()) {
+    setFeedbackRiskTicketStatus("线上模式暂不支持本地工单，请切换本地模式后再转工单。", "mock");
+    return;
+  }
+  button.disabled = true;
+  button.textContent = "转工单中…";
+  setFeedbackRiskTicketStatus("正在转工单：「" + event.title + "」…", "");
+  try {
+    const response = await fetch(ARCHIVE_SERVICE_URL + "/risk-events", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        game,
+        title: event.title,
+        source: "评论分析",
+        level: event.severity,
+        detail: buildFeedbackRiskEventDetail(event)
+      })
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || !payload.ok) throw new Error(payload.error || "HTTP " + response.status);
+    button.textContent = "已转工单";
+    setFeedbackRiskTicketStatus("已转工单：" + payload.risk_event.title + "（" + payload.risk_event.level + "）", "real");
+  } catch (error) {
+    button.disabled = false;
+    button.textContent = "→ 转工单";
+    setFeedbackRiskTicketStatus("转工单失败（" + error.message + "）。请确认本机存档服务已启动。", "mock");
+  }
+}
+
 function renderFeedbackRiskEvents(events) {
   const container = document.querySelector("#feedback-risk-events");
   if (!container) return;
 
-  container.innerHTML = events
-    .map((event) => {
-      const severityClass = event.severity === "高" ? "risk-event-high" : event.severity === "中" ? "risk-event-medium" : "risk-event-low";
-      return `
-        <article class="risk-event ${severityClass}">
-          <div class="risk-event-head">
-            <strong>${escapeHtml(event.title)}</strong>
-            <span>${escapeHtml(event.severity)}风险</span>
-          </div>
-          <p>${escapeHtml(event.source)} · ${escapeHtml(event.module)} · 命中 ${escapeHtml(event.count || 0)} 条 · 来源 ${escapeHtml(event.sourceCount || 0)} 个</p>
-          ${event.sample ? `<blockquote>${escapeHtml(event.sample)}</blockquote>` : ""}
-          <small>${escapeHtml(event.response)}</small>
-        </article>
-      `;
-    })
-    .join("");
+  container.innerHTML = "";
+
+  for (const event of events || []) {
+    const severityClass = event.severity === "高" ? "risk-event-high" : event.severity === "中" ? "risk-event-medium" : "risk-event-low";
+    const card = document.createElement("article");
+    card.className = "risk-event " + severityClass;
+
+    const head = document.createElement("div");
+    head.className = "risk-event-head";
+    const titleLine = document.createElement("strong");
+    titleLine.textContent = event.title;
+    const severityPill = document.createElement("span");
+    severityPill.textContent = event.severity + "风险";
+    head.append(titleLine, severityPill);
+    card.append(head);
+
+    const meta = document.createElement("p");
+    meta.textContent = event.source + " · " + event.module + " · 命中 " + (event.count || 0) + " 条 · 来源 " + (event.sourceCount || 0) + " 个";
+    card.append(meta);
+
+    if (event.sample) {
+      const quote = document.createElement("blockquote");
+      quote.textContent = event.sample;
+      card.append(quote);
+    }
+
+    const response = document.createElement("small");
+    response.textContent = event.response;
+    card.append(response);
+
+    const actions = document.createElement("div");
+    actions.className = "risk-event-actions";
+    const convertButton = document.createElement("button");
+    convertButton.type = "button";
+    convertButton.className = "secondary-button risk-convert-button";
+    convertButton.textContent = "→ 转工单";
+    convertButton.addEventListener("click", () => convertFeedbackRiskToTicket(event, convertButton));
+    actions.append(convertButton);
+    card.append(actions);
+
+    container.append(card);
+  }
 }
 
 function renderFeedbackRisk(riskResult) {

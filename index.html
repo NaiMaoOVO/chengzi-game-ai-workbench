@@ -191,6 +191,29 @@
               <div class="briefing-archive-list publication-list" id="publication-list"></div>
             </section>
 
+            <section class="section-block briefing-panel" aria-label="风险工单">
+              <h3>风险工单</h3>
+              <p class="muted-copy launcher-note">把评论分析里检测到的风险事件转成可跟踪的工单：待处理 → 处理中 → 已解决，形成舆情处置台账；误报可直接放弃或删除。</p>
+              <div class="launcher-buttons publication-form">
+                <label class="publication-field" for="risk-ticket-game">游戏
+                  <input id="risk-ticket-game" placeholder="选填，按游戏过滤" />
+                </label>
+                <label class="publication-field" for="risk-ticket-status-filter">状态
+                  <select id="risk-ticket-status-filter">
+                    <option value="" selected>全部</option>
+                    <option value="open">待处理</option>
+                    <option value="processing">处理中</option>
+                    <option value="resolved">已解决</option>
+                    <option value="dropped">已放弃</option>
+                  </select>
+                </label>
+                <button class="secondary-button launcher-primary-action" id="query-risk-tickets" type="button">查询</button>
+                <button class="secondary-button" id="refresh-risk-tickets" type="button">刷新</button>
+              </div>
+              <p class="source-status" id="risk-ticket-status" aria-live="polite">风险工单：尚未查询。点击「查询」加载最近的工单列表。</p>
+              <div class="briefing-archive-list publication-list" id="risk-ticket-list"></div>
+            </section>
+
             <section class="service-status-panel" aria-label="本地服务状态">
               <article class="service-status-card" id="service-status-ocr">
                 <span class="service-dot"></span>
@@ -466,6 +489,7 @@
                 <h3>舆情风险预警</h3>
                 <div class="risk-hero" id="feedback-risk-hero"></div>
                 <p id="feedback-risk-summary"></p>
+                <p class="source-status" id="feedback-risk-ticket-status" aria-live="polite">风险工单：尚未转派；转出后可在总览的「风险工单」面板跟踪处理。</p>
                 <div class="risk-event-list" id="feedback-risk-events"></div>
                 <ul id="feedback-risk-list" class="result-list"></ul>
               </div>
