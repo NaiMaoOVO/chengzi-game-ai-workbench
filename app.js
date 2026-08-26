@@ -775,6 +775,242 @@ async function copyBriefingForIm() {
 }
 
 document.querySelector("#copy-briefing-im")?.addEventListener("click", copyBriefingForIm);
+
+/* ---- 发布台账（P-2）：生成 → 发布 → 效果回流 ---- */
+
+let currentPublications = [];
+
+function setPublicationStatus(text, tone) {
+  const status = document.querySelector("#publication-status");
+  if (!status) return;
+  status.textContent = "发布台账：" + text;
+  status.className = "source-status" + (tone === "real" ? " source-real" : tone === "mock" ? " source-mock" : "");
+}
+
+function publicationGameFromContext() {
+  return document.querySelector("#trending-game")?.value.trim()
+    || document.querySelector("#version-game")?.value.trim() || "";
+}
+
+function formatPublicationDate(value) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value);
+  return date.getFullYear() + "-" + String(date.getMonth() + 1).padStart(2, "0") + "-" + String(date.getDate()).padStart(2, "0");
+}
+
+function publicationMetricsSummary(item) {
+  const metrics = item.metrics_json && typeof item.metrics_json === "object" ? item.metrics_json : {};
+  const parts = [];
+  if (metrics.view !== undefined) parts.push("播放 " + formatNumberCompact(metrics.view));
+  if (metrics.like !== undefined) parts.push("点赞 " + formatNumberCompact(metrics.like));
+  if (metrics.comment !== undefined) parts.push("评论 " + formatNumberCompact(metrics.comment));
+  if (metrics.danmaku !== undefined) parts.push("弹幕 " + formatNumberCompact(metrics.danmaku));
+  if (!parts.length) return "";
+  const fetchedLabel = formatPublicationDate(metrics.fetchedAt);
+  return parts.join(" · ") + (fetchedLabel ? " · 更新于 " + fetchedLabel : "");
+}
+
+function buildPublicationRow(item) {
+  const row = document.createElement("article");
+  row.className = "briefing-archive-item publication-item";
+  row.dataset.publicationId = String(item.id);
+
+  const text = document.createElement("div");
+  const titleLine = document.createElement("strong");
+  titleLine.textContent = item.title || "未命名内容";
+  text.append(titleLine);
+
+  const meta = document.createElement("div");
+  meta.className = "publication-meta";
+  const badge = document.createElement("span");
+  badge.className = "publication-badge";
+  badge.textContent = item.channel || "未知渠道";
+  meta.append(badge);
+  const dateText = formatPublicationDate(item.published_at || item.created_at);
+  if (dateText) {
+    const date = document.createElement("span");
+    date.textContent = dateText;
+    meta.append(date);
+  }
+  const url = safeExternalUrl(item.url);
+  if (url) {
+    const link = document.createElement("a");
+    link.href = url;
+    link.target = "_blank";
+    link.rel = "noreferrer";
+    link.textContent = "打开链接";
+    meta.append(link);
+  }
+  if (item.related_topic) {
+    const topic = document.createElement("span");
+    topic.textContent = "选题：" + item.related_topic;
+    meta.append(topic);
+  }
+  const summary = publicationMetricsSummary(item);
+  if (summary) {
+    const metrics = document.createElement("span");
+    metrics.className = "publication-metrics";
+    metrics.textContent = summary;
+    meta.append(metrics);
+  }
+  text.append(meta);
+  row.append(text);
+
+  const actions = document.createElement("div");
+  actions.className = "publication-actions";
+  if (item.channel === "B站" && safeExternalUrl(item.url)) {
+    const effectButton = document.createElement("button");
+    effectButton.className = "secondary-button";
+    effectButton.type = "button";
+    effectButton.textContent = "刷新效果";
+    effectButton.addEventListener("click", () => refreshPublicationEffect(item.id));
+    actions.append(effectButton);
+  }
+  const deleteButton = document.createElement("button");
+  deleteButton.className = "secondary-button";
+  deleteButton.type = "button";
+  deleteButton.textContent = "删除";
+  deleteButton.addEventListener("click", () => deletePublicationRecord(item.id));
+  actions.append(deleteButton);
+  row.append(actions);
+  return row;
+}
+
+function renderPublicationList(items) {
+  const container = document.querySelector("#publication-list");
+  if (!container) return;
+  currentPublications = items || [];
+  container.innerHTML = "";
+  if (!currentPublications.length) {
+    container.innerHTML = '<p class="muted-copy">暂无发布记录。在上方填写游戏、标题和渠道后点击「记录发布」。</p>';
+    return;
+  }
+  for (const item of currentPublications) {
+    container.append(buildPublicationRow(item));
+  }
+}
+
+async function loadPublications() {
+  const container = document.querySelector("#publication-list");
+  if (!container) return;
+  if (isOnlineServiceMode()) {
+    container.innerHTML = '<p class="muted-copy">发布台账依赖本地存档服务，线上模式下暂不可用。</p>';
+    return;
+  }
+  try {
+    const response = await fetch(ARCHIVE_SERVICE_URL + "/publications?limit=20", { cache: "no-store" });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || !payload.ok) throw new Error(payload.error || "HTTP " + response.status);
+    renderPublicationList(payload.items || []);
+  } catch (_error) {
+    currentPublications = [];
+    container.innerHTML = '<p class="muted-copy">存档服务不可用（本机 8796 端口）。启动 archive-server 后点击「刷新列表」重试。</p>';
+  }
+}
+
+async function recordPublication() {
+  const game = document.querySelector("#publication-game")?.value.trim() || "";
+  const title = document.querySelector("#publication-title")?.value.trim() || "";
+  const channel = document.querySelector("#publication-channel")?.value.trim() || "";
+  if (!game || !title || !channel) {
+    setPublicationStatus(!game ? "请先填写游戏名，再记录发布。" : !title ? "请先填写标题，再记录发布。" : "请先选择发布渠道。", "mock");
+    return;
+  }
+  if (isOnlineServiceMode()) {
+    setPublicationStatus("线上模式暂不支持本地台账，请切换本地模式后再记录发布。", "mock");
+    return;
+  }
+  setPublicationStatus("正在记录发布：「" + title + "」…", "");
+  try {
+    const response = await fetch(ARCHIVE_SERVICE_URL + "/publications", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        game,
+        title,
+        channel,
+        url: document.querySelector("#publication-url")?.value.trim() || "",
+        related_topic: document.querySelector("#publication-topic")?.value.trim() || "",
+        published_at: document.querySelector("#publication-date")?.value.trim() || ""
+      })
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || !payload.ok) throw new Error(payload.error || "HTTP " + response.status);
+    setPublicationStatus("已记录发布：" + payload.publication.title, "real");
+    await loadPublications();
+  } catch (error) {
+    setPublicationStatus("记录失败（" + error.message + "）。请确认本机存档服务已启动。", "mock");
+  }
+}
+
+function replacePublicationRow(item) {
+  const container = document.querySelector("#publication-list");
+  const existing = container ? container.querySelector('[data-publication-id="' + item.id + '"]') : null;
+  if (!existing) {
+    loadPublications();
+    return;
+  }
+  existing.replaceWith(buildPublicationRow(item));
+}
+
+async function refreshPublicationEffect(id) {
+  const item = currentPublications.find((entry) => entry.id === id);
+  if (!item) return;
+  if (!safeExternalUrl(item.url)) {
+    setPublicationStatus("该记录没有有效链接，无法回流效果数据。", "mock");
+    return;
+  }
+  setPublicationStatus("正在拉取 B站效果数据…", "");
+  try {
+    const effectResponse = await fetch(COMMENT_SERVICE_URL + "/video-effect?url=" + encodeURIComponent(item.url));
+    const effect = await effectResponse.json().catch(() => ({}));
+    if (!effectResponse.ok) throw new Error(effect.message || effect.error || "HTTP " + effectResponse.status);
+    const stats = effect.stats || {};
+    const metricsJson = {
+      view: Number(stats.view) || 0,
+      like: Number(stats.like) || 0,
+      comment: Number(stats.reply) || 0,
+      danmaku: Number(stats.danmaku) || 0,
+      fetchedAt: effect.fetchedAt || new Date().toISOString()
+    };
+    const putResponse = await fetch(ARCHIVE_SERVICE_URL + "/publications/" + id, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ metrics_json: metricsJson })
+    });
+    const putPayload = await putResponse.json().catch(() => ({}));
+    if (!putResponse.ok || !putPayload.ok) throw new Error(putPayload.error || "HTTP " + putResponse.status);
+    Object.assign(item, putPayload.publication || {}, { metrics_json: metricsJson });
+    replacePublicationRow(item);
+    setPublicationStatus("效果已更新（播放 " + formatNumberCompact(metricsJson.view) + "）", "real");
+  } catch (error) {
+    setPublicationStatus("效果更新失败（" + error.message + "）。", "mock");
+  }
+}
+
+async function deletePublicationRecord(id) {
+  const item = currentPublications.find((entry) => entry.id === id);
+  try {
+    const response = await fetch(ARCHIVE_SERVICE_URL + "/publications/" + id, { method: "DELETE" });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || !payload.ok) throw new Error(payload.error || "HTTP " + response.status);
+    setPublicationStatus("已删除「" + (item && item.title ? item.title : "记录 #" + id) + "」。", "real");
+    await loadPublications();
+  } catch (error) {
+    setPublicationStatus("删除失败（" + error.message + "）。", "mock");
+  }
+}
+
+document.querySelector("#record-publication")?.addEventListener("click", recordPublication);
+document.querySelector("#refresh-publications")?.addEventListener("click", loadPublications);
+
+const publicationGameInput = document.querySelector("#publication-game");
+if (publicationGameInput && !publicationGameInput.value.trim()) publicationGameInput.value = publicationGameFromContext();
+const publicationDateInput = document.querySelector("#publication-date");
+if (publicationDateInput && !publicationDateInput.value) publicationDateInput.value = new Date().toISOString().slice(0, 10);
+loadPublications();
+
 let llmModelName = "";
 
 async function checkLlmHealth(expectedModeGeneration = serviceModeGuard.current()) {
@@ -792,7 +1028,7 @@ function collectProfileFromPage() {
 }
 
 function fillGameInputs(game) {
-  for (const selector of ["#trending-game", "#version-game", "#feedback-game", "#segment-game"]) {
+  for (const selector of ["#trending-game", "#version-game", "#feedback-game", "#segment-game", "#publication-game"]) {
     const input = document.querySelector(selector);
     if (input) input.value = game;
   }

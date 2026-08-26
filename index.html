@@ -158,6 +158,39 @@
               <div class="briefing-archive-list" id="briefing-archive-list"></div>
             </section>
 
+            <section class="section-block briefing-panel" aria-label="发布台账">
+              <h3>发布台账</h3>
+              <p class="muted-copy launcher-note">把每条内容串进「生成 → 发布 → 回流」闭环：发布后登记渠道与链接，B站内容可一键拉取播放/点赞/评论/弹幕，让 AI 产出的选题和文案能被真实效果验证。</p>
+              <div class="launcher-buttons publication-form">
+                <label class="publication-field" for="publication-game">游戏
+                  <input id="publication-game" placeholder="默认取当前热点游戏" />
+                </label>
+                <label class="publication-field publication-field-grow" for="publication-title">标题
+                  <input id="publication-title" placeholder="如：2.0 前瞻爆料：新角色实机首曝" />
+                </label>
+                <label class="publication-field" for="publication-channel">渠道
+                  <select id="publication-channel">
+                    <option selected>B站</option>
+                    <option>小红书</option>
+                    <option>抖音</option>
+                  </select>
+                </label>
+                <label class="publication-field publication-field-grow" for="publication-url">链接
+                  <input id="publication-url" type="url" placeholder="https://www.bilibili.com/video/BV..." />
+                </label>
+                <label class="publication-field" for="publication-topic">关联选题
+                  <input id="publication-topic" placeholder="选填，如：版本前瞻爆料" />
+                </label>
+                <label class="publication-field" for="publication-date">发布时间
+                  <input id="publication-date" type="date" />
+                </label>
+                <button class="secondary-button launcher-primary-action" id="record-publication" type="button">记录发布</button>
+                <button class="secondary-button" id="refresh-publications" type="button">刷新列表</button>
+              </div>
+              <p class="source-status" id="publication-status" aria-live="polite">发布台账：尚未操作。记录后可对 B站链接一键回流效果数据。</p>
+              <div class="briefing-archive-list publication-list" id="publication-list"></div>
+            </section>
+
             <section class="service-status-panel" aria-label="本地服务状态">
               <article class="service-status-card" id="service-status-ocr">
                 <span class="service-dot"></span>

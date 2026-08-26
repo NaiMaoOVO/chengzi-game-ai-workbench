@@ -3109,6 +3109,66 @@ body[data-service-mode="online"] .launcher-panel {
   resize: vertical;
 }
 
+/* ---- 发布台账 ---- */
+
+.publication-form {
+  align-items: flex-end;
+}
+
+.publication-field {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 12px;
+  color: #5d6678;
+}
+
+.publication-field-grow {
+  flex: 1;
+  min-width: 170px;
+}
+
+.publication-item {
+  flex-wrap: wrap;
+}
+
+.publication-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  margin-top: 3px;
+  font-size: 11.5px;
+  color: #5d6678;
+}
+
+.publication-meta a {
+  color: var(--accent);
+}
+
+.publication-badge {
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: #e4f3ec;
+  color: #1f6f5a;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.publication-actions {
+  display: flex;
+  flex-shrink: 0;
+  gap: 6px;
+}
+
+@media (max-width: 640px) {
+  .publication-form .publication-field,
+  .publication-form .publication-field-grow,
+  .publication-form button {
+    width: 100%;
+  }
+}
+
 /* 尊重系统「减弱动态效果」：关闭装饰性动画与过渡，保留必要的可见反馈。 */
 @media (prefers-reduced-motion: reduce) {
   *,
