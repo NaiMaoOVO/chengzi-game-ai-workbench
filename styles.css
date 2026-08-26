@@ -1007,7 +1007,8 @@ button[type="submit"]:hover {
 
 .nav-button-subtle {
   min-height: 36px;
-  color: #8a948f;
+  /* 提升对比度：#8a948f 在侧栏浅底上仅约 3:1，#66706b 达到约 4.9:1。 */
+  color: #66706b;
   font-size: 13px;
 }
 
@@ -1103,6 +1104,17 @@ button[type="submit"]:hover {
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
+}
+
+.content-import-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
+.content-import-row select {
+  height: 40px;
 }
 
 .trending-timestamp {
@@ -1705,7 +1717,8 @@ button[type="submit"]:hover {
 }
 
 .source-mock {
-  color: #c76d00;
+  /* 提升对比度：#c76d00 在黄色柔和底上仅约 3.2:1，#8f4c00 达到约 5:1。 */
+  color: #8f4c00;
 }
 
 .trending-item {

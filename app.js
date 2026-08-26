@@ -1836,6 +1836,114 @@ function analyzeContent() {
   ]);
 }
 
+/* ---- 竞品真实内容导入（P-6） ---- */
+
+const CONTENT_IMPORT_RANGE = "7d";
+
+function competitorImportPlatforms(choice) {
+  // 热点服务 /hotspots 按平台查询且校验平台白名单，「全部」并发拉取 B站与小红书后合并。
+  return choice === "全部" || !choice ? ["B站", "小红书"] : [choice];
+}
+
+async function fetchCompetitorPlatformItems(game, platform) {
+  const params = new URLSearchParams({ game, platform, range: CONTENT_IMPORT_RANGE, limit: "10" });
+  const response = await fetch(`${HOTSPOT_SERVICE_URL}/hotspots?${params}`);
+  const payload = await response.json().catch(() => ({}));
+
+  if (!response.ok) {
+    throw new Error(payload.message || payload.error || `HTTP ${response.status}`);
+  }
+
+  return {
+    platform,
+    items: Array.isArray(payload.items) ? payload.items : [],
+    sampleOnly: payload.source === "mock",
+    note: String(payload.note || "")
+  };
+}
+
+function formatCompetitorHotspotLine(item) {
+  const title = String(item?.title || "").trim();
+  if (!title) return "";
+  const tag = String(item?.tag || "").trim();
+  return tag ? `${title}（${tag}）` : title;
+}
+
+async function importCompetitorHotspots() {
+  const button = document.querySelector("#content-import-fetch");
+  const platformSelect = document.querySelector("#content-import-platform");
+  const gameInput = document.querySelector("#game-name");
+  const input = document.querySelector("#content-input");
+  const status = document.querySelector("#content-import-status");
+  if (!button || !input || !status) return;
+
+  const setStatus = (text, tone) => {
+    status.hidden = false;
+    status.textContent = text;
+    status.className = tone === "real" ? "source-status source-real" : "source-status source-mock";
+  };
+
+  const game = (gameInput?.value || "").trim();
+  if (!game) {
+    setStatus("请先填写游戏/竞品名称，再拉取竞品热门内容。", "mock");
+    return;
+  }
+
+  button.disabled = true;
+  const originalLabel = button.textContent;
+  button.textContent = "正在拉取…";
+  try {
+    const platforms = competitorImportPlatforms(platformSelect?.value);
+    const results = await Promise.all(platforms.map(async (platform) => ({
+      platform,
+      outcome: await fetchCompetitorPlatformItems(game, platform).catch((error) => ({ error }))
+    })));
+
+    const lines = [];
+    const importedFrom = [];
+    const failedPlatforms = [];
+    const serviceNotes = new Set();
+    let sampleOnly = false;
+
+    for (const result of results) {
+      if (result.outcome.error) {
+        failedPlatforms.push(result.platform);
+        continue;
+      }
+      if (result.outcome.note) serviceNotes.add(result.outcome.note);
+      if (result.outcome.sampleOnly) sampleOnly = true;
+      const formatted = result.outcome.items.map(formatCompetitorHotspotLine).filter(Boolean);
+      if (!formatted.length) continue;
+      lines.push(...formatted);
+      importedFrom.push(result.outcome.platform);
+    }
+
+    if (!lines.length) {
+      // 降级：服务不可用或零条目时只解释原因，绝不虚构竞品内容。
+      if (failedPlatforms.length === results.length) {
+        const reason = results[0]?.outcome.error?.message || "热点服务请求失败";
+        setStatus(`热点服务不可用（${reason}）。未导入任何内容，请启动本地热点服务后重试。`, "mock");
+      } else {
+        const noteText = [...serviceNotes].length ? `服务提示：${[...serviceNotes].join("；")}。` : "";
+        setStatus(`该平台暂无相关热门内容（${platforms.join("、")} · 近 7 天）。${noteText}未导入任何内容。`, "mock");
+      }
+      return;
+    }
+
+    input.value = lines.join("\n");
+
+    const parts = [`已从${importedFrom.join("、")}导入 ${lines.length} 条近 7 天热门内容（格式：标题（标签）），已自动生成拆解。`];
+    if (sampleOnly) parts.push("其中含样例兜底数据，非全部为真实抓取结果。");
+    if (failedPlatforms.length) parts.push(`${failedPlatforms.join("、")}拉取失败（热点服务不可用），本次仅导入其余平台。`);
+    setStatus(parts.join(""), failedPlatforms.length || sampleOnly ? "mock" : "real");
+
+    analyzeContent();
+  } finally {
+    button.disabled = false;
+    button.textContent = originalLabel;
+  }
+}
+
 /* ========================================
    模块2：玩家评论分析
    ======================================== */
@@ -5750,6 +5858,7 @@ document.querySelector("#content-form").addEventListener("submit", (event) => {
   event.preventDefault();
   analyzeContent();
 });
+document.querySelector("#content-import-fetch")?.addEventListener("click", importCompetitorHotspots);
 
 document.querySelector("#feedback-form").addEventListener("submit", (event) => {
   event.preventDefault();
@@ -5946,6 +6055,15 @@ function renderOverviewConclusion() {
 
 /* ---- 口径说明 ---- */
 
+let caliberLastFocused = null;
+
+function getCaliberFocusableElements(panel) {
+  if (!panel) return [];
+  return Array.from(
+    panel.querySelectorAll('button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])')
+  );
+}
+
 function openCaliberPanel() {
   const activeView = document.querySelector(".view.active");
   const caliber = activeView?.dataset?.caliber || "";
@@ -5959,8 +6077,15 @@ function openCaliberPanel() {
       ? "<strong>" + escapeHtml(label) + "</strong><br><br>" + caliber.replace(/\n/g, "<br>")
       : "当前模块暂无专门口径说明。通用说明：<br><br>所有模块的数据来源和处理逻辑均标注在对应界面中。AI 生成内容为初稿辅助，最终判断请以人工审核为准。";
   }
+  caliberLastFocused = document.activeElement instanceof HTMLElement ? document.activeElement : null;
   if (panel) panel.classList.add("open");
   if (overlay) overlay.classList.add("open");
+
+  // 打开后聚焦弹窗内第一个可聚焦元素（关闭按钮）。
+  const first = getCaliberFocusableElements(panel)[0];
+  if (first) {
+    try { first.focus({ preventScroll: true }); } catch (_error) { first.focus(); }
+  }
 }
 
 function closeCaliberPanel() {
@@ -5968,6 +6093,37 @@ function closeCaliberPanel() {
   const overlay = document.querySelector("#caliber-overlay");
   if (panel) panel.classList.remove("open");
   if (overlay) overlay.classList.remove("open");
+
+  // 关闭后把焦点还给触发按钮。
+  if (caliberLastFocused && typeof caliberLastFocused.focus === "function") {
+    try { caliberLastFocused.focus({ preventScroll: true }); } catch (_error) { caliberLastFocused.focus(); }
+  }
+  caliberLastFocused = null;
+}
+
+function handleCaliberKeydown(event) {
+  const panel = document.querySelector("#caliber-panel");
+  if (!panel?.classList.contains("open")) return;
+
+  if (event.key === "Escape") {
+    closeCaliberPanel();
+    return;
+  }
+  if (event.key !== "Tab") return;
+
+  // 焦点圈闭：Tab / Shift+Tab 循环限制在弹窗内。
+  const focusables = getCaliberFocusableElements(panel);
+  if (!focusables.length) return;
+  const first = focusables[0];
+  const last = focusables[focusables.length - 1];
+  const current = document.activeElement;
+  if (event.shiftKey && (current === first || !panel.contains(current))) {
+    event.preventDefault();
+    last.focus();
+  } else if (!event.shiftKey && (current === last || !panel.contains(current))) {
+    event.preventDefault();
+    first.focus();
+  }
 }
 
 /* ---- 确认状态 ---- */
@@ -6226,7 +6382,7 @@ function recalcWithBackfill() {
 document.querySelector("#caliber-trigger")?.addEventListener("click", openCaliberPanel);
 document.querySelector("#caliber-close")?.addEventListener("click", closeCaliberPanel);
 document.querySelector("#caliber-overlay")?.addEventListener("click", closeCaliberPanel);
-document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeCaliberPanel(); });
+document.addEventListener("keydown", handleCaliberKeydown);
 
 /* ---- 结论看板 ---- */
 
