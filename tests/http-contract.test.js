@@ -426,3 +426,55 @@ test("archive: identity, malformed Host -> 400, disallowed Origin -> 403, wrong 
     assert.equal(badJson.status, 400);
   });
 });
+
+// 发布台账效果回流：/video-effect 用假上游锁定归一化指标、缓存与防御行为。
+test("comment: /video-effect normalizes stats, caches hits, rejects bad input", async () => {
+  const fakeUpstream = http.createServer((req, res) => {
+    const parsed = new URL(req.url, "http://upstream.test");
+    res.setHeader("content-type", "application/json");
+    if (parsed.searchParams.get("bvid") === "BV1GJ411x7h7") {
+      res.end(JSON.stringify({ code: 0, data: {
+        aid: 789,
+        bvid: "BV1GJ411x7h7",
+        title: "契约测试视频",
+        owner: { name: "测试UP" },
+        stat: { view: 1000, danmaku: 20, reply: 5, favorite: 7, coin: 3, like: 99 }
+      } }));
+      return;
+    }
+    res.statusCode = 404;
+    res.end(JSON.stringify({ code: -404, message: "啥都木有" }));
+  });
+  await new Promise((resolve) => fakeUpstream.listen(0, "127.0.0.1", resolve));
+  try {
+    const upstreamPort = fakeUpstream.address().port;
+    await withGuardedService("comment-server.js", "COMMENT_PORT", {
+      RATE_LIMIT_MAX: "100",
+      BILIBILI_VIDEO_INFO_URL: `http://127.0.0.1:${upstreamPort}/x/web-interface/view`
+    }, async (port) => {
+      const bad = await httpRequest(port, "/video-effect?url=hello-world");
+      assert.equal(bad.status, 400);
+      assert.equal(JSON.parse(bad.text).error, "invalid_video_url");
+
+      const first = await httpRequest(port, "/video-effect?url=BV1GJ411x7h7&aid=789");
+      assert.equal(first.status, 200);
+      assert.equal(first.headers["x-cache"], "MISS");
+      const payload = JSON.parse(first.text);
+      assert.equal(payload.source, "bilibili");
+      assert.equal(payload.bvid, "BV1GJ411x7h7");
+      assert.deepEqual(payload.stats, { view: 1000, danmaku: 20, reply: 5, favorite: 7, coin: 3, like: 99 });
+
+      const again = await httpRequest(port, "/video-effect?url=BV1GJ411x7h7");
+      assert.equal(again.status, 200);
+      assert.equal(again.headers["x-cache"], "HIT");
+
+      const badHost = await httpRequest(port, "/video-effect?url=BV1GJ411x7h7", { headers: { Host: "a|b" } });
+      assert.equal(badHost.status, 400);
+
+      const stillAlive = JSON.parse((await httpRequest(port, "/health")).text);
+      assert.equal(stillAlive.service, "gameops-comments");
+    });
+  } finally {
+    fakeUpstream.close();
+  }
+});

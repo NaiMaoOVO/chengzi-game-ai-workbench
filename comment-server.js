@@ -7,7 +7,7 @@ const { extractBvid, extractAid } = require("./lib/bilibili-url");
 const { createFetchWithRetry } = require("./lib/fetch-with-retry");
 
 const PORT = Number(process.env.COMMENT_PORT || 8791);
-const VIDEO_INFO_URL = "https://api.bilibili.com/x/web-interface/view";
+const VIDEO_INFO_URL = process.env.BILIBILI_VIDEO_INFO_URL || "https://api.bilibili.com/x/web-interface/view";
 const REPLY_URL = "https://api.bilibili.com/x/v2/reply/main";
 const REPLY_FALLBACK_URL = "https://api.bilibili.com/x/v2/reply";
 const BILIBILI_COOKIE = process.env.BILIBILI_COOKIE || "";
@@ -301,6 +301,61 @@ async function handleProbe(request, response) {
   }
 }
 
+// 单视频效果快照：发布台账回流用的播放/点赞/评论等计数。
+async function handleVideoEffect(request, response) {
+  const url = parseRequestUrl(request);
+  if (!url) {
+    sendJson(request, response, 400, { error: "invalid_request_url" });
+    return;
+  }
+  const input = String(url.searchParams.get("url") || url.searchParams.get("bvid") || url.searchParams.get("aid") || "").trim();
+  if (!input || input.length > 500) {
+    sendJson(request, response, 400, { error: "invalid_video_url", message: "请输入有效的 B站视频链接、BV 号或 av 号" });
+    return;
+  }
+  const bvid = extractBvid(input);
+  const aid = bvid ? "" : extractAid(input);
+  if (!bvid && !aid) {
+    sendJson(request, response, 400, { error: "invalid_video_url", message: "请输入有效的 B站视频链接、BV 号或 av 号" });
+    return;
+  }
+
+  const cacheKey = `video-effect:${bvid || aid}`;
+  const cached = getCached(cacheKey);
+  if (cached) {
+    sendJson(request, response, 200, cached, { "X-Cache": "HIT" });
+    return;
+  }
+
+  try {
+    const video = await fetchVideoInfo({ bvid, aid });
+    const stat = video.stat || {};
+    const payload = {
+      source: "bilibili",
+      bvid: video.bvid || bvid,
+      aid: video.aid,
+      title: video.title,
+      owner: video.owner?.name || "",
+      stats: {
+        view: Number(stat.view) || 0,
+        danmaku: Number(stat.danmaku) || 0,
+        reply: Number(stat.reply) || 0,
+        favorite: Number(stat.favorite) || 0,
+        coin: Number(stat.coin) || 0,
+        like: Number(stat.like) || 0
+      },
+      fetchedAt: new Date().toISOString()
+    };
+    setCached(cacheKey, payload);
+    sendJson(request, response, 200, payload, { "X-Cache": "MISS" });
+  } catch (error) {
+    sendJson(request, response, 502, {
+      error: "fetch_failed",
+      message: error.message || "视频信息抓取失败，可能需要 Cookie 或遇到风控。"
+    });
+  }
+}
+
 async function handleCommentsLikeProbe(input, limit) {
   const bvid = extractBvid(input);
   const aid = bvid ? "" : extractAid(input);
@@ -339,6 +394,11 @@ const server = http.createServer((request, response) => {
 
   if (request.method === "GET" && request.url.startsWith("/comments")) {
     handleComments(request, response);
+    return;
+  }
+
+  if (request.method === "GET" && request.url.startsWith("/video-effect")) {
+    handleVideoEffect(request, response);
     return;
   }
 
