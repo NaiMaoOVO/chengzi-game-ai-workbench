@@ -3218,6 +3218,20 @@ body[data-service-mode="online"] .launcher-panel {
   color: #1f6f5a;
 }
 
+/* ---- 今日待办（P-5） ---- */
+
+.today-todo-count {
+  min-width: 26px;
+  text-align: center;
+}
+
+.today-todo-text {
+  flex: 1;
+  min-width: 200px;
+  font-size: 12.5px;
+  color: var(--ink);
+}
+
 /* 尊重系统「减弱动态效果」：关闭装饰性动画与过渡，保留必要的可见反馈。 */
 @media (prefers-reduced-motion: reduce) {
   *,

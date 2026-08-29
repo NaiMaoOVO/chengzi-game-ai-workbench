@@ -1176,6 +1176,113 @@ document.querySelector("#query-risk-tickets")?.addEventListener("click", loadRis
 document.querySelector("#refresh-risk-tickets")?.addEventListener("click", loadRiskTickets);
 loadRiskTickets();
 
+/* ---- 今日待办（P-5）：跨模块汇总今天需要处理的事 ---- */
+
+const todayTodoTargets = {
+  riskTickets: {
+    sectionSelector: "#risk-ticket-panel",
+    buttonSelector: "#query-risk-tickets"
+  },
+  publications: {
+    sectionSelector: "#publication-panel",
+    buttonSelector: "#refresh-publications"
+  }
+};
+
+function jumpToTodayTodo(targetName) {
+  const target = todayTodoTargets[targetName];
+  if (!target) return;
+  const section = document.querySelector(target.sectionSelector);
+  if (section?.scrollIntoView) {
+    section.scrollIntoView({ block: "start", behavior: "smooth" });
+  }
+  const primaryButton = document.querySelector(target.buttonSelector);
+  if (primaryButton?.classList.contains("handoff-flash")) {
+    primaryButton.classList.remove("handoff-flash");
+    void primaryButton.offsetWidth;
+  }
+  primaryButton?.classList.add("handoff-flash");
+  try { primaryButton?.focus({ preventScroll: true }); } catch (_error) { /* older engines */ }
+  window.setTimeout(() => primaryButton?.classList.remove("handoff-flash"), 1800);
+}
+
+function publicationNeedsEffectBackfill(item) {
+  if (!item || item.channel !== "B站") return false;
+  if (!safeExternalUrl(item.url)) return false;
+  const metrics = item.metrics_json && typeof item.metrics_json === "object" ? item.metrics_json : {};
+  return metrics.view === undefined;
+}
+
+function buildTodayTodoRow(todo) {
+  const row = document.createElement("article");
+  row.className = "briefing-archive-item publication-item today-todo-item";
+
+  const badge = document.createElement("span");
+  badge.className = "publication-badge today-todo-count";
+  badge.textContent = String(todo.count);
+
+  const text = document.createElement("span");
+  text.className = "today-todo-text";
+  text.textContent = todo.text;
+
+  const actions = document.createElement("div");
+  actions.className = "publication-actions";
+  const jumpButton = document.createElement("button");
+  jumpButton.type = "button";
+  jumpButton.className = "secondary-button";
+  jumpButton.textContent = "去处理";
+  jumpButton.addEventListener("click", () => jumpToTodayTodo(todo.key));
+  actions.append(jumpButton);
+
+  row.append(badge, text, actions);
+  return row;
+}
+
+function renderTodayTodoList(counts) {
+  const container = document.querySelector("#today-todo-list");
+  if (!container) return;
+  container.innerHTML = "";
+  const activeTodos = counts.filter((todo) => todo.count > 0);
+  if (!activeTodos.length) {
+    container.innerHTML = '<p class="muted-copy">今日暂无待办</p>';
+    return;
+  }
+  for (const todo of activeTodos) {
+    container.append(buildTodayTodoRow(todo));
+  }
+}
+
+async function loadTodayTodos() {
+  const container = document.querySelector("#today-todo-list");
+  if (!container) return;
+  if (isOnlineServiceMode()) {
+    container.innerHTML = '<p class="muted-copy">今日待办依赖本地存档服务，线上模式下暂不可用。</p>';
+    return;
+  }
+  container.innerHTML = '<p class="muted-copy">正在汇总今日待办……</p>';
+  try {
+    const [riskResponse, publicationResponse] = await Promise.all([
+      fetch(ARCHIVE_SERVICE_URL + "/risk-events?status=open&limit=1", { cache: "no-store" }),
+      fetch(ARCHIVE_SERVICE_URL + "/publications?limit=50", { cache: "no-store" })
+    ]);
+    const riskPayload = await riskResponse.json().catch(() => ({}));
+    const publicationPayload = await publicationResponse.json().catch(() => ({}));
+    if (!riskResponse.ok || !riskPayload.ok) throw new Error(riskPayload.error || "HTTP " + riskResponse.status);
+    if (!publicationResponse.ok || !publicationPayload.ok) throw new Error(publicationPayload.error || "HTTP " + publicationResponse.status);
+    const openRiskCount = Number(riskPayload.total) || 0;
+    const pendingBackfillCount = (publicationPayload.items || []).filter(publicationNeedsEffectBackfill).length;
+    renderTodayTodoList([
+      { key: "riskTickets", count: openRiskCount, text: openRiskCount + " 条待处理风险工单" },
+      { key: "publications", count: pendingBackfillCount, text: pendingBackfillCount + " 条发布还没有回流效果" }
+    ]);
+  } catch (_error) {
+    container.innerHTML = '<p class="source-status source-mock">存档服务不可用（本机 8796 端口），无法汇总今日待办</p>';
+  }
+}
+
+document.querySelector("#refresh-today-todos")?.addEventListener("click", loadTodayTodos);
+loadTodayTodos();
+
 let llmModelName = "";
 
 async function checkLlmHealth(expectedModeGeneration = serviceModeGuard.current()) {

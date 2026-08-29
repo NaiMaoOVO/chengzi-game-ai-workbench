@@ -138,7 +138,18 @@
 
             </section>
 
-            <section class="section-block briefing-panel" aria-label="今日运营简报">
+            <section class="section-block briefing-panel" id="today-todo-panel" aria-label="今日待办">
+              <h3>今日待办</h3>
+              <p class="muted-copy launcher-note">跨模块汇总今天需要处理的事。</p>
+              <div class="launcher-buttons">
+                <button class="secondary-button" id="refresh-today-todos" type="button">刷新待办</button>
+              </div>
+              <div class="briefing-archive-list today-todo-list" id="today-todo-list">
+                <p class="muted-copy">正在汇总今日待办……</p>
+              </div>
+            </section>
+
+            <section class="section-block briefing-panel" id="briefing-panel" aria-label="今日运营简报">
               <h3>今日运营简报</h3>
               <p class="muted-copy launcher-note">汇总热点榜单、舆情预警与待办建议，一键生成并存档，形成可持续回看的工作日志。</p>
               <div class="launcher-buttons">
@@ -158,7 +169,7 @@
               <div class="briefing-archive-list" id="briefing-archive-list"></div>
             </section>
 
-            <section class="section-block briefing-panel" aria-label="发布台账">
+            <section class="section-block briefing-panel" id="publication-panel" aria-label="发布台账">
               <h3>发布台账</h3>
               <p class="muted-copy launcher-note">把每条内容串进「生成 → 发布 → 回流」闭环：发布后登记渠道与链接，B站内容可一键拉取播放/点赞/评论/弹幕，让 AI 产出的选题和文案能被真实效果验证。</p>
               <div class="launcher-buttons publication-form">
@@ -191,7 +202,7 @@
               <div class="briefing-archive-list publication-list" id="publication-list"></div>
             </section>
 
-            <section class="section-block briefing-panel" aria-label="风险工单">
+            <section class="section-block briefing-panel" id="risk-ticket-panel" aria-label="风险工单">
               <h3>风险工单</h3>
               <p class="muted-copy launcher-note">把评论分析里检测到的风险事件转成可跟踪的工单：待处理 → 处理中 → 已解决，形成舆情处置台账；误报可直接放弃或删除。</p>
               <div class="launcher-buttons publication-form">
