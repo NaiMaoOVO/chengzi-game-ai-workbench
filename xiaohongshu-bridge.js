@@ -138,6 +138,35 @@ function buildNoteArgs(server, feedId, xsecToken, options = {}) {
   ];
 }
 
+// 小红书互动计数是「1.2万」「3,456」这类展示串；发布台账指标需要数值。
+function parseXhsCount(value) {
+  const text = String(value ?? "").trim().replace(/,/g, "");
+  if (!text) return 0;
+  const multiplier = text.endsWith("亿") ? 1e8 : text.endsWith("万") ? 1e4 : 0;
+  const numberPart = multiplier ? text.slice(0, -1) : text;
+  const parsed = Number(numberPart);
+  if (!Number.isFinite(parsed) || parsed < 0) return 0;
+  return Math.round(multiplier ? parsed * multiplier : parsed);
+}
+
+// get_feed_detail 的返回里互动数据在 note.interactInfo，兼容两种包裹形态。
+function extractNoteStats(payload) {
+  const note = payload && typeof payload === "object"
+    ? (payload.data && typeof payload.data === "object" ? payload.data.note : null) || payload.note || null
+    : null;
+  if (!note || typeof note !== "object") return null;
+  const interact = note.interactInfo && typeof note.interactInfo === "object" ? note.interactInfo : {};
+  return {
+    title: String(note.title || note.displayTitle || ""),
+    stats: {
+      likes: parseXhsCount(interact.likedCount),
+      collects: parseXhsCount(interact.collectedCount),
+      comments: parseXhsCount(interact.commentCount),
+      shares: parseXhsCount(interact.shareCount)
+    }
+  };
+}
+
 function parseMcpJsonOutput(value) {
   const text = String(value || "").trim();
   let parsed;
@@ -255,7 +284,8 @@ const server = http.createServer(async (request, response) => {
   }
   const isSearch = request.method === "GET" && url.pathname === "/search";
   const isNote = request.method === "GET" && url.pathname === "/note";
-  if (!isSearch && !isNote) {
+  const isNoteStats = request.method === "GET" && url.pathname === "/note-stats";
+  if (!isSearch && !isNote && !isNoteStats) {
     sendJson(response, 404, { error: "not found" });
     return;
   }
@@ -280,6 +310,15 @@ const server = http.createServer(async (request, response) => {
     }
     try {
       const payload = await runMcpCall(buildNoteArgs(MCP_SERVER, target.feedId, target.xsecToken, { loadAllComments, commentLimit }));
+      if (isNoteStats) {
+        const extracted = extractNoteStats(payload);
+        if (!extracted) {
+          sendJson(response, 502, { error: "xiaohongshu_mcp_failed", message: "未能从笔记详情中解析互动数据。" });
+        } else {
+          sendJson(response, 200, { source: "xiaohongshu", note_id: target.feedId, ...extracted, fetchedAt: new Date().toISOString() });
+        }
+        return;
+      }
       sendJson(response, 200, { note: payload });
     } catch (error) {
       sendJson(response, 502, { error: "xiaohongshu_mcp_failed", message: error.message });
@@ -329,6 +368,8 @@ module.exports = {
   runMcpSearch,
   parseNoteTarget,
   NOTE_TARGET_ERRORS,
+  parseXhsCount,
+  extractNoteStats,
   mcpPublishTime,
   createSearchGate,
   resolveMcporterBin,

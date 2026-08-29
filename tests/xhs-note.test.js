@@ -8,7 +8,9 @@ const {
   parseNoteTarget,
   NOTE_TARGET_ERRORS,
   runMcpCall,
-  createSearchGate
+  createSearchGate,
+  parseXhsCount,
+  extractNoteStats
 } = require("../xiaohongshu-bridge");
 
 const NOTE_ID = "67a1b2c3d4e5f607182934b5c6d7e8f9";
@@ -199,4 +201,40 @@ test("search and note gates are independent single-flight slots", () => {
   gate.release();
   other.release();
   assert.equal(gate.tryAcquire(), true);
+});
+
+// /note-stats 的数值化解析：展示串「1.2万」「3,456」必须落到台账可存的整数。
+test("parseXhsCount normalizes display counts to integers", () => {
+  assert.equal(parseXhsCount("1.2万"), 12000);
+  assert.equal(parseXhsCount("3,456"), 3456);
+  assert.equal(parseXhsCount("28"), 28);
+  assert.equal(parseXhsCount("2.35亿"), 235000000);
+  assert.equal(parseXhsCount(""), 0);
+  assert.equal(parseXhsCount(null), 0);
+  assert.equal(parseXhsCount("赞"), 0);
+  assert.equal(parseXhsCount("-5"), 0);
+});
+
+test("extractNoteStats reads interactInfo from both payload wrappings", () => {
+  const wrapped = {
+    feed_id: "6a8cfff3000000001700011f",
+    data: {
+      note: {
+        title: "测试笔记",
+        interactInfo: { likedCount: "1.2万", collectedCount: "3,456", commentCount: "28", shareCount: "12" }
+      }
+    }
+  };
+  const fromWrapped = extractNoteStats(wrapped);
+  assert.deepEqual(fromWrapped, { title: "测试笔记", stats: { likes: 12000, collects: 3456, comments: 28, shares: 12 } });
+
+  const flat = { note: { displayTitle: "备用形态", interactInfo: { likedCount: "8" } } };
+  const fromFlat = extractNoteStats(flat);
+  assert.deepEqual(fromFlat.stats, { likes: 8, collects: 0, comments: 0, shares: 0 });
+  assert.equal(fromFlat.title, "备用形态");
+
+  assert.equal(extractNoteStats(null), null);
+  assert.equal(extractNoteStats({ data: {} }), null);
+  const bare = extractNoteStats({ note: { title: "无互动字段" } });
+  assert.deepEqual(bare.stats, { likes: 0, collects: 0, comments: 0, shares: 0 });
 });
