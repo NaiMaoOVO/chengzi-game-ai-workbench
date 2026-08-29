@@ -806,6 +806,10 @@ function publicationMetricsSummary(item) {
   if (metrics.like !== undefined) parts.push("点赞 " + formatNumberCompact(metrics.like));
   if (metrics.comment !== undefined) parts.push("评论 " + formatNumberCompact(metrics.comment));
   if (metrics.danmaku !== undefined) parts.push("弹幕 " + formatNumberCompact(metrics.danmaku));
+  if (metrics.likes !== undefined) parts.push("点赞 " + formatNumberCompact(metrics.likes));
+  if (metrics.collects !== undefined) parts.push("收藏 " + formatNumberCompact(metrics.collects));
+  if (metrics.comments !== undefined) parts.push("评论 " + formatNumberCompact(metrics.comments));
+  if (metrics.shares !== undefined) parts.push("分享 " + formatNumberCompact(metrics.shares));
   if (!parts.length) return "";
   const fetchedLabel = formatPublicationDate(metrics.fetchedAt);
   return parts.join(" · ") + (fetchedLabel ? " · 更新于 " + fetchedLabel : "");
@@ -859,7 +863,7 @@ function buildPublicationRow(item) {
 
   const actions = document.createElement("div");
   actions.className = "publication-actions";
-  if (item.channel === "B站" && safeExternalUrl(item.url)) {
+  if ((item.channel === "B站" || item.channel === "小红书") && safeExternalUrl(item.url)) {
     const effectButton = document.createElement("button");
     effectButton.className = "secondary-button";
     effectButton.type = "button";
@@ -961,19 +965,38 @@ async function refreshPublicationEffect(id) {
     setPublicationStatus("该记录没有有效链接，无法回流效果数据。", "mock");
     return;
   }
-  setPublicationStatus("正在拉取 B站效果数据…", "");
+  const isXhs = item.channel === "小红书";
+  setPublicationStatus(isXhs ? "正在拉取小红书笔记互动数据…" : "正在拉取 B站效果数据…", "");
   try {
-    const effectResponse = await fetch(COMMENT_SERVICE_URL + "/video-effect?url=" + encodeURIComponent(item.url));
-    const effect = await effectResponse.json().catch(() => ({}));
-    if (!effectResponse.ok) throw new Error(effect.message || effect.error || "HTTP " + effectResponse.status);
-    const stats = effect.stats || {};
-    const metricsJson = {
-      view: Number(stats.view) || 0,
-      like: Number(stats.like) || 0,
-      comment: Number(stats.reply) || 0,
-      danmaku: Number(stats.danmaku) || 0,
-      fetchedAt: effect.fetchedAt || new Date().toISOString()
-    };
+    let metricsJson;
+    let confirmText;
+    if (isXhs) {
+      const statsResponse = await fetch(XHS_SERVICE_URL + "/note-stats?url=" + encodeURIComponent(item.url));
+      const statsPayload = await statsResponse.json().catch(() => ({}));
+      if (!statsResponse.ok) throw new Error(statsPayload.message || statsPayload.error || "HTTP " + statsResponse.status);
+      const noteStats = statsPayload.stats || {};
+      metricsJson = {
+        likes: Number(noteStats.likes) || 0,
+        collects: Number(noteStats.collects) || 0,
+        comments: Number(noteStats.comments) || 0,
+        shares: Number(noteStats.shares) || 0,
+        fetchedAt: statsPayload.fetchedAt || new Date().toISOString()
+      };
+      confirmText = "效果已更新（点赞 " + formatNumberCompact(metricsJson.likes) + "）";
+    } else {
+      const effectResponse = await fetch(COMMENT_SERVICE_URL + "/video-effect?url=" + encodeURIComponent(item.url));
+      const effect = await effectResponse.json().catch(() => ({}));
+      if (!effectResponse.ok) throw new Error(effect.message || effect.error || "HTTP " + effectResponse.status);
+      const stats = effect.stats || {};
+      metricsJson = {
+        view: Number(stats.view) || 0,
+        like: Number(stats.like) || 0,
+        comment: Number(stats.reply) || 0,
+        danmaku: Number(stats.danmaku) || 0,
+        fetchedAt: effect.fetchedAt || new Date().toISOString()
+      };
+      confirmText = "效果已更新（播放 " + formatNumberCompact(metricsJson.view) + "）";
+    }
     const putResponse = await fetch(ARCHIVE_SERVICE_URL + "/publications/" + id, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
@@ -983,7 +1006,7 @@ async function refreshPublicationEffect(id) {
     if (!putResponse.ok || !putPayload.ok) throw new Error(putPayload.error || "HTTP " + putResponse.status);
     Object.assign(item, putPayload.publication || {}, { metrics_json: metricsJson });
     replacePublicationRow(item);
-    setPublicationStatus("效果已更新（播放 " + formatNumberCompact(metricsJson.view) + "）", "real");
+    setPublicationStatus(confirmText, "real");
   } catch (error) {
     setPublicationStatus("效果更新失败（" + error.message + "）。", "mock");
   }
