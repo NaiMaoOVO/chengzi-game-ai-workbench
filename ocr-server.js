@@ -8,6 +8,7 @@ const { spawn } = require("node:child_process");
 const https = require("node:https");
 const { createRateLimiter } = require("./lib/http-guards");
 const { parseChineseNumber, detectImage } = require("./lib/ocr-heuristics");
+const { createCors } = require("./lib/cors");
 
 const PORT = Number(process.env.PORT) || 8787;
 const MAX_UPLOAD_BYTES = 12 * 1024 * 1024;
@@ -18,7 +19,7 @@ const OCR_TIMEOUT_MS = Number(process.env.OCR_TIMEOUT_MS) || 15000;
 const OCR_READINESS_TIMEOUT_MS = Number(process.env.OCR_READINESS_TIMEOUT_MS) || 90000;
 const OCR_MAX_CONCURRENCY = Math.max(1, Number(process.env.OCR_MAX_CONCURRENCY) || 2);
 const OCR_ALLOW_INSECURE_REMOTE = process.env.OCR_ALLOW_INSECURE_REMOTE === "true";
-const ALLOWED_ORIGINS = new Set((process.env.ALLOWED_ORIGIN || "null,http://localhost:3000,http://localhost:5173,http://localhost:8793,http://127.0.0.1:3000,http://127.0.0.1:5173,http://127.0.0.1:8793").split(",").map((value) => value.trim()).filter(Boolean));
+const cors = createCors({ allowedOrigins: process.env.ALLOWED_ORIGIN, methods: "GET, POST, OPTIONS" });
 const RATE_LIMIT_WINDOW_MS = 60 * 1000;
 const RATE_LIMIT_MAX = Number(process.env.OCR_RATE_LIMIT_MAX) || 30;
 const rateLimiter = createRateLimiter({
@@ -108,22 +109,8 @@ function providerStatus() {
   return macosProviderStatus;
 }
 
-function corsHeaders(request) {
-  const origin = request.headers.origin;
-  const allowAll = ALLOWED_ORIGINS.has("*");
-  const allowed = allowAll || !origin || origin === "null" || ALLOWED_ORIGINS.has(origin);
-  return {
-    "Access-Control-Allow-Origin": allowed ? (allowAll ? "*" : (origin || "null")) : "null",
-    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type",
-    "Vary": "Origin"
-  };
-}
-
-function isOriginAllowed(request) {
-  const origin = request.headers.origin;
-  return ALLOWED_ORIGINS.has("*") || !origin || origin === "null" || ALLOWED_ORIGINS.has(origin);
-}
+const corsHeaders = cors.corsHeaders;
+const isOriginAllowed = cors.isOriginAllowed;
 
 function sendJson(request, response, statusCode, payload, extraHeaders = {}) {
   response.writeHead(statusCode, {

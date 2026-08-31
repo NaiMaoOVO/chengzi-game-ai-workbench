@@ -6,6 +6,7 @@ const { fetchPlatformProvider } = require("./lib/platform-provider");
 const { parseRequestUrl } = require("./lib/safe-request-url");
 const { createRetryBudget } = require("./lib/http-guards");
 const { createFetchWithRetry } = require("./lib/fetch-with-retry");
+const { createCors } = require("./lib/cors");
 const PORT = Number(process.env.HOTSPOT_PORT || 8790);
 const BILIBILI_SEARCH_URL = "https://api.bilibili.com/x/web-interface/search/type";
 const BILIBILI_HTML_SEARCH_URL = "https://search.bilibili.com/video";
@@ -15,7 +16,7 @@ const DOUYIN_PROVIDER_TOKEN = process.env.DOUYIN_PROVIDER_TOKEN || "";
 const XIAOHONGSHU_PROVIDER_URL = process.env.XIAOHONGSHU_PROVIDER_URL || "";
 const XIAOHONGSHU_PROVIDER_TOKEN = process.env.XIAOHONGSHU_PROVIDER_TOKEN || "";
 const PLATFORM_PROVIDER_TIMEOUT_MS = Math.max(1000, Number(process.env.PLATFORM_PROVIDER_TIMEOUT_MS) || 15000);
-const ALLOWED_ORIGINS = new Set((process.env.ALLOWED_ORIGIN || "null,http://localhost:3000,http://localhost:5173,http://localhost:8793,http://127.0.0.1:3000,http://127.0.0.1:5173,http://127.0.0.1:8793").split(",").map((value) => value.trim()).filter(Boolean));
+const cors = createCors({ allowedOrigins: process.env.ALLOWED_ORIGIN, methods: "GET, OPTIONS" });
 const RATE_LIMIT_WINDOW_MS = Math.max(1000, Number(process.env.RATE_LIMIT_WINDOW_MS || 60000));
 const RATE_LIMIT_MAX = Math.max(1, Number(process.env.RATE_LIMIT_MAX || 60));
 const CACHE_TTL_MS = Math.max(0, Number(process.env.CACHE_TTL_MS || 30000));
@@ -69,17 +70,7 @@ function getBilibiliHeaders(referer = "https://search.bilibili.com/") {
   };
 }
 
-function corsHeaders(request) {
-  const origin = request.headers.origin;
-  const nullOrigin = origin === "null";
-  if (!origin || (!nullOrigin && !ALLOWED_ORIGINS.has("*") && !ALLOWED_ORIGINS.has(origin))) return {};
-  return {
-    "Access-Control-Allow-Origin": ALLOWED_ORIGINS.has("*") ? "*" : (nullOrigin ? "null" : origin),
-    "Access-Control-Allow-Methods": "GET, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type",
-    "Vary": "Origin"
-  };
-}
+const corsHeaders = cors.corsHeaders;
 
 function sendJson(request, response, statusCode, payload, extraHeaders = {}) {
   response.writeHead(statusCode, {
@@ -600,6 +591,11 @@ async function handleProbe(request, response) {
 }
 
 const server = http.createServer((request, response) => {
+  if (!cors.isOriginAllowed(request)) {
+    sendJson(request, response, 403, { error: "origin not allowed" });
+    return;
+  }
+
   if (request.method === "OPTIONS") {
     sendJson(request, response, 200, { ok: true });
     return;

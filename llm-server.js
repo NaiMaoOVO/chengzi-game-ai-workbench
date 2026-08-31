@@ -2,6 +2,7 @@ const http = require("node:http");
 const https = require("node:https");
 const crypto = require("node:crypto");
 const { createRateLimiter, stableSerialize, createSingleFlightCache } = require("./lib/http-guards");
+const { createCors } = require("./lib/cors");
 require("./lib/env-file").loadProjectEnv(__dirname);
 
 const PORT = Number(process.env.LLM_PORT) || 8794;
@@ -16,7 +17,7 @@ const RATE_LIMIT_WINDOW_MS = 60 * 1000;
 const RATE_LIMIT_MAX = Number(process.env.LLM_RATE_LIMIT_MAX) || 20;
 const MAX_REQUEST_BYTES = 256 * 1024;
 
-const ALLOWED_ORIGINS = new Set((process.env.ALLOWED_ORIGIN || "null,http://localhost:3000,http://localhost:5173,http://localhost:8793,http://127.0.0.1:3000,http://127.0.0.1:5173,http://127.0.0.1:8793").split(",").map((value) => value.trim()).filter(Boolean));
+const cors = createCors({ allowedOrigins: process.env.ALLOWED_ORIGIN, methods: "GET, POST, OPTIONS" });
 const checkRateLimit = createRateLimiter({
   windowMs: RATE_LIMIT_WINDOW_MS,
   max: RATE_LIMIT_MAX,
@@ -33,16 +34,8 @@ function providerStatus() {
   return { ready: true, llm: "ready", detail: `已接入 ${LLM_MODEL}` };
 }
 
-function corsHeaders(request) {
-  const origin = request.headers.origin;
-  const allowed = ALLOWED_ORIGINS.has("*") || !origin || origin === "null" || ALLOWED_ORIGINS.has(origin);
-  return {
-    "Access-Control-Allow-Origin": allowed ? (ALLOWED_ORIGINS.has("*") ? "*" : (origin || "null")) : "null",
-    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type",
-    "Vary": "Origin"
-  };
-}
+const corsHeaders = cors.corsHeaders;
+const isOriginAllowed = cors.isOriginAllowed;
 
 function sendJson(request, response, statusCode, payload, extraHeaders = {}) {
   response.writeHead(statusCode, {
@@ -51,11 +44,6 @@ function sendJson(request, response, statusCode, payload, extraHeaders = {}) {
     ...extraHeaders
   });
   response.end(JSON.stringify(payload));
-}
-
-function isOriginAllowed(request) {
-  const origin = request.headers.origin;
-  return ALLOWED_ORIGINS.has("*") || !origin || origin === "null" || ALLOWED_ORIGINS.has(origin);
 }
 
 function checkRateLimitRequest(request) {

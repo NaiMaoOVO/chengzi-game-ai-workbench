@@ -6,10 +6,11 @@ const { DatabaseSync } = require("node:sqlite");
 require("./lib/env-file").loadProjectEnv(__dirname);
 const { parseRequestUrl } = require("./lib/safe-request-url");
 const { createRateLimiter } = require("./lib/http-guards");
+const { createCors } = require("./lib/cors");
 
 const PORT = Number(process.env.ARCHIVE_PORT) || 8796;
 const MAX_BODY_BYTES = 5 * 1024 * 1024;
-const ALLOWED_ORIGINS = new Set((process.env.ALLOWED_ORIGIN || "null,http://localhost:3000,http://localhost:5173,http://localhost:8793,http://127.0.0.1:3000,http://127.0.0.1:5173,http://127.0.0.1:8793").split(",").map((value) => value.trim()).filter(Boolean));
+const cors = createCors({ allowedOrigins: process.env.ALLOWED_ORIGIN, methods: "GET, POST, PUT, DELETE, OPTIONS" });
 const RATE_LIMIT_WINDOW_MS = Math.max(1000, Number(process.env.RATE_LIMIT_WINDOW_MS || 60000));
 const RATE_LIMIT_MAX = Math.max(1, Number(process.env.ARCHIVE_RATE_LIMIT_MAX || 120));
 const checkRateLimit = createRateLimiter({ windowMs: RATE_LIMIT_WINDOW_MS, max: RATE_LIMIT_MAX, trustProxy: process.env.TRUST_PROXY === "1" });
@@ -18,16 +19,8 @@ const MORNING_GAMES = (process.env.MORNING_GAMES || "").split(",").map((value) =
 const MORNING_PLATFORM = process.env.MORNING_PLATFORM || "B站";
 const HOTSPOT_SOURCE_URL = process.env.HOTSPOT_SOURCE_URL || "http://127.0.0.1:8790";
 
-function corsHeaders(request) {
-  const origin = request.headers.origin;
-  const allowed = ALLOWED_ORIGINS.has("*") || !origin || origin === "null" || ALLOWED_ORIGINS.has(origin);
-  return {
-    "Access-Control-Allow-Origin": allowed ? (ALLOWED_ORIGINS.has("*") ? "*" : (origin === "null" ? "null" : (origin || "null"))) : "null",
-    "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type",
-    "Vary": "Origin"
-  };
-}
+const corsHeaders = cors.corsHeaders;
+const isOriginAllowed = cors.isOriginAllowed;
 
 function dayKey(iso) {
   return String(iso).slice(0, 10);
@@ -59,11 +52,6 @@ function computeStats(kind, days, game) {
     }
   }
   return [...byDay.values()].sort((a, b) => a.date.localeCompare(b.date));
-}
-
-function isOriginAllowed(request) {
-  const origin = request.headers.origin;
-  return ALLOWED_ORIGINS.has("*") || !origin || origin === "null" || ALLOWED_ORIGINS.has(origin);
 }
 
 function sendJson(request, response, statusCode, payload, extraHeaders = {}) {

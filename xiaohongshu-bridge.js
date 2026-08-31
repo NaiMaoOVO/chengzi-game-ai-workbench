@@ -4,6 +4,8 @@ const os = require("node:os");
 const path = require("node:path");
 const { spawn } = require("node:child_process");
 const { loadProjectEnv } = require("./lib/env-file");
+const { createCors } = require("./lib/cors");
+const { parseRequestUrl } = require("./lib/safe-request-url");
 
 loadProjectEnv(__dirname);
 
@@ -203,10 +205,16 @@ function unwrapMcpContent(value) {
   }
 }
 
-function sendJson(response, statusCode, payload) {
+// 前端（file:// 页面，Origin: null）直接 fetch 本 bridge，此前响应不带 ACAO 会被浏览器拦截，
+// 小红书笔记导入与效果回流在真实浏览器里静默失败；现在与其他服务共用同一套 CORS 工厂。
+const cors = createCors({ allowedOrigins: process.env.ALLOWED_ORIGIN, methods: "GET, OPTIONS" });
+
+function sendJson(request, response, statusCode, payload, extraHeaders = {}) {
   response.writeHead(statusCode, {
     "Content-Type": "application/json; charset=utf-8",
-    "Cache-Control": "no-store"
+    "Cache-Control": "no-store",
+    ...cors.corsHeaders(request),
+    ...extraHeaders
   });
   response.end(JSON.stringify(payload));
 }
@@ -273,20 +281,32 @@ function runMcpSearch(keyword, range = "24h", options = {}) {
 }
 
 const server = http.createServer(async (request, response) => {
-  const url = new URL(request.url, `http://${request.headers.host}`);
+  if (!cors.isOriginAllowed(request)) {
+    sendJson(request, response, 403, { error: "origin not allowed" });
+    return;
+  }
+  if (request.method === "OPTIONS") {
+    sendJson(request, response, 204, {});
+    return;
+  }
+  const url = parseRequestUrl(request);
+  if (!url) {
+    sendJson(request, response, 400, { error: "invalid_request_url" });
+    return;
+  }
   if (request.method === "GET" && url.pathname === "/health") {
-    sendJson(response, 200, { ok: true, service: "gameops-xiaohongshu-bridge", mcpServer: MCP_SERVER, mcporter: MCPORTER_BIN });
+    sendJson(request, response, 200, { ok: true, service: "gameops-xiaohongshu-bridge", mcpServer: MCP_SERVER, mcporter: MCPORTER_BIN });
     return;
   }
   if (!isAuthorized(request)) {
-    sendJson(response, 401, { error: "unauthorized" });
+    sendJson(request, response, 401, { error: "unauthorized" });
     return;
   }
   const isSearch = request.method === "GET" && url.pathname === "/search";
   const isNote = request.method === "GET" && url.pathname === "/note";
   const isNoteStats = request.method === "GET" && url.pathname === "/note-stats";
   if (!isSearch && !isNote && !isNoteStats) {
-    sendJson(response, 404, { error: "not found" });
+    sendJson(request, response, 404, { error: "not found" });
     return;
   }
 
@@ -294,7 +314,7 @@ const server = http.createServer(async (request, response) => {
     const target = parseNoteTarget(url.searchParams.get("url"), { token: url.searchParams.get("xsec_token") });
     if (!target.ok) {
       const mapped = NOTE_TARGET_ERRORS[target.code] || { status: 400, message: "无效的笔记请求。" };
-      sendJson(response, mapped.status, { error: target.code, message: mapped.message });
+      sendJson(request, response, mapped.status, { error: target.code, message: mapped.message });
       return;
     }
     const loadAllComments = url.searchParams.get("load_all_comments") === "1" || url.searchParams.get("load_all_comments") === "true";
@@ -305,7 +325,7 @@ const server = http.createServer(async (request, response) => {
     }
 
     if (!noteGate.tryAcquire()) {
-      sendJson(response, 429, { error: "note_busy", message: "小红书笔记读取正在进行，请稍后重试。", "Retry-After": 3 });
+      sendJson(request, response, 429, { error: "note_busy", message: "小红书笔记读取正在进行，请稍后重试。", "Retry-After": 3 });
       return;
     }
     try {
@@ -313,15 +333,15 @@ const server = http.createServer(async (request, response) => {
       if (isNoteStats) {
         const extracted = extractNoteStats(payload);
         if (!extracted) {
-          sendJson(response, 502, { error: "xiaohongshu_mcp_failed", message: "未能从笔记详情中解析互动数据。" });
+          sendJson(request, response, 502, { error: "xiaohongshu_mcp_failed", message: "未能从笔记详情中解析互动数据。" });
         } else {
-          sendJson(response, 200, { source: "xiaohongshu", note_id: target.feedId, ...extracted, fetchedAt: new Date().toISOString() });
+          sendJson(request, response, 200, { source: "xiaohongshu", note_id: target.feedId, ...extracted, fetchedAt: new Date().toISOString() });
         }
         return;
       }
-      sendJson(response, 200, { note: payload });
+      sendJson(request, response, 200, { note: payload });
     } catch (error) {
-      sendJson(response, 502, { error: "xiaohongshu_mcp_failed", message: error.message });
+      sendJson(request, response, 502, { error: "xiaohongshu_mcp_failed", message: error.message });
     } finally {
       noteGate.release();
     }
@@ -331,12 +351,12 @@ const server = http.createServer(async (request, response) => {
   const keyword = (url.searchParams.get("game") || url.searchParams.get("keyword") || "").trim();
   const range = url.searchParams.get("range") || "24h";
   if (!keyword || keyword.length > 80) {
-    sendJson(response, 400, { error: "keyword must be 1-80 characters" });
+    sendJson(request, response, 400, { error: "keyword must be 1-80 characters" });
     return;
   }
 
   if (!searchGate.tryAcquire()) {
-    sendJson(response, 429, { error: "search_busy", message: "小红书搜索正在进行，请稍后重试。", "Retry-After": 3 });
+    sendJson(request, response, 429, { error: "search_busy", message: "小红书搜索正在进行，请稍后重试。", "Retry-After": 3 });
     return;
   }
   try {
@@ -345,9 +365,9 @@ const server = http.createServer(async (request, response) => {
     const result = Array.isArray(payload)
       ? { items: payload, providerRangeVerified: exactRange ? range : "" }
       : { ...payload, providerRangeVerified: exactRange ? range : "" };
-    sendJson(response, 200, result);
+    sendJson(request, response, 200, result);
   } catch (error) {
-    sendJson(response, 502, { error: "xiaohongshu_mcp_failed", message: error.message });
+    sendJson(request, response, 502, { error: "xiaohongshu_mcp_failed", message: error.message });
   } finally {
     searchGate.release();
   }

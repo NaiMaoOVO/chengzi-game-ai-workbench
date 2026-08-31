@@ -52,7 +52,8 @@ const serviceCases = [
         assert.equal(gotProfile.profile.competitors[0], "竞品A");
       })();
     }
-  }
+  },
+  { script: "xiaohongshu-bridge.js", envPort: "XHS_BRIDGE_PORT", service: "gameops-xiaohongshu-bridge" }
 ];
 
 async function waitForHealth(port, timeoutMs = 10000) {
@@ -208,7 +209,7 @@ async function withGuardedService(script, envPortName, extraEnv, run) {
   }
 }
 
-test("hotspot: malformed Host -> 400, disallowed Origin -> no ACAO, exceeding limit -> 429 + Retry-After", async () => {
+test("hotspot: malformed Host -> 400, disallowed Origin -> 403 without echoing origin, exceeding limit -> 429 + Retry-After", async () => {
   await withGuardedService("hotspot-server.js", "HOTSPOT_PORT", {
     RATE_LIMIT_MAX: "5",
     RATE_LIMIT_WINDOW_MS: "1000"
@@ -218,8 +219,8 @@ test("hotspot: malformed Host -> 400, disallowed Origin -> no ACAO, exceeding li
     assert.equal(JSON.parse(badHost.text).error, "invalid_request_url");
 
     const evilOrigin = await httpRequest(port, "/health", { headers: { Origin: "http://evil.example" } });
-    assert.equal(evilOrigin.status, 200);
-    assert.equal(evilOrigin.headers["access-control-allow-origin"], undefined, "拒绝的 Origin 不得携带 ACAO");
+    assert.equal(evilOrigin.status, 403);
+    assert.equal(evilOrigin.headers["access-control-allow-origin"], "null", "拒绝的 Origin 固定回 null，不回显恶意 Origin");
 
     const health = JSON.parse((await httpRequest(port, "/health")).text);
     assert.equal(health.service, "gameops-hotspot");
@@ -229,7 +230,7 @@ test("hotspot: malformed Host -> 400, disallowed Origin -> no ACAO, exceeding li
   });
 });
 
-test("comment: malformed Host -> 400, disallowed Origin -> no ACAO, exceeding limit -> 429 + Retry-After", async () => {
+test("comment: malformed Host -> 400, disallowed Origin -> 403 without echoing origin, exceeding limit -> 429 + Retry-After", async () => {
   await withGuardedService("comment-server.js", "COMMENT_PORT", {
     RATE_LIMIT_MAX: "5",
     RATE_LIMIT_WINDOW_MS: "1000"
@@ -239,8 +240,8 @@ test("comment: malformed Host -> 400, disallowed Origin -> no ACAO, exceeding li
     assert.equal(JSON.parse(badHost.text).error, "invalid_request_url");
 
     const evilOrigin = await httpRequest(port, "/health", { headers: { Origin: "http://evil.example" } });
-    assert.equal(evilOrigin.status, 200);
-    assert.equal(evilOrigin.headers["access-control-allow-origin"], undefined, "拒绝的 Origin 不得携带 ACAO");
+    assert.equal(evilOrigin.status, 403);
+    assert.equal(evilOrigin.headers["access-control-allow-origin"], "null", "拒绝的 Origin 固定回 null，不回显恶意 Origin");
 
     const health = JSON.parse((await httpRequest(port, "/health")).text);
     assert.equal(health.service, "gameops-comments");

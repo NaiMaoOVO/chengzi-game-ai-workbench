@@ -5,6 +5,7 @@ const { parseRequestUrl } = require("./lib/safe-request-url");
 const { createRateLimiter, createRetryBudget } = require("./lib/http-guards");
 const { extractBvid, extractAid } = require("./lib/bilibili-url");
 const { createFetchWithRetry } = require("./lib/fetch-with-retry");
+const { createCors } = require("./lib/cors");
 
 const PORT = Number(process.env.COMMENT_PORT || 8791);
 const VIDEO_INFO_URL = process.env.BILIBILI_VIDEO_INFO_URL || "https://api.bilibili.com/x/web-interface/view";
@@ -12,7 +13,7 @@ const REPLY_URL = "https://api.bilibili.com/x/v2/reply/main";
 const REPLY_FALLBACK_URL = "https://api.bilibili.com/x/v2/reply";
 const BILIBILI_COOKIE = process.env.BILIBILI_COOKIE || "";
 const DEFAULT_PROBE_URL = "https://www.bilibili.com/video/BV1GJ411x7h7";
-const ALLOWED_ORIGINS = new Set((process.env.ALLOWED_ORIGIN || "null,http://localhost:3000,http://localhost:5173,http://localhost:8793,http://127.0.0.1:3000,http://127.0.0.1:5173,http://127.0.0.1:8793").split(",").map((value) => value.trim()).filter(Boolean));
+const cors = createCors({ allowedOrigins: process.env.ALLOWED_ORIGIN, methods: "GET, OPTIONS" });
 const RATE_LIMIT_WINDOW_MS = Math.max(1000, Number(process.env.RATE_LIMIT_WINDOW_MS || 60000));
 const RATE_LIMIT_MAX = Math.max(1, Number(process.env.RATE_LIMIT_MAX || 60));
 const CACHE_TTL_MS = Math.max(0, Number(process.env.CACHE_TTL_MS || 30000));
@@ -69,17 +70,7 @@ function getBilibiliHeaders() {
   };
 }
 
-function corsHeaders(request) {
-  const origin = request.headers.origin;
-  const nullOrigin = origin === "null";
-  if (!origin || (!nullOrigin && !ALLOWED_ORIGINS.has("*") && !ALLOWED_ORIGINS.has(origin))) return {};
-  return {
-    "Access-Control-Allow-Origin": ALLOWED_ORIGINS.has("*") ? "*" : (nullOrigin ? "null" : origin),
-    "Access-Control-Allow-Methods": "GET, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type",
-    "Vary": "Origin"
-  };
-}
+const corsHeaders = cors.corsHeaders;
 
 function sendJson(request, response, statusCode, payload, extraHeaders = {}) {
   response.writeHead(statusCode, {
@@ -372,6 +363,11 @@ async function handleCommentsLikeProbe(input, limit) {
 }
 
 const server = http.createServer((request, response) => {
+  if (!cors.isOriginAllowed(request)) {
+    sendJson(request, response, 403, { error: "origin not allowed" });
+    return;
+  }
+
   if (request.method === "OPTIONS") {
     sendJson(request, response, 200, { ok: true });
     return;
