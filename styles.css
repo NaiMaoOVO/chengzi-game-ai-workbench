@@ -777,7 +777,6 @@ button[type="submit"]:hover {
   gap: 12px;
 }
 
-.comparison-grid,
 .streamer-data-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1048,7 +1047,6 @@ button[type="submit"]:hover {
 
   .metrics-grid,
   .form-grid,
-  .comparison-grid,
   .streamer-data-grid,
   .segmented-control {
     grid-template-columns: 1fr;
@@ -1485,11 +1483,6 @@ a.trending-title:hover {
   box-shadow: 0 0 6px rgba(255, 159, 10, 0.3);
 }
 
-.ocr-dot-error {
-  background: var(--accent-2);
-  box-shadow: 0 0 6px rgba(193, 70, 47, 0.3);
-}
-
 /* ---- Apple-inspired visual refresh 2026-05 ---- */
 
 :root {
@@ -1628,8 +1621,7 @@ h3 {
 .metric,
 .copy-card,
 .creator-table-row,
-.streamer-card,
-.compare-column {
+.streamer-card {
   border-color: rgba(255, 255, 255, 0.78);
   background: var(--surface);
   box-shadow: var(--soft-shadow);
@@ -2465,10 +2457,6 @@ button[type="submit"] {
   background: linear-gradient(135deg, rgba(255, 255, 255, 0.92), rgba(245, 249, 255, 0.76));
 }
 
-.centered-copy {
-  text-align: center;
-}
-
 .trending-header-row {
   display: flex;
   justify-content: space-between;
@@ -2871,16 +2859,6 @@ button[type="submit"] {
 
 .caliber-close:hover {
   color: #1f2937;
-}
-
-/* 模块记号 */
-.module-marker {
-  padding: 2px 8px;
-  border-radius: 999px;
-  background: var(--blue-soft);
-  color: var(--accent);
-  font-size: 10px;
-  font-weight: 850;
 }
 
 .centered-copy {
