@@ -6,6 +6,7 @@ const path = require("node:path");
 require("./lib/env-file").loadProjectEnv(__dirname);
 const { getRestartDelay } = require("./lib/service-supervisor");
 const { parseRequestUrl } = require("./lib/safe-request-url");
+const { createCors } = require("./lib/cors");
 
 const ROOT = __dirname;
 const STATE_FILE = path.join(os.tmpdir(), `gameops-workbench-${process.getuid?.() || "user"}.json`);
@@ -106,19 +107,15 @@ async function ensureServices() {
 (function() {
   var srv = http.createServer(async function(req, res) {
     var url = parseRequestUrl(req);
-    function corsOrigin() {
-      var origin = req.headers.origin;
-      if (origin === "null") return "null";
-      if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin || "")) return origin;
-      return undefined;
-    }
+    // 与其他六个服务共用同一 CORS 工厂：非法 Origin 统一 403，不再硬编码只放行 localhost。
+    var cors = createCors({ allowedOrigins: process.env.ALLOWED_ORIGIN, methods: "GET, OPTIONS" });
     function j(c, d) {
-      var headers = {"Content-Type":"application/json; charset=utf-8","Access-Control-Allow-Methods":"GET"};
-      var allowOrigin = corsOrigin();
-      if (allowOrigin) headers["Access-Control-Allow-Origin"] = allowOrigin;
+      var headers = {"Content-Type":"application/json; charset=utf-8", ...cors.corsHeaders(req)};
       res.writeHead(c, headers);
       res.end(JSON.stringify(d));
     }
+    if (!cors.isOriginAllowed(req)) { j(403, {ok:false, message:"origin not allowed"}); return; }
+    if (req.method === "OPTIONS") { j(204, {}); return; }
     if (!url) { j(400, {ok:false, message:"invalid request URL"}); return; }
     var parts = url.pathname.split("/").filter(Boolean);
     if (req.method !== "GET") { j(405, {ok:false, message:"method not allowed"}); return; }
