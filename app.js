@@ -82,24 +82,29 @@ let currentFeedbackRows = [];
 const FEEDBACK_XHS_SOURCE = "小红书笔记";
 let feedbackImportTarget = "bili";
 let currentCreatorRows = [];
-let streamers = [
-  {
-    id: 1,
-    name: "生态 KOC 主播 A",
-    imageUrl: "",
-    ocrStatus: "示例数据",
-    event: { acu: 286, pcu: 1240, impressions: 188000, entries: 21400 },
-    base: { acu: 210, pcu: 860, impressions: 132000, entries: 15800 }
-  },
-  {
-    id: 2,
-    name: "跨品类 KOL B",
-    imageUrl: "",
-    ocrStatus: "示例数据",
-    event: { acu: 168, pcu: 690, impressions: 246000, entries: 18200 },
-    base: { acu: 152, pcu: 720, impressions: 198000, entries: 17100 }
-  }
-];
+
+function buildDemoStreamers() {
+  return [
+    {
+      id: 1,
+      name: "生态 KOC 主播 A",
+      imageUrl: "",
+      ocrStatus: "示例数据",
+      event: { acu: 286, pcu: 1240, impressions: 188000, entries: 21400 },
+      base: { acu: 210, pcu: 860, impressions: 132000, entries: 15800 }
+    },
+    {
+      id: 2,
+      name: "跨品类 KOL B",
+      imageUrl: "",
+      ocrStatus: "示例数据",
+      event: { acu: 168, pcu: 690, impressions: 246000, entries: 18200 },
+      base: { acu: 152, pcu: 720, impressions: 198000, entries: 17100 }
+    }
+  ];
+}
+
+let streamers = buildDemoStreamers();
 
 
 function renderMetrics(container, metrics) {
@@ -239,24 +244,7 @@ function addEmptyStreamer() {
 }
 
 function loadDemoStreamers() {
-  streamers = [
-    {
-      id: 1,
-      name: "生态 KOC 主播 A",
-      imageUrl: "",
-      ocrStatus: "示例数据",
-      event: { acu: 286, pcu: 1240, impressions: 188000, entries: 21400 },
-      base: { acu: 210, pcu: 860, impressions: 132000, entries: 15800 }
-    },
-    {
-      id: 2,
-      name: "跨品类 KOL B",
-      imageUrl: "",
-      ocrStatus: "示例数据",
-      event: { acu: 168, pcu: 690, impressions: 246000, entries: 18200 },
-      base: { acu: 152, pcu: 720, impressions: 198000, entries: 17100 }
-    }
-  ];
+  streamers = buildDemoStreamers();
   streamerIdCounter = 2;
   renderStreamerList();
   analyzeReview();
@@ -3504,9 +3492,7 @@ function seededRandom(seed) {
 }
 
 function formatHeat(baseHeat, rng) {
-  const heat = Math.floor(baseHeat * (0.7 + rng() * 0.6));
-  if (heat >= 10000) return (heat / 10000).toFixed(1) + "万";
-  return heat.toLocaleString();
+  return formatNumberCompact(Math.floor(baseHeat * (0.7 + rng() * 0.6)));
 }
 
 function formatNumberCompact(value) {
@@ -3833,7 +3819,7 @@ function renderTrendingList(gameName, platform, options = {}) {
       const publishedAt = formatPublishedDate(t.publishedAt);
       const published = publishedAt ? `<span class="trending-author">发布 ${escapeHtml(publishedAt)}</span>` : "";
       return `
-        <li class="trending-item ${index === selectedTrendingIndex ? "active" : ""}" data-trending-index="${index}">
+        <li class="trending-item ${index === selectedTrendingIndex ? "active" : ""}" data-trending-index="${index}" role="button" tabindex="${index === selectedTrendingIndex ? 0 : -1}" aria-selected="${index === selectedTrendingIndex}">
           <span class="trending-rank ${t.rank <= 3 ? "trending-rank-hot" : ""}">${t.rank}</span>
           <div class="trending-body">
             <div class="trending-title-row">
@@ -4915,6 +4901,13 @@ function hasAny(text, words) {
   return words.some((word) => String(text || "").includes(word));
 }
 
+const CREATOR_TIER = Object.freeze({
+  A: "A档优先邀约",
+  B: "B档补充合作",
+  C: "C档低预算测试",
+  RISK: "风险名单"
+});
+
 function scoreCreator(row) {
   const type = inferCreatorType(row);
   const conversionRate = parseRateValue(row.conversionRate);
@@ -4955,7 +4948,7 @@ function scoreCreator(row) {
     cpe,
     scores: { launch, review, guide, value, overall },
     risks,
-    tier: risks.length >= 3 || quality < 50 ? "风险名单" : overall >= 78 ? "A档优先邀约" : overall >= 62 ? "B档补充合作" : "C档低预算测试"
+    tier: risks.length >= 3 || quality < 50 ? CREATOR_TIER.RISK : overall >= 78 ? CREATOR_TIER.A : overall >= 62 ? CREATOR_TIER.B : CREATOR_TIER.C
   };
 }
 
@@ -4985,10 +4978,6 @@ function explainCreatorScore(goal, activity) {
     return `目标分当前等同于性价比分：用均播、互动率、评论质量和商单密度修正报价效率，核心看 CPM/CPE 是否划算。性价比不是单纯报价低，而是单位播放和单位互动更有效。`;
   }
   return `目标分会随活动场景动态调整。当前场景「${config.label}」的基础权重为：${weights}；合作目标「${goalLabels[goal] || "综合"}」会额外强化对应能力。${config.logic} 性价比分单独展示，用来判断同等合作效果下谁的预算效率更高。`;
-}
-
-function targetScore(row, goal, activity) {
-  return scoreByGoal(row, goal, activity);
 }
 
 function formatWan(value) {
@@ -5059,7 +5048,7 @@ function chooseCreatorsByBudget(candidates, budget, scoreKey, limit = 8) {
   const selected = [];
   let used = 0;
   [...candidates]
-    .filter((row) => row.tier !== "风险名单" && row.quote > 0)
+    .filter((row) => row.tier !== CREATOR_TIER.RISK && row.quote > 0)
     .sort((a, b) => (b.scores[scoreKey] / Math.max(b.quote, 1)) - (a.scores[scoreKey] / Math.max(a.quote, 1)))
     .forEach((row) => {
       if (selected.length >= limit) return;
@@ -5072,8 +5061,8 @@ function chooseCreatorsByBudget(candidates, budget, scoreKey, limit = 8) {
 }
 
 function buildCreatorBudgetPlans(rows, budget) {
-  const usableBudget = budget || rows.filter((row) => row.tier !== "风险名单").reduce((sum, row) => sum + row.quote, 0);
-  const available = rows.filter((row) => row.tier !== "风险名单");
+  const usableBudget = budget || rows.filter((row) => row.tier !== CREATOR_TIER.RISK).reduce((sum, row) => sum + row.quote, 0);
+  const available = rows.filter((row) => row.tier !== CREATOR_TIER.RISK);
   const exposurePool = [...available].sort((a, b) => b.scores.launch - a.scores.launch);
   const stablePool = [...available].sort((a, b) => b.scores.overall - a.scores.overall);
   const valuePool = [...available].sort((a, b) => b.scores.value - a.scores.value);
@@ -5109,8 +5098,8 @@ function renderCreatorBudgetPlans(rows, budget) {
 
 function renderCreatorBriefs(rows, goal, activity) {
   const selected = [...rows]
-    .filter((row) => row.tier !== "风险名单")
-    .sort((a, b) => targetScore(b, goal, activity) - targetScore(a, goal, activity))
+    .filter((row) => row.tier !== CREATOR_TIER.RISK)
+    .sort((a, b) => scoreByGoal(b, goal, activity) - scoreByGoal(a, goal, activity))
     .slice(0, 4);
   renderCopyCards(
     document.querySelector("#creator-brief-list"),
@@ -5141,7 +5130,7 @@ function renderCreatorTable(rows, goal, activity) {
           <strong>${escapeHtml(row.name)}${row.dataSource === "backfill" ? '<em class="creator-data-badge">实测</em>' : ""}<small>${escapeHtml(row.platform)} · ${formatWan(row.followers)}粉 · 均播${formatWan(row.avgViews)}</small></strong>
           <span>${escapeHtml(row.type)}</span>
           <span>${escapeHtml(getCreatorFit(row))}</span>
-          <span class="score-pill">${targetScore(row, goal, activity)}</span>
+          <span class="score-pill">${scoreByGoal(row, goal, activity)}</span>
           <span>${row.scores.value}</span>
           <span>${formatCurrency(row.quote)}</span>
         </div>
@@ -5151,7 +5140,7 @@ function renderCreatorTable(rows, goal, activity) {
 }
 
 function renderCreatorTiers(rows) {
-  const groups = ["A档优先邀约", "B档补充合作", "C档低预算测试", "风险名单"];
+  const groups = [CREATOR_TIER.A, CREATOR_TIER.B, CREATOR_TIER.C, CREATOR_TIER.RISK];
   renderCopyCards(
     document.querySelector("#creator-tier-list"),
     groups.map((group) => {
@@ -5175,7 +5164,7 @@ function renderCreatorScenarios(rows) {
     document.querySelector("#creator-scenario-list"),
     scenarios.map(([label, key]) => {
       const selected = [...rows]
-        .filter((row) => row.tier !== "风险名单")
+        .filter((row) => row.tier !== CREATOR_TIER.RISK)
         .sort((a, b) => b.scores[key] - a.scores[key])
         .slice(0, 3);
       return {
@@ -5198,11 +5187,11 @@ function renderCreatorRisks(rows) {
 
 function summarizeCreators(rows, goal, budget, activity) {
   if (!rows.length) return "导入达人名单后，会自动生成合作优先级、场景适配和风险提示。";
-  const available = rows.filter((row) => row.tier !== "风险名单");
+  const available = rows.filter((row) => row.tier !== CREATOR_TIER.RISK);
   const top = available[0] || rows[0];
   const totalQuote = available.reduce((sum, row) => sum + row.quote, 0);
   const goalLabels = { launch: "新品曝光", review: "深度测评", guide: "攻略扩散", value: "性价比优先" };
-  return `本轮共识别 ${rows.length} 位达人，其中可优先推进 ${available.filter((row) => row.tier === "A档优先邀约").length} 位，风险名单 ${rows.filter((row) => row.tier === "风险名单").length} 位。当前场景为「${getActivityConfig(activity).label}」，目标为「${goalLabels[goal] || "综合合作"}」，首推 ${top.name}（${scoreByGoal(top, goal, activity)}分，${getCreatorFit(top)}）。若只推进非风险达人，预估报价合计 ${formatCurrency(totalQuote)}，${budget && totalQuote > budget ? "已超过预算，建议优先保留 A 档与性价比 TOP 达人。" : "在当前预算内可做组合测试。"}`;
+  return `本轮共识别 ${rows.length} 位达人，其中可优先推进 ${available.filter((row) => row.tier === CREATOR_TIER.A).length} 位，风险名单 ${rows.filter((row) => row.tier === CREATOR_TIER.RISK).length} 位。当前场景为「${getActivityConfig(activity).label}」，目标为「${goalLabels[goal] || "综合合作"}」，首推 ${top.name}（${scoreByGoal(top, goal, activity)}分，${getCreatorFit(top)}）。若只推进非风险达人，预估报价合计 ${formatCurrency(totalQuote)}，${budget && totalQuote > budget ? "已超过预算，建议优先保留 A 档与性价比 TOP 达人。" : "在当前预算内可做组合测试。"}`;
 }
 
 function parseDelimitedRows(text, delimiter) {
@@ -5450,11 +5439,11 @@ function analyzeCreators(rowsOverride = null) {
     .map(scoreCreator)
     .sort((a, b) => scoreByGoal(b, goal, activity) - scoreByGoal(a, goal, activity));
 
-  const available = currentCreatorRows.filter((row) => row.tier !== "风险名单");
+  const available = currentCreatorRows.filter((row) => row.tier !== CREATOR_TIER.RISK);
   renderMetrics(document.querySelector("#creator-metrics"), [
     { label: "导入达人", value: currentCreatorRows.length },
     { label: "可推进", value: available.length },
-    { label: "A档达人", value: currentCreatorRows.filter((row) => row.tier === "A档优先邀约").length }
+    { label: "A档达人", value: currentCreatorRows.filter((row) => row.tier === CREATOR_TIER.A).length }
   ]);
   renderCreatorTable(currentCreatorRows, goal, activity);
   renderCreatorTiers(currentCreatorRows);
@@ -5960,7 +5949,7 @@ function buildFullOperationReportText() {
     : "数据状态：当前已生成模块未检测到样例兜底标记，请结合原始来源复核。";
   const date = new Date().toISOString().slice(0, 10);
   const topTopics = currentTrendingTopics.slice(0, 5).map((topic) => `- TOP${topic.rank} ${topic.title}（${topic.tag} / ${topic.risk?.level || "正常"}）`).join("\n");
-  const creatorTop = currentCreatorRows.slice(0, 5).map((row) => `- ${row.name}：目标分 ${targetScore(row, document.querySelector("#creator-goal")?.value || "launch", document.querySelector("#creator-activity")?.value || "newLaunch")}，${row.tier}，${getCreatorFit(row)}`).join("\n");
+  const creatorTop = currentCreatorRows.slice(0, 5).map((row) => `- ${row.name}：目标分 ${scoreByGoal(row, document.querySelector("#creator-goal")?.value || "launch", document.querySelector("#creator-activity")?.value || "newLaunch")}，${row.tier}，${getCreatorFit(row)}`).join("\n");
 
   return [
     `# ${game} 游戏内容运营方案`,
@@ -6350,6 +6339,39 @@ document.querySelector("#trending-list")?.addEventListener("click", (event) => {
   const game = document.querySelector("#trending-game").value.trim() || "鸣潮";
   const platform = document.querySelector("#trending-platform").value || "B站";
   renderTrendingDetail(game, platform, currentTrendingTopics[selectedTrendingIndex]);
+});
+
+// 热点榜单键盘可达性：Enter/Space 打开选中项详情，↑/↓ 在列表项间移动焦点（roving tabindex）。
+document.querySelector("#trending-list")?.addEventListener("keydown", (event) => {
+  if (!["Enter", " ", "ArrowDown", "ArrowUp"].includes(event.key)) return;
+  const items = Array.from(document.querySelectorAll(".trending-item"));
+  if (!items.length) return;
+  const current = items.findIndex((node) => node.classList.contains("active"));
+  const game = document.querySelector("#trending-game").value.trim() || "鸣潮";
+  const platform = document.querySelector("#trending-platform").value || "B站";
+
+  const activate = (index) => {
+    const nextItem = items[index];
+    if (!nextItem) return;
+    selectedTrendingIndex = Number(nextItem.dataset.trendingIndex || 0);
+    items.forEach((node) => {
+      const isActive = node === nextItem;
+      node.classList.toggle("active", isActive);
+      node.tabIndex = isActive ? 0 : -1;
+    });
+    nextItem.focus();
+    renderTrendingDetail(game, platform, currentTrendingTopics[selectedTrendingIndex]);
+  };
+
+  if (event.key === "Enter" || event.key === " ") {
+    event.preventDefault();
+    if (current >= 0) activate(current);
+    return;
+  }
+  event.preventDefault();
+  const step = event.key === "ArrowDown" ? 1 : -1;
+  const next = Math.max(0, Math.min(items.length - 1, current + step));
+  activate(next);
 });
 
 
