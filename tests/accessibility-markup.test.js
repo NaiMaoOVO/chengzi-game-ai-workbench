@@ -323,6 +323,14 @@ test("daily publication backfill includes supported Bilibili and Xiaohongshu cha
   assert.match(source, /metrics\.view/);
 });
 
+test("daily queue normalizes non-object JSON payloads before partial degradation", () => {
+  const start = app.indexOf("window.loadTodayTodos = async function loadTodayTodos");
+  const end = app.indexOf("let llmModelName", start);
+  assert.ok(start >= 0 && end > start);
+  const source = app.slice(start, end);
+  assert.match(source, /payload && typeof payload === "object" && !Array\.isArray\(payload\)/);
+});
+
 test("local service recovery waits for archive readiness and reloads the daily queue", () => {
   const daily = fs.readFileSync(path.join(root, "daily-workbench.js"), "utf8");
   assert.match(launcher, /function waitForArchiveService/);

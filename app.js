@@ -1346,7 +1346,11 @@ window.loadTodayTodos = async function loadTodayTodos() {
     ]);
     const readResult = async (result) => {
       if (result.status !== "fulfilled") return { response: null, payload: { ok: false, error: result.reason?.message || "请求失败" } };
-      return { response: result.value, payload: await result.value.json().catch(() => ({})) };
+      const payload = await result.value.json().catch(() => ({}));
+      return {
+        response: result.value,
+        payload: payload && typeof payload === "object" && !Array.isArray(payload) ? payload : {}
+      };
     };
     const [risk, publication, manual, done, morning] = await Promise.all(results.map(readResult));
     if ([risk, publication, manual, done, morning].some(({ response }) => response?.status === 401)) {
