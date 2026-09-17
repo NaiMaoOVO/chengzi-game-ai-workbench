@@ -1261,37 +1261,40 @@ window.loadTodayTodos = async function loadTodayTodos() {
   if (!window.renderTodayTodos) return;
   window.renderTodayTodos([], { loading: true });
   try {
-    const [riskResponse, publicationResponse, manualResponse, doneResponse, morningResponse] = await Promise.all([
+    const results = await Promise.allSettled([
       archiveRequest(ARCHIVE_SERVICE_URL + "/risk-events?status=open&limit=50", { cache: "no-store" }),
       archiveRequest(ARCHIVE_SERVICE_URL + "/publications?limit=50", { cache: "no-store" }),
       archiveRequest(ARCHIVE_SERVICE_URL + "/daily-todos?status=open&limit=50", { cache: "no-store" }),
       archiveRequest(ARCHIVE_SERVICE_URL + "/daily-todos?status=done&limit=50", { cache: "no-store" }),
       archiveRequest(ARCHIVE_SERVICE_URL + "/morning-runs?limit=20", { cache: "no-store" })
     ]);
-    const riskPayload = await riskResponse.json().catch(() => ({}));
-    const publicationPayload = await publicationResponse.json().catch(() => ({}));
-    const manualPayload = await manualResponse.json().catch(() => ({}));
-    const donePayload = await doneResponse.json().catch(() => ({}));
-    const morningPayload = await morningResponse.json().catch(() => ({}));
-    if ([riskResponse, publicationResponse, manualResponse, doneResponse, morningResponse].some((response) => response.status === 401)) {
+    const readResult = async (result) => {
+      if (result.status !== "fulfilled") return { response: null, payload: { ok: false, error: result.reason?.message || "请求失败" } };
+      return { response: result.value, payload: await result.value.json().catch(() => ({})) };
+    };
+    const [risk, publication, manual, done, morning] = await Promise.all(results.map(readResult));
+    if ([risk, publication, manual, done, morning].some(({ response }) => response?.status === 401)) {
       window.renderTodayTodos([], { authRequired: true });
       return;
     }
-    if (!riskResponse.ok || !riskPayload.ok) throw new Error(riskPayload.error || "HTTP " + riskResponse.status);
-    if (!publicationResponse.ok || !publicationPayload.ok) throw new Error(publicationPayload.error || "HTTP " + publicationResponse.status);
-    if (!manualResponse.ok || !manualPayload.ok) throw new Error(manualPayload.error || "HTTP " + manualResponse.status);
-    if (!doneResponse.ok || !donePayload.ok) throw new Error(donePayload.error || "HTTP " + doneResponse.status);
-    if (!morningResponse.ok || !morningPayload.ok) throw new Error(morningPayload.error || "HTTP " + morningResponse.status);
-    const openRiskCount = (riskPayload.items || []).length;
-    const pendingBackfillCount = (publicationPayload.items || []).filter(publicationNeedsEffectBackfill).length;
-    window.renderTodayTodos((manualPayload.items || []).map((item) => ({ ...item, kind: "manual" })), {
-      riskCount: openRiskCount,
-      publicationCount: pendingBackfillCount,
-      riskItems: riskPayload.items || [],
-      publicationItems: (publicationPayload.items || []).filter(publicationNeedsEffectBackfill),
-      todoCount: (manualPayload.items || []).length,
-      doneItems: donePayload.items || [],
-      morningRuns: morningPayload.items || []
+    for (const result of [risk, publication, manual, done]) {
+      if (!result.response || !result.response.ok || !result.payload.ok) {
+        throw new Error(result.payload.error || "请求失败");
+      }
+    }
+    const morningUnavailable = !morning.response || !morning.response.ok || !morning.payload.ok;
+    const riskItems = risk.payload.items || [];
+    const publicationItems = publication.payload.items || [];
+    const manualItems = manual.payload.items || [];
+    window.renderTodayTodos(manualItems.map((item) => ({ ...item, kind: "manual" })), {
+      riskCount: riskItems.length,
+      publicationCount: publicationItems.filter(publicationNeedsEffectBackfill).length,
+      riskItems,
+      publicationItems: publicationItems.filter(publicationNeedsEffectBackfill),
+      todoCount: manualItems.length,
+      doneItems: done.payload.items || [],
+      morningRuns: morningUnavailable ? [] : morning.payload.items || [],
+      morningUnavailable
     });
   } catch (_error) {
     window.renderTodayTodos([], { error: true });

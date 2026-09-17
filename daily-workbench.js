@@ -298,7 +298,7 @@
       renderMorningStatus([], true);
       return;
     }
-    renderMorningStatus(state.morningRuns || [], false, state.error || state.authRequired);
+    renderMorningStatus(state.morningRuns || [], false, state.error || state.authRequired || state.morningUnavailable);
     if (renderConnectionState(state)) return;
 
     const rows = [];

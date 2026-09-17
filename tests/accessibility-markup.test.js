@@ -81,6 +81,13 @@ test("daily workbench refreshes visible operational status automatically", () =>
   assert.match(daily, /visibilityState/);
 });
 
+test("daily queue degrades gracefully when the optional morning status endpoint fails", () => {
+  const daily = fs.readFileSync(path.join(root, "daily-workbench.js"), "utf8");
+  assert.match(app, /Promise\.allSettled/);
+  assert.match(app, /morningUnavailable/);
+  assert.match(daily, /state\.morningUnavailable/);
+});
+
 test("daily workbench aggregates every project while assigning new tasks to the current project", () => {
   const daily = fs.readFileSync(path.join(root, "daily-workbench.js"), "utf8");
 
