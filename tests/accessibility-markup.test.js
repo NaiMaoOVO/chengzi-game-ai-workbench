@@ -138,6 +138,7 @@ test("project profiles save and restore existing content, version, and creator c
 test("daily task dates use the shared business-date helper", () => {
   const daily = fs.readFileSync(path.join(root, "daily-workbench.js"), "utf8");
   assert.match(daily, /return businessDate\(\)/);
+  assert.match(daily, /timeZone: "Asia\/Shanghai"/);
   assert.match(app, /function topicFollowUpRequestId[\s\S]{0,160}businessDate\(\)/);
   assert.match(app, /function creatorFollowUpRequestId[\s\S]{0,160}businessDate\(\)/);
 });

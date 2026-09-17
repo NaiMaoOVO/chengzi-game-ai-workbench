@@ -393,7 +393,12 @@
     const due = dueEl();
     if (due && !due.value) due.value = today();
     const dateLabel = document.querySelector("#daily-date-label");
-    if (dateLabel) dateLabel.textContent = new Intl.DateTimeFormat("zh-CN", { month: "long", day: "numeric", weekday: "short" }).format(new Date());
+    if (dateLabel) dateLabel.textContent = new Intl.DateTimeFormat("zh-CN", {
+      timeZone: "Asia/Shanghai",
+      month: "long",
+      day: "numeric",
+      weekday: "short"
+    }).format(new Date());
     refreshProjectContext();
     document.querySelector("#trending-game")?.addEventListener("input", refreshProjectContext);
     document.querySelector("#daily-todo-form")?.addEventListener("submit", (event) => {
