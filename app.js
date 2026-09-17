@@ -5154,7 +5154,7 @@ function renderCreatorLibrary() {
     return `
       <article class="creator-library-card" data-creator-library-key="${escapeHtml(profile.key)}">
         <div class="creator-library-card-header">
-          <strong>${escapeHtml(profile.name)}<small>${escapeHtml(profile.platform)} · 最近更新 ${escapeHtml(String(profile.updatedAt || "").slice(0, 10) || "未记录")}</small></strong>
+          <strong>${escapeHtml(profile.name)}<small>${escapeHtml(profile.platform)} · 最近更新 ${escapeHtml(formatPublicationDate(profile.updatedAt) || "未记录")}</small></strong>
           <span class="creator-data-badge">${escapeHtml(profile.status || "未合作")}</span>
         </div>
         <p class="creator-library-snapshot">${formatWan(snapshot.followers)} 粉 · 均播 ${formatWan(snapshot.avgViews)} · 互动率 ${Number(snapshot.engagementRate || 0).toFixed(1)}% · 报价 ${formatCurrency(snapshot.quote)}${historyScore ? ` · 合作可信度 ${historyScore.score}（${historyScore.count} 次）` : ""}</p>

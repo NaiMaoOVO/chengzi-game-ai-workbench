@@ -148,6 +148,15 @@ test("navigation exposes the active view to assistive technology", () => {
   assert.match(source, /removeAttribute\("aria-current"\)/);
 });
 
+test("creator library dates use the shared date formatter", () => {
+  const start = app.indexOf("function renderCreatorLibrary");
+  const end = app.indexOf("function saveCreatorLibraryCard", start);
+  assert.ok(start >= 0 && end > start);
+  const source = app.slice(start, end);
+  assert.match(source, /formatPublicationDate\(profile\.updatedAt\)/);
+  assert.doesNotMatch(source, /updatedAt \|\| \"\"\)\.slice\(0, 10\)/);
+});
+
 test("daily workbench aggregates every project while assigning new tasks to the current project", () => {
   const daily = fs.readFileSync(path.join(root, "daily-workbench.js"), "utf8");
 
