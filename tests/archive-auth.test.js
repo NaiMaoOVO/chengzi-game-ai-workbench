@@ -105,6 +105,14 @@ test("archive auth requires login, CSRF, and keeps each account's data private",
   assert.equal(migratedLibrary.status, 200);
   assert.equal(migratedLibrary.payload.library["demo-key"].name, "旧个人库", "认证开启后 legacy 创作者库应迁移给管理员");
 
+  const migratedMorningSchema = new DatabaseSync(databasePath);
+  const morningPrimaryKey = migratedMorningSchema.prepare("PRAGMA table_info(morning_runs)").all()
+    .filter((column) => column.pk > 0)
+    .sort((a, b) => a.pk - b.pk)
+    .map((column) => column.name);
+  migratedMorningSchema.close();
+  assert.deepEqual(morningPrimaryKey, ["owner_key", "run_date", "game", "platform"], "晨报运行记录主键必须按账号隔离");
+
   const adminMorningRuns = await request("/morning-runs", { headers: { Cookie: adminCookie } });
   assert.equal(adminMorningRuns.status, 200);
   assert.equal(adminMorningRuns.payload.items.some((item) => item.game === "他人私有游戏"), false, "晨报运行记录不应泄露其他账号数据");
@@ -140,6 +148,19 @@ test("archive auth requires login, CSRF, and keeps each account's data private",
   assert.equal(memberLogin.status, 200);
   const memberCookie = sessionCookie(memberLogin);
   const memberCsrf = memberLogin.payload.csrf_token;
+
+  const sameRunIdentity = new DatabaseSync(databasePath);
+  const morningRunValues = ["2026-09-19", "同一游戏", "B站", "success", "2026-09-19T01:00:00.000Z"];
+  sameRunIdentity.prepare("INSERT INTO morning_runs (owner_key, run_date, game, platform, status, started_at) VALUES (?, ?, ?, ?, ?, ?)")
+    .run(`user:${adminLogin.payload.user.id}`, ...morningRunValues);
+  sameRunIdentity.prepare("INSERT INTO morning_runs (owner_key, run_date, game, platform, status, started_at) VALUES (?, ?, ?, ?, ?, ?)")
+    .run(`user:${memberLogin.payload.user.id}`, ...morningRunValues);
+  sameRunIdentity.close();
+
+  const adminSameRun = await request("/morning-runs?limit=50", { headers: { Cookie: adminCookie } });
+  const memberSameRun = await request("/morning-runs?limit=50", { headers: { Cookie: memberCookie } });
+  assert.equal(adminSameRun.payload.items.filter((item) => item.game === "同一游戏").length, 1, "管理员应保留自己的晨报运行记录");
+  assert.equal(memberSameRun.payload.items.filter((item) => item.game === "同一游戏").length, 1, "成员应能在相同日期运行同一游戏而不覆盖管理员");
 
   const memberBeforeCreate = await request("/daily-todos", { headers: jsonHeaders({ cookie: memberCookie }) });
   assert.equal(memberBeforeCreate.status, 200);

@@ -189,7 +189,7 @@ CREATE TABLE IF NOT EXISTS morning_runs (
   started_at TEXT NOT NULL,
   finished_at TEXT,
   error TEXT NOT NULL DEFAULT '',
-  PRIMARY KEY (run_date, game, platform)
+  PRIMARY KEY (owner_key, run_date, game, platform)
 );
 CREATE TABLE IF NOT EXISTS schema_migrations (
   id TEXT PRIMARY KEY,
@@ -201,12 +201,49 @@ function hasColumn(table, column) {
   return db.prepare("PRAGMA table_info(" + table + ")").all().some((item) => item.name === column);
 }
 
+function primaryKeyColumns(table) {
+  return db.prepare("PRAGMA table_info(" + table + ")").all()
+    .filter((item) => item.pk > 0)
+    .sort((a, b) => a.pk - b.pk)
+    .map((item) => item.name);
+}
+
+function migrateMorningRunPrimaryKey() {
+  const expected = ["owner_key", "run_date", "game", "platform"];
+  if (primaryKeyColumns("morning_runs").join("|") === expected.join("|")) return;
+  db.exec("BEGIN");
+  try {
+    db.exec(`
+      CREATE TABLE morning_runs_next (
+        owner_key TEXT NOT NULL DEFAULT 'default',
+        run_date TEXT NOT NULL,
+        game TEXT NOT NULL,
+        platform TEXT NOT NULL,
+        status TEXT NOT NULL CHECK(status IN ('running', 'success', 'failed')),
+        started_at TEXT NOT NULL,
+        finished_at TEXT,
+        error TEXT NOT NULL DEFAULT '',
+        PRIMARY KEY (owner_key, run_date, game, platform)
+      );
+      INSERT INTO morning_runs_next (owner_key, run_date, game, platform, status, started_at, finished_at, error)
+        SELECT owner_key, run_date, game, platform, status, started_at, finished_at, error FROM morning_runs;
+      DROP TABLE morning_runs;
+      ALTER TABLE morning_runs_next RENAME TO morning_runs;
+    `);
+    db.exec("COMMIT");
+  } catch (error) {
+    db.exec("ROLLBACK");
+    throw error;
+  }
+}
+
 function migrateOwnerColumns() {
   for (const table of ["snapshots", "publications", "risk_events", "daily_todos"]) {
     if (!hasColumn(table, "owner_key")) db.exec("ALTER TABLE " + table + " ADD COLUMN owner_key TEXT NOT NULL DEFAULT 'default'");
     if (!hasColumn(table, "request_id")) db.exec("ALTER TABLE " + table + " ADD COLUMN request_id TEXT");
   }
   if (!hasColumn("morning_runs", "owner_key")) db.exec("ALTER TABLE morning_runs ADD COLUMN owner_key TEXT NOT NULL DEFAULT 'default'");
+  migrateMorningRunPrimaryKey();
   if (!hasColumn("project_profiles", "owner_key")) {
     db.exec("BEGIN");
     try {
@@ -245,6 +282,8 @@ function migrateOwnerColumns() {
   `);
   db.prepare("INSERT OR IGNORE INTO schema_migrations (id, applied_at) VALUES (?, ?)")
     .run("2026-09-owner-isolation-and-idempotency", new Date().toISOString());
+  db.prepare("INSERT OR IGNORE INTO schema_migrations (id, applied_at) VALUES (?, ?)")
+    .run("2026-09-morning-run-owner-primary-key", new Date().toISOString());
 }
 
 migrateOwnerColumns();
@@ -1181,7 +1220,7 @@ let morningRunning = false;
 const claimMorningRunStatement = db.prepare(`
   INSERT INTO morning_runs (owner_key, run_date, game, platform, status, started_at, finished_at, error)
   VALUES (?, ?, ?, ?, 'running', ?, NULL, '')
-  ON CONFLICT(run_date, game, platform) DO UPDATE SET
+  ON CONFLICT(owner_key, run_date, game, platform) DO UPDATE SET
     owner_key = excluded.owner_key,
     status = 'running', started_at = excluded.started_at, finished_at = NULL, error = ''
   WHERE morning_runs.status = 'failed'
