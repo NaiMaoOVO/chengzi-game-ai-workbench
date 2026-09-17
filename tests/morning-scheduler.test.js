@@ -14,3 +14,8 @@ test("morning fetch uses Shanghai business time and persistent per-game run reco
   assert.match(archive, /FROM morning_runs WHERE owner_key = \?/);
   assert.match(archive, /INSERT OR IGNORE INTO snapshots/);
 });
+
+test("archive statistics group snapshots by the Shanghai business date", () => {
+  assert.match(archive, /function dayKey\(iso\) \{\s+return businessDate\(new Date\(iso\)\);/);
+  assert.doesNotMatch(archive, /function dayKey\(iso\) \{\s+return String\(iso\)\.slice\(0, 10\);/);
+});

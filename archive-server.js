@@ -27,7 +27,7 @@ const corsHeaders = cors.corsHeaders;
 const isOriginAllowed = cors.isOriginAllowed;
 
 function dayKey(iso) {
-  return String(iso).slice(0, 10);
+  return businessDate(new Date(iso));
 }
 
 function computeStats(kind, days, game, ownerKey) {
