@@ -104,6 +104,12 @@
     return businessDate();
   }
 
+  function shiftBusinessDate(dateValue, days) {
+    const base = new Date(`${dateValue}T12:00:00+08:00`);
+    const source = Number.isNaN(base.getTime()) ? new Date() : base;
+    return businessDate(new Date(source.getTime() + days * 86400000));
+  }
+
   function dailyTodoRequestId(game, title, priority, dueDate) {
     const source = JSON.stringify({ game, title, priority, dueDate });
     let hash = 0;
@@ -184,6 +190,7 @@
       actions.append(button("重新打开", () => updateTodo(item.id, { status: "open" })));
     } else {
       actions.append(button("完成", () => updateTodo(item.id, { status: "done" })));
+      actions.append(button("改到明天", () => updateTodo(item.id, { due_date: shiftBusinessDate(today(), 1) })));
       actions.append(button("放弃", () => updateTodo(item.id, { status: "dropped" })));
     }
     row.append(actions);

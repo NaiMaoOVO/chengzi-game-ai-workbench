@@ -175,6 +175,12 @@ test("morning run timestamps use the Shanghai time zone", () => {
   assert.match(source, /timeZone: "Asia\/Shanghai"/);
 });
 
+test("open daily todos expose a one-click next-business-day action", () => {
+  assert.match(dailyWorkbench, /function shiftBusinessDate/);
+  assert.match(dailyWorkbench, /改到明天/);
+  assert.match(dailyWorkbench, /updateTodo\(item\.id, \{ due_date:/);
+});
+
 test("daily workbench aggregates every project while assigning new tasks to the current project", () => {
   const daily = fs.readFileSync(path.join(root, "daily-workbench.js"), "utf8");
 
