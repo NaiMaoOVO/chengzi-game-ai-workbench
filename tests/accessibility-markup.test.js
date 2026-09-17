@@ -140,6 +140,15 @@ test("failed background snapshots can be retried without rerunning analysis", ()
   assert.match(app, /archiveSnapshot\(lastArchiveSnapshot\.kind/);
 });
 
+test("caliber guidance escapes dynamic text before rendering", () => {
+  const start = app.indexOf("function openCaliberPanel");
+  const end = app.indexOf("function closeCaliberPanel", start);
+  assert.ok(start >= 0 && end > start);
+  const source = app.slice(start, end);
+  assert.match(source, /escapeHtml\(caliber\)/);
+  assert.doesNotMatch(source, /caliber\.replace\(\/\\n\/g, "<br>"\)/);
+});
+
 test("navigation exposes the active view to assistive technology", () => {
   const start = app.indexOf("function navigateToView");
   const end = app.indexOf("function collectListText", start);

@@ -7082,8 +7082,9 @@ function openCaliberPanel() {
   const overlay = document.querySelector("#caliber-overlay");
 
   if (body) {
+    const safeCaliber = escapeHtml(caliber).replace(/\n/g, "<br>");
     body.innerHTML = caliber
-      ? "<strong>" + escapeHtml(label) + "</strong><br><br>" + caliber.replace(/\n/g, "<br>")
+      ? "<strong>" + escapeHtml(label) + "</strong><br><br>" + safeCaliber
       : "当前模块暂无专门口径说明。通用说明：<br><br>所有模块的数据来源和处理逻辑均标注在对应界面中。AI 生成内容为初稿辅助，最终判断请以人工审核为准。";
   }
   caliberLastFocused = document.activeElement instanceof HTMLElement ? document.activeElement : null;
