@@ -1301,8 +1301,8 @@ window.loadTodayTodos = async function loadTodayTodos() {
   window.renderTodayTodos([], { loading: true });
   try {
     const results = await Promise.allSettled([
-      archiveRequest(ARCHIVE_SERVICE_URL + "/risk-events?status=open&limit=50", { cache: "no-store" }),
-      archiveRequest(ARCHIVE_SERVICE_URL + "/publications?limit=50", { cache: "no-store" }),
+      archiveRequest(ARCHIVE_SERVICE_URL + "/risk-events?status=open&limit=200", { cache: "no-store" }),
+      archiveRequest(ARCHIVE_SERVICE_URL + "/publications?limit=200", { cache: "no-store" }),
       archiveRequest(ARCHIVE_SERVICE_URL + "/daily-todos?status=open&limit=200", { cache: "no-store" }),
       archiveRequest(ARCHIVE_SERVICE_URL + "/daily-todos?status=done&limit=200", { cache: "no-store" }),
       archiveRequest(ARCHIVE_SERVICE_URL + "/morning-runs?limit=20", { cache: "no-store" })

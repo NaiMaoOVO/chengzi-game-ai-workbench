@@ -188,6 +188,11 @@ test("daily queue can focus overdue and today-due items", () => {
   assert.match(dailyWorkbench, /activeFilter === "today"/);
 });
 
+test("daily summary loads enough risk and publication records for long-term use", () => {
+  assert.match(app, /\/risk-events\?status=open&limit=200/);
+  assert.match(app, /\/publications\?limit=200/);
+});
+
 test("daily workbench aggregates every project while assigning new tasks to the current project", () => {
   const daily = fs.readFileSync(path.join(root, "daily-workbench.js"), "utf8");
 
