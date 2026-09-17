@@ -248,6 +248,13 @@
     return String(a.due_date || "9999-99-99").localeCompare(String(b.due_date || "9999-99-99"));
   }
 
+  function matchesActiveFilter(row) {
+    if (activeFilter === "overdue" || activeFilter === "today") {
+      return row.kind === "manual" && dueState(row.item) === activeFilter;
+    }
+    return activeFilter === "all" || row.kind === activeFilter;
+  }
+
   function renderEmptyState(message, actionLabel, action) {
     const container = listEl();
     if (!container) return;
@@ -338,8 +345,8 @@
       actionLabel: "去回流",
       panelId: "#publication-panel"
     }) }));
-    [...manualItems].sort(manualSort).forEach((item) => rows.push({ kind: "manual", node: buildManualRow(item, false) }));
-    rows.filter((row) => activeFilter === "all" || row.kind === activeFilter).forEach((row) => container.append(row.node));
+    [...manualItems].sort(manualSort).forEach((item) => rows.push({ kind: "manual", item, node: buildManualRow(item, false) }));
+    rows.filter(matchesActiveFilter).forEach((row) => container.append(row.node));
     if (!rows.length) renderEmptyState("今日队列已清空，安排一件最重要的事吧。", "添加待办", () => titleEl()?.focus());
     if (rows.length && !container.children.length) renderEmptyState("当前筛选下没有事项。", "查看全部", () => {
       activeFilter = "all";

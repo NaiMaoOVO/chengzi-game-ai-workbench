@@ -181,6 +181,13 @@ test("open daily todos expose a one-click next-business-day action", () => {
   assert.match(dailyWorkbench, /updateTodo\(item\.id, \{ due_date:/);
 });
 
+test("daily queue can focus overdue and today-due items", () => {
+  assert.match(html, /data-daily-filter="overdue"/);
+  assert.match(html, /data-daily-filter="today"/);
+  assert.match(dailyWorkbench, /activeFilter === "overdue"/);
+  assert.match(dailyWorkbench, /activeFilter === "today"/);
+});
+
 test("daily workbench aggregates every project while assigning new tasks to the current project", () => {
   const daily = fs.readFileSync(path.join(root, "daily-workbench.js"), "utf8");
 
