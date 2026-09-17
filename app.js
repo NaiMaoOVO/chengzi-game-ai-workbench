@@ -517,8 +517,8 @@ async function loadTrendStats() {
 }
 
 function splitWeeks(series) {
-  const today = new Date().toISOString().slice(0, 10);
-  const weekAgo = new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10);
+  const today = businessDate();
+  const weekAgo = businessDate(new Date(Date.now() - 7 * 86400000));
   const current = series.filter((entry) => entry.date > weekAgo && entry.date <= today);
   const previous = series.filter((entry) => entry.date <= weekAgo);
   return { current, previous };

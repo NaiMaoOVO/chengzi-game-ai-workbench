@@ -101,6 +101,15 @@ test("background snapshots use a stable daily idempotency key", () => {
   assert.match(app, /snapshot-\$\{kind\}-\$\{businessDate\(\)\}/);
 });
 
+test("trend week boundaries use the Shanghai business date", () => {
+  const start = app.indexOf("function splitWeeks");
+  const end = app.indexOf("function negativeRatio", start);
+  assert.ok(start >= 0 && end > start);
+  const source = app.slice(start, end);
+  assert.match(source, /businessDate\(\)/);
+  assert.doesNotMatch(source, /toISOString\(\)\.slice\(0, 10\)/);
+});
+
 test("daily workbench aggregates every project while assigning new tasks to the current project", () => {
   const daily = fs.readFileSync(path.join(root, "daily-workbench.js"), "utf8");
 
