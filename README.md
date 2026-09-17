@@ -189,7 +189,7 @@ ARCHIVE_SESSION_HOURS=12
 npm run archive:backup
 ```
 
-备份默认写入与 `archive.db` 同级的 `backups/`，可用 `ARCHIVE_BACKUP_DIR` 改位置；默认保留最近 7 份，可用 `ARCHIVE_BACKUP_KEEP` 调整（范围 1-100）。每份备份同时生成 `.sha256` 校验文件，恢复前应先校验文件完整性。恢复时先停止 archive 服务，再用备份文件替换数据库文件后重启。生产环境必须使用 HTTPS，并保持 `ARCHIVE_COOKIE_SECURE=1`。
+备份默认写入与 `archive.db` 同级的 `backups/`，可用 `ARCHIVE_BACKUP_DIR` 改位置；默认保留最近 7 份，可用 `ARCHIVE_BACKUP_KEEP` 调整（范围 1-100）。每份备份同时生成 `.sha256` 校验文件，恢复前可执行 `npm run archive:verify -- /path/to/archive-*.db` 校验文件完整性。恢复时先停止 archive 服务，再用备份文件替换数据库文件后重启。生产环境必须使用 HTTPS，并保持 `ARCHIVE_COOKIE_SECURE=1`。
 
 ## 安全设计
 

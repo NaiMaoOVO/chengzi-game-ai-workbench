@@ -73,6 +73,14 @@ test("daily workbench makes overdue and planned dates visible", () => {
   assert.match(daily, /daily-due-badge/);
 });
 
+test("daily workbench refreshes visible operational status automatically", () => {
+  const daily = fs.readFileSync(path.join(root, "daily-workbench.js"), "utf8");
+
+  assert.match(daily, /setInterval/);
+  assert.match(daily, /300000/);
+  assert.match(daily, /visibilityState/);
+});
+
 test("daily workbench aggregates every project while assigning new tasks to the current project", () => {
   const daily = fs.readFileSync(path.join(root, "daily-workbench.js"), "utf8");
 

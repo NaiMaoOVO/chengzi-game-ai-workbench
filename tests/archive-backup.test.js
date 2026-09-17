@@ -54,3 +54,26 @@ test("archive backup writes a checksum and prunes older copies by retention", ()
   assert.match(fs.readFileSync(checksumPath, "utf8"), new RegExp("^" + digest + "  " + databaseFiles[0] + "\\n$"));
   fs.rmSync(dir, { recursive: true, force: true });
 });
+
+test("archive backup verification accepts intact files and rejects tampering", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "gameops-backup-verify-test-"));
+  const databasePath = path.join(dir, "archive.db");
+  const backupDir = path.join(dir, "backups");
+  const db = new DatabaseSync(databasePath);
+  db.exec("CREATE TABLE check_rows (value TEXT NOT NULL); INSERT INTO check_rows VALUES ('kept');");
+  db.close();
+  const env = { ...process.env, ARCHIVE_DB_PATH: databasePath, ARCHIVE_BACKUP_DIR: backupDir };
+  const backup = spawnSync(process.execPath, [path.join(root, "scripts", "backup-archive.js")], { cwd: root, env, encoding: "utf8" });
+  assert.equal(backup.status, 0, backup.stderr || backup.stdout);
+  const file = fs.readdirSync(backupDir).find((name) => /^archive-.*\.db$/.test(name));
+  const verifier = path.join(root, "scripts", "verify-archive-backup.js");
+  const valid = spawnSync(process.execPath, [verifier, path.join(backupDir, file)], { cwd: root, encoding: "utf8" });
+  assert.equal(valid.status, 0, valid.stderr || valid.stdout);
+  assert.match(valid.stdout, /校验通过/);
+
+  fs.appendFileSync(path.join(backupDir, file), "tampered");
+  const invalid = spawnSync(process.execPath, [verifier, path.join(backupDir, file)], { cwd: root, encoding: "utf8" });
+  assert.equal(invalid.status, 1);
+  assert.match(invalid.stderr, /校验失败/);
+  fs.rmSync(dir, { recursive: true, force: true });
+});

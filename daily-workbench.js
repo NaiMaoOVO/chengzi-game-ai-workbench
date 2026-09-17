@@ -11,6 +11,7 @@
   const morningStatusEl = () => document.querySelector("#daily-morning-status");
   const allProjectsScope = "工作范围：全部项目";
   let activeFilter = "all";
+  let refreshTimer = null;
 
   function setStatus(text, tone) {
     const element = statusEl();
@@ -414,6 +415,11 @@
       });
     });
     updateFilterControls();
+    if (!refreshTimer) {
+      refreshTimer = window.setInterval(() => {
+        if (document.visibilityState === "visible") window.loadTodayTodos?.();
+      }, 300000);
+    }
     if (typeof archiveAuthRequired !== "undefined" && archiveAuthRequired && !archiveSessionUser) {
       window.renderTodayTodos([], { authRequired: true });
       return;
