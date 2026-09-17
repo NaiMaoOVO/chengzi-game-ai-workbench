@@ -1035,7 +1035,8 @@ async function loadPublications() {
     const response = await archiveRequest(ARCHIVE_SERVICE_URL + "/publications?limit=200", { cache: "no-store" });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok || !payload.ok) throw new Error(payload.error || "HTTP " + response.status);
-    const items = payload.items || [];
+    if (!Array.isArray(payload.items)) throw new Error("发布接口返回格式错误");
+    const items = payload.items;
     const total = Number.isFinite(Number(payload.total)) ? Number(payload.total) : items.length;
     renderPublicationList(items);
     setPublicationStatus(total > items.length ? `已加载最近 ${items.length}/${total} 条。` : `已加载 ${items.length} 条。`, total > items.length ? "mock" : "real");
@@ -1296,7 +1297,8 @@ async function loadRiskTickets() {
     const response = await archiveRequest(ARCHIVE_SERVICE_URL + "/risk-events?" + params.toString(), { cache: "no-store" });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok || !payload.ok) throw new Error(payload.error || "HTTP " + response.status);
-    const items = payload.items || [];
+    if (!Array.isArray(payload.items)) throw new Error("风险工单接口返回格式错误");
+    const items = payload.items;
     const total = Number.isFinite(Number(payload.total)) ? Number(payload.total) : items.length;
     renderRiskTicketList(items);
     setRiskTicketStatus(total > items.length ? `已加载最近 ${items.length}/${total} 条。` : `已加载 ${items.length} 条。`, total > items.length ? "mock" : "real");
