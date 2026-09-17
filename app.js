@@ -880,7 +880,7 @@ function formatPublicationDate(value) {
   if (!value) return "";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return String(value);
-  return date.getFullYear() + "-" + String(date.getMonth() + 1).padStart(2, "0") + "-" + String(date.getDate()).padStart(2, "0");
+  return businessDate(date);
 }
 
 function publicationMetricsSummary(item) {
@@ -3827,7 +3827,7 @@ function formatPublishedDate(value) {
   const diffHours = Math.max(0, (now - date.getTime()) / 3600000);
   if (diffHours < 1) return `${Math.max(1, Math.round(diffHours * 60))}分钟前`;
   if (diffHours < 24) return `${Math.round(diffHours)}小时前`;
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+  return businessDate(date);
 }
 
 function getRangeLabel(range) {

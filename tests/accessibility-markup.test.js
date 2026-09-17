@@ -123,6 +123,15 @@ test("hotspot timestamps use the Shanghai time zone", () => {
   assert.doesNotMatch(source, /now\.getFullYear\(\)/);
 });
 
+test("published dates use the Shanghai business date", () => {
+  const publicationStart = app.indexOf("function formatPublicationDate");
+  const publishedStart = app.indexOf("function formatPublishedDate");
+  assert.ok(publicationStart >= 0 && publishedStart > publicationStart);
+  const source = app.slice(publicationStart, publishedStart + 700);
+  assert.match(source, /businessDate\(date\)/);
+  assert.doesNotMatch(source, /date\.getFullYear\(\)/);
+});
+
 test("daily workbench aggregates every project while assigning new tasks to the current project", () => {
   const daily = fs.readFileSync(path.join(root, "daily-workbench.js"), "utf8");
 
