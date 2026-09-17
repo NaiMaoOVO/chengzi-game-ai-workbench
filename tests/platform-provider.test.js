@@ -1,11 +1,26 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
+const path = require("node:path");
+const { spawnSync } = require("node:child_process");
 
 const {
   assertSafeProviderUrl,
   normalizeProviderItems,
-  fetchPlatformProvider
+  fetchPlatformProvider,
+  rangeStart
 } = require("../lib/platform-provider");
+
+test("provider today range starts at Shanghai midnight even on UTC hosts", () => {
+  const modulePath = path.resolve(__dirname, "../lib/platform-provider.js");
+  const script = `const { rangeStart } = require(${JSON.stringify(modulePath)}); process.stdout.write(String(rangeStart("today", Date.parse("2026-09-17T16:30:00.000Z"))));`;
+  const result = spawnSync(process.execPath, ["-e", script], {
+    env: { ...process.env, TZ: "UTC" },
+    encoding: "utf8"
+  });
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(Number(result.stdout.trim()), Date.parse("2026-09-17T16:00:00.000Z"));
+  assert.equal(rangeStart("today", Date.parse("2026-09-17T16:30:00.000Z")), Date.parse("2026-09-17T16:00:00.000Z"));
+});
 
 test("provider URL permits HTTPS and loopback HTTP only", () => {
   assert.doesNotThrow(() => assertSafeProviderUrl("https://provider.example/api/search"));
