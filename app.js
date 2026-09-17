@@ -660,6 +660,7 @@ function renderBriefing(briefing) {
   const body = document.querySelector("#briefing-body");
   if (!body) return;
   body.hidden = false;
+  const generatedAtLabel = formatBusinessDateTime(briefing.generatedAt) || "未知时间";
   const topicLines = briefing.topics.length
     ? briefing.topics.map((topic) => `<li>TOP${topic.rank} ${escapeHtml(topic.title)}（${escapeHtml(topic.tag)} · 风险：${escapeHtml(topic.risk)}）</li>`).join("")
     : "<li>暂无热点数据，请先运行热点追踪。</li>";
@@ -667,7 +668,7 @@ function renderBriefing(briefing) {
   const dataSourceLabel = briefing.dataSource === "real" ? "真实数据" : "含样例/兜底数据";
   body.innerHTML = `
     <h4>${escapeHtml(briefing.game)} · 运营简报</h4>
-    <p class="muted-copy">生成时间：${escapeHtml(new Date(briefing.generatedAt).toLocaleString())} · 数据状态：${dataSourceLabel}${briefing.weekOverWeek ? " · 负向占比 " + (briefing.weekOverWeek.negativeRatio * 100).toFixed(1) + "%（环比 " + (briefing.weekOverWeek.changePoints >= 0 ? "+" : "") + briefing.weekOverWeek.changePoints + " 个百分点）" : ""}</p>
+    <p class="muted-copy">生成时间：${escapeHtml(generatedAtLabel)} · 数据状态：${dataSourceLabel}${briefing.weekOverWeek ? " · 负向占比 " + (briefing.weekOverWeek.negativeRatio * 100).toFixed(1) + "%（环比 " + (briefing.weekOverWeek.changePoints >= 0 ? "+" : "") + briefing.weekOverWeek.changePoints + " 个百分点）" : ""}</p>
     <h5>今日热点 TOP${briefing.topics.length}</h5>
     <ul>${topicLines}</ul>
     <h5>舆情动态</h5>
@@ -756,7 +757,7 @@ function renderBriefArchiveItem(briefing) {
   if (!container) return;
   const entry = document.createElement("article");
   entry.className = "briefing-archive-item";
-  const dateLabel = new Date(briefing.created_at).toLocaleString();
+  const dateLabel = formatBusinessDateTime(briefing.created_at) || "未知时间";
   const summary = (briefing.payload.topics || [])
     .slice(0, 2)
     .map((topic) => escapeHtml(topic.title))
@@ -831,7 +832,7 @@ async function copyTextToClipboard(text) {
 
 function buildBriefingImText(briefing) {
   const generatedAt = briefing.generatedAt ? new Date(briefing.generatedAt) : null;
-  const dateLabel = generatedAt && !Number.isNaN(generatedAt.getTime()) ? generatedAt.toLocaleDateString() : "未知日期";
+  const dateLabel = generatedAt && !Number.isNaN(generatedAt.getTime()) ? formatPublicationDate(generatedAt) : "未知日期";
   const topics = Array.isArray(briefing.topics) ? briefing.topics : [];
   const todos = Array.isArray(briefing.todoSuggestions) ? briefing.todoSuggestions.filter(Boolean) : [];
   const lines = [];
@@ -892,6 +893,21 @@ function formatPublicationDate(value) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return String(value);
   return businessDate(date);
+}
+
+function formatBusinessDateTime(value) {
+  if (!value) return "";
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value);
+  return new Intl.DateTimeFormat("zh-CN", {
+    timeZone: "Asia/Shanghai",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23"
+  }).format(date);
 }
 
 function publicationMetricsSummary(item) {
@@ -1402,7 +1418,7 @@ async function refreshProfileList() {
     for (const item of data.profiles || []) {
       const option = document.createElement("option");
       option.value = item.game;
-      option.textContent = item.game + "（" + new Date(item.updated_at).toLocaleDateString() + "）";
+      option.textContent = item.game + "（" + (formatPublicationDate(item.updated_at) || "未知日期") + "）";
       option.dataset.payload = JSON.stringify(item.payload);
       select.append(option);
     }

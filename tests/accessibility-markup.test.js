@@ -149,6 +149,25 @@ test("caliber guidance escapes dynamic text before rendering", () => {
   assert.doesNotMatch(source, /caliber\.replace\(\/\\n\/g, "<br>"\)/);
 });
 
+test("briefing and profile dates use the Shanghai business time zone", () => {
+  assert.match(app, /function formatBusinessDateTime/);
+  const archiveStart = app.indexOf("function renderBriefArchiveItem");
+  const archiveEnd = app.indexOf("async function loadBriefingArchive", archiveStart);
+  const profileStart = app.indexOf("async function refreshProfileList");
+  const profileEnd = app.indexOf("async function saveCurrentProfile", profileStart);
+  const briefingStart = app.indexOf("function buildBriefingImText");
+  const briefingEnd = app.indexOf("async function copyBriefingForIm", briefingStart);
+  assert.ok(archiveStart >= 0 && archiveEnd > archiveStart);
+  assert.ok(profileStart >= 0 && profileEnd > profileStart);
+  assert.ok(briefingStart >= 0 && briefingEnd > briefingStart);
+  assert.match(archiveStart >= 0 ? app.slice(archiveStart, archiveEnd) : "", /formatBusinessDateTime\(briefing\.created_at\)/);
+  assert.doesNotMatch(app.slice(archiveStart, archiveEnd), /toLocaleString\(\)/);
+  assert.match(app.slice(profileStart, profileEnd), /formatPublicationDate\(item\.updated_at\)/);
+  assert.doesNotMatch(app.slice(profileStart, profileEnd), /toLocaleDateString\(\)/);
+  assert.match(app.slice(briefingStart, briefingEnd), /formatPublicationDate\(generatedAt\)/);
+  assert.doesNotMatch(app.slice(briefingStart, briefingEnd), /generatedAt\.toLocaleDateString/);
+});
+
 test("navigation exposes the active view to assistive technology", () => {
   const start = app.indexOf("function navigateToView");
   const end = app.indexOf("function collectListText", start);
