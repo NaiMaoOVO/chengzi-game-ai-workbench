@@ -3,7 +3,7 @@ const path = require("node:path");
 const crypto = require("node:crypto");
 
 const root = path.resolve(__dirname, "..");
-const files = ["index.html", "styles.css", "utils.js", "launcher.js", "app.js", "lib/project-slots.js", "lib/ui-guards.js", "lib/safe-storage.js"];
+const files = ["index.html", "styles.css", "utils.js", "launcher.js", "creator-ranking.js", "daily-workbench.js", "app.js", "lib/business-date.js", "lib/project-slots.js", "lib/ui-guards.js", "lib/safe-storage.js"];
 // index.html 在构建时被注入资源内容指纹（?v=...），比对前先剥离再比较。
 function normalized(file) {
   return fs.readFileSync(file, "utf8").replace(/(src|href)="\.\/([^"?]+)\?v=[0-9a-f]{16}"/g, '$1="./$2"');

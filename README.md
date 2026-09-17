@@ -2,7 +2,7 @@
 
 Game Ops AI Workbench — 面向游戏内容运营场景的一站式本地分析工作台，覆盖热点追踪、玩家评论舆情、直播数据复盘、版本内容包装、玩家分层与达人筛选六大核心场景。
 
-纯前端（原生 JS，零依赖、无构建步骤）+ 四个 Node 本地服务组成，支持本地模式与线上模式切换，真实数据失败时自动降级样例兜底，保证任何环境下都可完整演示。
+原生 JS 前端（零运行时依赖）+ 五个 Node 本地服务组成，支持本地个人使用与 HTTPS 线上账号隔离。真实数据不足时可手动开启样例兜底；个人工作默认不使用样例数据。
 
 ## LLM 双轨增强
 
@@ -57,13 +57,13 @@ macos-launcher/     macOS URL Scheme 启动器模板
 
 ## 快速开始
 
-要求：Node.js 18+；OCR 功能需要 macOS（Xcode Command Line Tools）。
+要求：Node.js 24；OCR 功能需要 macOS（Xcode Command Line Tools）。
 
 ```bash
 node start-demo.js
 ```
 
-脚本会检查并启动热点、评论、OCR、AI 增强四个服务和本地控制进程（8793），然后自动打开工作台页面。`Control + C` 结束。
+脚本会检查并启动热点、评论、OCR、AI 增强、存档五个服务和本地控制进程（8793），然后自动打开工作台页面。`Control + C` 结束。
 
 也可以在网页里一键启动：首次执行一次 `npm run launcher:install` 安装 macOS 启动器，之后页面按钮通过 `gameops://start` / `gameops://restart` 两个固定动作唤起服务。启动器不执行网页传入的任意命令。
 
@@ -91,7 +91,7 @@ node restart-demo.js
 | 抖音 | `DOUYIN_PROVIDER_URL` | 连接已登录的只读插件或自建 HTTP 提供器 | 未配置时使用样例数据 |
 | 小红书 | `XIAOHONGSHU_PROVIDER_URL` | 连接 OpenCLI、xiaohongshu-mcp 桥接服务或自建提供器 | 未配置时使用样例数据 |
 
-Cookie 只在本地服务进程中传递，不会写入页面。页面默认开启「失败时样例兜底」，真实接口风控或服务不可用时自动降级，保证演示链路完整。
+Cookie 只在本地服务进程中传递，不会写入页面。页面默认关闭样例兜底：真实接口风控或服务不可用时会明确显示原因；只有为案例演示时才手动开启。
 
 抖音和小红书不内置绕过验证码、浏览器指纹或逆向签名逻辑。外部提供器应只读取当前账号有权查看的公开内容，并返回 `.env.example` 中说明的统一 JSON 结构；远程地址必须使用 HTTPS，本机桥接服务可以使用 `127.0.0.1`。
 
@@ -140,7 +140,7 @@ XIAOHONGSHU_PROVIDER_URL=http://127.0.0.1:8805/search npm run restart
 
 ## 线上部署
 
-线上模式使用 Nginx 托管静态文件，PM2 常驻运行四个 Node 服务：
+线上模式使用 Nginx 托管静态文件，PM2 常驻运行五个 Node 服务。生产环境以 `nginx-https.conf.example` 为准；HTTP 配置只负责跳转 HTTPS。
 
 | 页面请求 | 反向代理目标 |
 |---|---|
@@ -148,6 +148,7 @@ XIAOHONGSHU_PROVIDER_URL=http://127.0.0.1:8805/search npm run restart
 | `/api/comment` | `http://127.0.0.1:8791` |
 | `/api/ocr` | `http://127.0.0.1:8787` |
 | `/api/llm` | `http://127.0.0.1:8794` |
+| `/api/archive` | `http://127.0.0.1:8796` |
 
 ```bash
 npm install -g pm2
@@ -157,24 +158,46 @@ npm run deploy:check     # 校验环境变量与构建产物，配置不完整�
 npm run deploy:start && pm2 save && pm2 startup
 ```
 
-Nginx 配置见 `nginx.conf.example` / `nginx-https.conf.example`（含 API 限流、连接数限制、安全响应头、HTTPS + Basic Auth 模板）。Linux 服务器设置 `OCR_PROVIDER=remote` 并配置远端 OCR 服务；macOS 服务器可用 `OCR_PROVIDER=macos` 直接调用系统 Vision。
+Nginx 配置见 `nginx.conf.example` / `nginx-https.conf.example`。HTTPS 模板的 Basic Auth 是个人站点的外层访问门槛；archive 登录用于区分每位账号自己的业务数据。Linux 服务器设置 `OCR_PROVIDER=remote` 并配置远端 OCR 服务；macOS 服务器可用 `OCR_PROVIDER=macos` 直接调用系统 Vision。
 
 验证：
 
 ```bash
-curl -fsS http://example.com/api/hotspot/health
-curl -fsS http://example.com/api/comment/health
-curl -fsS http://example.com/api/ocr/health
-curl -fsS http://example.com/api/archive/health
-curl -fsS http://example.com/api/llm/health
+curl -fsS https://example.com/api/hotspot/health
+curl -fsS https://example.com/api/comment/health
+curl -fsS https://example.com/api/ocr/health
+curl -fsS https://example.com/api/archive/health
+curl -fsS https://example.com/api/llm/health
 ```
+
+### 账号隔离与线上写入
+
+归档、待办、风险工单、发布台账与项目档案默认保持本地兼容模式。部署为多人协作服务时，在服务器的 `.env` 设置以下变量后重启 archive 服务：
+
+```bash
+ARCHIVE_AUTH_ENABLED=1
+ARCHIVE_ADMIN_USERNAME=admin
+ARCHIVE_ADMIN_PASSWORD='请使用至少 12 位的随机强密码'
+ARCHIVE_SESSION_HOURS=12
+```
+
+首次启动会创建管理员；若同名管理员已存在，服务不会覆盖其密码。管理员可通过 `POST /api/archive/auth/users` 创建 `member` 账号。启用认证后，每个账号只读取和修改自己的待办、简报、项目档案、发布台账、风险工单和创作者库；管理员保留账号管理权限，但不会默认看到成员业务数据。所有写请求都需要会话 CSRF 头。旧的本地 `default` 数据会在首次启用认证时迁移给管理员，启用前先运行一次备份。
+
+启用晨报抓取后，`MORNING_SCHEDULE` 按 `Asia/Shanghai` 时区解释；每个游戏和平台每天只成功落库一次，服务重启不会重复生成当天晨报。抓取失败会记录失败原因，并在下一分钟重新尝试。
+
+```bash
+npm run archive:backup
+```
+
+备份默认写入与 `archive.db` 同级的 `backups/`，可用 `ARCHIVE_BACKUP_DIR` 改位置；默认保留最近 7 份，可用 `ARCHIVE_BACKUP_KEEP` 调整（范围 1-100）。每份备份同时生成 `.sha256` 校验文件，恢复前应先校验文件完整性。恢复时先停止 archive 服务，再用备份文件替换数据库文件后重启。生产环境必须使用 HTTPS，并保持 `ARCHIVE_COOKIE_SECURE=1`。
 
 ## 安全设计
 
 - 本地控制服务只监听 `127.0.0.1`，仅暴露只读 `/health` 与 `/status`
 - URL Scheme 启动器只接受 `gameops://start` / `gameops://restart` 两个白名单动作
 - 重启按 PID 状态文件 + 进程命令行双重校验定位，不按端口盲目杀进程
-- 所有 API 服务带来源校验（CORS 白名单）、请求限流、上传大小限制与并发限制
+- 所有 API 服务带来源校验（CORS 白名单）、请求限流、上传大小限制与并发限制；仅生产代理链路显式信任 `X-Forwarded-For`
+- 远端 LLM 与外部数据提供器只接受 HTTPS；`file://` 页面仅用于本机个人模式，线上账号登录必须从 HTTPS 页面进入
 - `.env`、Cookie 等凭据不入库、不进前端
 
 ## 技术特点

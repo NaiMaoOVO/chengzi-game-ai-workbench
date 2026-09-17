@@ -50,6 +50,9 @@ const serviceCases = [
         assert.equal(putProfile.status, 200);
         const gotProfile = await fetch(`http://127.0.0.1:${port}/profile?game=${encodeURIComponent("冒烟游戏")}`).then((r) => r.json());
         assert.equal(gotProfile.profile.competitors[0], "竞品A");
+        const morningRuns = await fetch(`http://127.0.0.1:${port}/morning-runs?limit=10`).then((r) => r.json());
+        assert.equal(morningRuns.ok, true);
+        assert.ok(Array.isArray(morningRuns.items));
       })();
     }
   },
@@ -103,7 +106,7 @@ for (const [index, item] of serviceCases.entries()) {
 }
 
 test("local controller serves CORS headers for file pages and supervises child services", { timeout: 60000 }, async () => {
-  const ports = { controller: 19003, hotspot: 18990, comment: 18991, ocr: 18992, llm: 18993 };
+  const ports = { controller: 19003, hotspot: 18990, comment: 18991, ocr: 18992, llm: 18993, archive: 18996 };
   const child = spawn(process.execPath, [path.join(projectRoot, "start-demo.js")], {
     cwd: projectRoot,
     env: {
@@ -113,6 +116,7 @@ test("local controller serves CORS headers for file pages and supervises child s
       COMMENT_PORT: String(ports.comment),
       PORT: String(ports.ocr),
       LLM_PORT: String(ports.llm),
+      ARCHIVE_PORT: String(ports.archive),
       ARCHIVE_DB_PATH: path.join(require("node:os").tmpdir(), "gameops-chain-smoke-" + Date.now() + ".db"),
       GAMEOPS_NO_OPEN: "1"
     },
@@ -141,6 +145,7 @@ test("local controller serves CORS headers for file pages and supervises child s
     for (const service of status.services) {
       assert.equal(service.running, true, `${service.name} 应处于运行状态`);
     }
+    assert.equal(status.services.some((service) => service.name === "存档服务" && service.port === ports.archive && service.running), true);
   } catch (error) {
     assert.fail(`${error.message}\nstderr: ${stderrText.slice(-800)}`);
   } finally {

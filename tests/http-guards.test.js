@@ -9,6 +9,13 @@ test("rate limiter does not trust forwarded headers unless enabled", () => {
   assert.equal(limiter(request("2.2.2.2")).allowed, false);
 });
 
+test("rate limiter trusts the proxy header only when explicitly enabled", () => {
+  const limiter = createRateLimiter({ windowMs: 60000, max: 1, trustProxy: true });
+  const request = (forwarded) => ({ socket: { remoteAddress: "127.0.0.1" }, headers: { "x-forwarded-for": forwarded } });
+  assert.equal(limiter(request("1.1.1.1")).allowed, true);
+  assert.equal(limiter(request("2.2.2.2")).allowed, true);
+});
+
 test("single-flight cache shares an in-flight producer and stable serializes keys", async () => {
   assert.equal(stableSerialize({ b: 2, a: 1 }), stableSerialize({ a: 1, b: 2 }));
   const cache = createSingleFlightCache({ ttlMs: 1000, maxEntries: 2 });

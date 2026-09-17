@@ -12,6 +12,10 @@
    ============================================================ */
 
 const views = {
+  daily: {
+    title: "每日工作台",
+    element: document.querySelector("#daily-view")
+  },
   overview: {
     title: "项目总览",
     element: document.querySelector("#overview-view")
@@ -82,6 +86,8 @@ let currentFeedbackRows = [];
 const FEEDBACK_XHS_SOURCE = "小红书笔记";
 let feedbackImportTarget = "bili";
 let currentCreatorRows = [];
+const CREATOR_LIBRARY_STORAGE_KEY = "gameops-creator-library-v1";
+const CREATOR_LIBRARY_STATUSES = ["未合作", "已联系", "已确认", "已发布", "已复盘", "暂停合作"];
 
 function buildDemoStreamers() {
   return [
@@ -381,6 +387,70 @@ function renderServiceModeControls() {
   }
 }
 
+function isLocalFileRuntime() {
+  return window.location.protocol === "file:";
+}
+
+function renderArchiveAuthPanel(detail = {}) {
+  const panel = document.querySelector("#archive-auth-panel");
+  const status = document.querySelector("#archive-auth-status");
+  const form = document.querySelector("#archive-login-form");
+  const logout = document.querySelector("#archive-logout");
+  if (!panel || !status || !form || !logout) return;
+  const required = detail.required === true;
+  const user = detail.user || null;
+  panel.hidden = !required;
+  if (required && isLocalFileRuntime()) {
+    form.hidden = true;
+    logout.hidden = true;
+    status.textContent = "本地文件模式不支持账号登录，请通过 HTTPS 线上站点使用协作账号，或关闭本机认证后作为个人工作台使用。";
+    return;
+  }
+  form.hidden = Boolean(user);
+  logout.hidden = !user;
+  status.textContent = user ? `已登录：${user.username}（${user.role === "admin" ? "管理员" : "成员"}）` : "请登录后协作读写";
+}
+
+document.addEventListener("gameops:archive-session", (event) => {
+  renderArchiveAuthPanel(event.detail);
+  // 登录线上账号后自动合并本地创作者库，避免用户必须记得手动点击“同步个人库”。
+  if (event.detail?.user && !isLocalFileRuntime()) syncCreatorLibrary();
+});
+document.addEventListener("gameops:local-archive-ready", () => {
+  refreshArchiveSession().finally(() => {
+    loadPublications();
+    loadRiskTickets();
+    refreshProfileList();
+    window.loadTodayTodos?.();
+  });
+});
+document.querySelector("#archive-login-form")?.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const username = document.querySelector("#archive-login-username")?.value || "";
+  const password = document.querySelector("#archive-login-password")?.value || "";
+  const status = document.querySelector("#archive-auth-status");
+  if (status) status.textContent = "正在登录…";
+  try {
+    await loginArchiveUser(username, password);
+    const passwordInput = document.querySelector("#archive-login-password");
+    if (passwordInput) passwordInput.value = "";
+    if (window.loadTodayTodos) window.loadTodayTodos();
+    loadPublications();
+    loadRiskTickets();
+    refreshProfileList();
+  } catch (error) {
+    if (status) status.textContent = "登录失败：" + error.message;
+  }
+});
+document.querySelector("#archive-logout")?.addEventListener("click", async () => {
+  try {
+    await logoutArchiveUser();
+  } catch (error) {
+    const status = document.querySelector("#archive-auth-status");
+    if (status) status.textContent = "退出失败：" + error.message;
+  }
+});
+
 function renderRuntimeModeBadge() {
   const badge = document.querySelector("#runtime-mode-badge");
   if (!badge) return;
@@ -425,12 +495,12 @@ function renderTrendBarChart(containerId, series, valueExtractor, labelBuilder) 
 
 async function loadTrendStats() {
   const section = document.querySelector("#trend-section");
-  if (!section || isOnlineServiceMode()) return;
+  if (!section) return;
   try {
     const game = document.querySelector("#trending-game")?.value.trim() || "";
     const [feedbackRes, trendingRes] = await Promise.all([
-      fetch(ARCHIVE_SERVICE_URL + "/stats?kind=feedback&days=14" + (game ? "&game=" + encodeURIComponent(game) : ""), { cache: "no-store" }),
-      fetch(ARCHIVE_SERVICE_URL + "/stats?kind=trending&days=14" + (game ? "&game=" + encodeURIComponent(game) : ""), { cache: "no-store" })
+      archiveRequest(ARCHIVE_SERVICE_URL + "/stats?kind=feedback&days=14" + (game ? "&game=" + encodeURIComponent(game) : ""), { cache: "no-store" }),
+      archiveRequest(ARCHIVE_SERVICE_URL + "/stats?kind=trending&days=14" + (game ? "&game=" + encodeURIComponent(game) : ""), { cache: "no-store" })
     ]);
     const feedback = await feedbackRes.json();
     const trending = await trendingRes.json();
@@ -496,9 +566,8 @@ function gamePlatformLabel() {
 }
 
 function archiveSnapshot(kind, game, payload) {
-  if (isOnlineServiceMode()) return;
   const body = JSON.stringify({ kind, game, source: payload.source || "sample", payload });
-  fetch(ARCHIVE_SERVICE_URL + "/snapshots", {
+  archiveRequest(ARCHIVE_SERVICE_URL + "/snapshots", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body
@@ -594,6 +663,7 @@ async function generateDailyBriefing() {
     }
   }
   renderBriefing(lastBriefing);
+  if (window.loadTodayTodos) await window.loadTodayTodos();
   if (status) {
     status.textContent = lastBriefing.dataSource === "real"
       ? "简报状态：已基于真实数据生成。可直接存档形成工作日志。"
@@ -611,15 +681,11 @@ async function archiveCurrentBriefing() {
     }
     return;
   }
-  if (isOnlineServiceMode()) {
-    if (status) {
-      status.textContent = "简报状态：线上模式暂不支持本地存档，请切换本地模式或导出内容。";
-      status.className = "source-status source-mock";
-    }
-    return;
-  }
+  const archiveButton = document.querySelector("#archive-briefing");
+  if (archiveButton?.disabled) return;
+  if (archiveButton) archiveButton.disabled = true;
   try {
-    const response = await fetch(ARCHIVE_SERVICE_URL + "/snapshots", {
+    const response = await archiveRequest(ARCHIVE_SERVICE_URL + "/snapshots", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -641,6 +707,8 @@ async function archiveCurrentBriefing() {
       status.textContent = `简报状态：存档失败（${error.message}）。请确认本机存档服务已启动。`;
       status.className = "source-status source-mock";
     }
+  } finally {
+    if (archiveButton) archiveButton.disabled = false;
   }
 }
 
@@ -675,9 +743,9 @@ function renderBriefArchiveItem(briefing) {
 
 async function loadBriefingArchive() {
   const container = document.querySelector("#briefing-archive-list");
-  if (!container || isOnlineServiceMode()) return;
+  if (!container) return;
   try {
-    const response = await fetch(ARCHIVE_SERVICE_URL + "/snapshots?kind=briefing&limit=7", { cache: "no-store" });
+    const response = await archiveRequest(ARCHIVE_SERVICE_URL + "/snapshots?kind=briefing&limit=7", { cache: "no-store" });
     const payload = await response.json();
     container.innerHTML = "";
     for (const item of payload.items || []) {
@@ -886,15 +954,12 @@ function renderPublicationList(items) {
 async function loadPublications() {
   const container = document.querySelector("#publication-list");
   if (!container) return;
-  if (isOnlineServiceMode()) {
-    container.innerHTML = '<p class="muted-copy">发布台账依赖本地存档服务，线上模式下暂不可用。</p>';
-    return;
-  }
   try {
-    const response = await fetch(ARCHIVE_SERVICE_URL + "/publications?limit=20", { cache: "no-store" });
+    const response = await archiveRequest(ARCHIVE_SERVICE_URL + "/publications?limit=20", { cache: "no-store" });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok || !payload.ok) throw new Error(payload.error || "HTTP " + response.status);
     renderPublicationList(payload.items || []);
+    if (window.loadTodayTodos) window.loadTodayTodos();
   } catch (_error) {
     currentPublications = [];
     container.innerHTML = '<p class="muted-copy">存档服务不可用（本机 8796 端口）。启动 archive-server 后点击「刷新列表」重试。</p>';
@@ -909,13 +974,12 @@ async function recordPublication() {
     setPublicationStatus(!game ? "请先填写游戏名，再记录发布。" : !title ? "请先填写标题，再记录发布。" : "请先选择发布渠道。", "mock");
     return;
   }
-  if (isOnlineServiceMode()) {
-    setPublicationStatus("线上模式暂不支持本地台账，请切换本地模式后再记录发布。", "mock");
-    return;
-  }
   setPublicationStatus("正在记录发布：「" + title + "」…", "");
+  const recordButton = document.querySelector("#record-publication");
+  if (recordButton?.disabled) return;
+  if (recordButton) recordButton.disabled = true;
   try {
-    const response = await fetch(ARCHIVE_SERVICE_URL + "/publications", {
+    const response = await archiveRequest(ARCHIVE_SERVICE_URL + "/publications", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -933,6 +997,8 @@ async function recordPublication() {
     await loadPublications();
   } catch (error) {
     setPublicationStatus("记录失败（" + error.message + "）。请确认本机存档服务已启动。", "mock");
+  } finally {
+    if (recordButton) recordButton.disabled = false;
   }
 }
 
@@ -985,7 +1051,7 @@ async function refreshPublicationEffect(id) {
       };
       confirmText = "效果已更新（播放 " + formatNumberCompact(metricsJson.view) + "）";
     }
-    const putResponse = await fetch(ARCHIVE_SERVICE_URL + "/publications/" + id, {
+    const putResponse = await archiveRequest(ARCHIVE_SERVICE_URL + "/publications/" + id, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ metrics_json: metricsJson })
@@ -1003,7 +1069,7 @@ async function refreshPublicationEffect(id) {
 async function deletePublicationRecord(id) {
   const item = currentPublications.find((entry) => entry.id === id);
   try {
-    const response = await fetch(ARCHIVE_SERVICE_URL + "/publications/" + id, { method: "DELETE" });
+    const response = await archiveRequest(ARCHIVE_SERVICE_URL + "/publications/" + id, { method: "DELETE" });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok || !payload.ok) throw new Error(payload.error || "HTTP " + response.status);
     setPublicationStatus("已删除「" + (item && item.title ? item.title : "记录 #" + id) + "」。", "real");
@@ -1019,7 +1085,7 @@ document.querySelector("#refresh-publications")?.addEventListener("click", loadP
 const publicationGameInput = document.querySelector("#publication-game");
 if (publicationGameInput && !publicationGameInput.value.trim()) publicationGameInput.value = publicationGameFromContext();
 const publicationDateInput = document.querySelector("#publication-date");
-if (publicationDateInput && !publicationDateInput.value) publicationDateInput.value = new Date().toISOString().slice(0, 10);
+if (publicationDateInput && !publicationDateInput.value) publicationDateInput.value = businessDate();
 loadPublications();
 
 /* ---- 风险工单（P-8）：风险事件 open → processing → resolved 三态跟踪 ---- */
@@ -1131,10 +1197,6 @@ function renderRiskTicketList(items) {
 async function loadRiskTickets() {
   const container = document.querySelector("#risk-ticket-list");
   if (!container) return;
-  if (isOnlineServiceMode()) {
-    container.innerHTML = '<p class="muted-copy">风险工单依赖本地存档服务，线上模式下暂不可用。</p>';
-    return;
-  }
   const game = document.querySelector("#risk-ticket-game")?.value.trim() || "";
   const statusFilter = document.querySelector("#risk-ticket-status-filter")?.value.trim() || "";
   const params = new URLSearchParams();
@@ -1142,10 +1204,11 @@ async function loadRiskTickets() {
   if (statusFilter) params.set("status", statusFilter);
   params.set("limit", "20");
   try {
-    const response = await fetch(ARCHIVE_SERVICE_URL + "/risk-events?" + params.toString(), { cache: "no-store" });
+    const response = await archiveRequest(ARCHIVE_SERVICE_URL + "/risk-events?" + params.toString(), { cache: "no-store" });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok || !payload.ok) throw new Error(payload.error || "HTTP " + response.status);
     renderRiskTicketList(payload.items || []);
+    if (window.loadTodayTodos) window.loadTodayTodos();
   } catch (_error) {
     currentRiskTickets = [];
     container.innerHTML = '<p class="muted-copy">存档服务不可用（本机 8796 端口）。启动 archive-server 后点击「刷新」重试。</p>';
@@ -1156,7 +1219,7 @@ async function updateRiskTicketStatus(id, nextStatus) {
   const item = currentRiskTickets.find((entry) => entry.id === id);
   setRiskTicketStatus("正在更新「" + (item && item.title ? item.title : "工单 #" + id) + "」状态…", "");
   try {
-    const response = await fetch(ARCHIVE_SERVICE_URL + "/risk-events/" + id, {
+    const response = await archiveRequest(ARCHIVE_SERVICE_URL + "/risk-events/" + id, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ status: nextStatus })
@@ -1173,7 +1236,7 @@ async function updateRiskTicketStatus(id, nextStatus) {
 async function deleteRiskTicket(id) {
   const item = currentRiskTickets.find((entry) => entry.id === id);
   try {
-    const response = await fetch(ARCHIVE_SERVICE_URL + "/risk-events/" + id, { method: "DELETE" });
+    const response = await archiveRequest(ARCHIVE_SERVICE_URL + "/risk-events/" + id, { method: "DELETE" });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok || !payload.ok) throw new Error(payload.error || "HTTP " + response.status);
     setRiskTicketStatus("已删除「" + (item && item.title ? item.title : "工单 #" + id) + "」。", "real");
@@ -1187,36 +1250,6 @@ document.querySelector("#query-risk-tickets")?.addEventListener("click", loadRis
 document.querySelector("#refresh-risk-tickets")?.addEventListener("click", loadRiskTickets);
 loadRiskTickets();
 
-/* ---- 今日待办（P-5）：跨模块汇总今天需要处理的事 ---- */
-
-const todayTodoTargets = {
-  riskTickets: {
-    sectionSelector: "#risk-ticket-panel",
-    buttonSelector: "#query-risk-tickets"
-  },
-  publications: {
-    sectionSelector: "#publication-panel",
-    buttonSelector: "#refresh-publications"
-  }
-};
-
-function jumpToTodayTodo(targetName) {
-  const target = todayTodoTargets[targetName];
-  if (!target) return;
-  const section = document.querySelector(target.sectionSelector);
-  if (section?.scrollIntoView) {
-    section.scrollIntoView({ block: "start", behavior: "smooth" });
-  }
-  const primaryButton = document.querySelector(target.buttonSelector);
-  if (primaryButton?.classList.contains("handoff-flash")) {
-    primaryButton.classList.remove("handoff-flash");
-    void primaryButton.offsetWidth;
-  }
-  primaryButton?.classList.add("handoff-flash");
-  try { primaryButton?.focus({ preventScroll: true }); } catch (_error) { /* older engines */ }
-  window.setTimeout(() => primaryButton?.classList.remove("handoff-flash"), 1800);
-}
-
 function publicationNeedsEffectBackfill(item) {
   if (!item || item.channel !== "B站") return false;
   if (!safeExternalUrl(item.url)) return false;
@@ -1224,104 +1257,91 @@ function publicationNeedsEffectBackfill(item) {
   return metrics.view === undefined;
 }
 
-function buildTodayTodoRow(todo) {
-  const row = document.createElement("article");
-  row.className = "briefing-archive-item publication-item today-todo-item";
-
-  const badge = document.createElement("span");
-  badge.className = "publication-badge today-todo-count";
-  badge.textContent = String(todo.count);
-
-  const text = document.createElement("span");
-  text.className = "today-todo-text";
-  text.textContent = todo.text;
-
-  const actions = document.createElement("div");
-  actions.className = "publication-actions";
-  const jumpButton = document.createElement("button");
-  jumpButton.type = "button";
-  jumpButton.className = "secondary-button";
-  jumpButton.textContent = "去处理";
-  jumpButton.addEventListener("click", () => jumpToTodayTodo(todo.key));
-  actions.append(jumpButton);
-
-  row.append(badge, text, actions);
-  return row;
-}
-
-function renderTodayTodoList(counts) {
-  const container = document.querySelector("#today-todo-list");
-  if (!container) return;
-  container.innerHTML = "";
-  const activeTodos = counts.filter((todo) => todo.count > 0);
-  if (!activeTodos.length) {
-    container.innerHTML = '<p class="muted-copy">今日暂无待办</p>';
-    return;
-  }
-  for (const todo of activeTodos) {
-    container.append(buildTodayTodoRow(todo));
-  }
-}
-
-async function loadTodayTodos() {
-  const container = document.querySelector("#today-todo-list");
-  if (!container) return;
-  if (isOnlineServiceMode()) {
-    container.innerHTML = '<p class="muted-copy">今日待办依赖本地存档服务，线上模式下暂不可用。</p>';
-    return;
-  }
-  container.innerHTML = '<p class="muted-copy">正在汇总今日待办……</p>';
+window.loadTodayTodos = async function loadTodayTodos() {
+  if (!window.renderTodayTodos) return;
+  window.renderTodayTodos([], { loading: true });
   try {
-    const [riskResponse, publicationResponse] = await Promise.all([
-      fetch(ARCHIVE_SERVICE_URL + "/risk-events?status=open&limit=1", { cache: "no-store" }),
-      fetch(ARCHIVE_SERVICE_URL + "/publications?limit=50", { cache: "no-store" })
+    const [riskResponse, publicationResponse, manualResponse, doneResponse, morningResponse] = await Promise.all([
+      archiveRequest(ARCHIVE_SERVICE_URL + "/risk-events?status=open&limit=50", { cache: "no-store" }),
+      archiveRequest(ARCHIVE_SERVICE_URL + "/publications?limit=50", { cache: "no-store" }),
+      archiveRequest(ARCHIVE_SERVICE_URL + "/daily-todos?status=open&limit=50", { cache: "no-store" }),
+      archiveRequest(ARCHIVE_SERVICE_URL + "/daily-todos?status=done&limit=50", { cache: "no-store" }),
+      archiveRequest(ARCHIVE_SERVICE_URL + "/morning-runs?limit=20", { cache: "no-store" })
     ]);
     const riskPayload = await riskResponse.json().catch(() => ({}));
     const publicationPayload = await publicationResponse.json().catch(() => ({}));
+    const manualPayload = await manualResponse.json().catch(() => ({}));
+    const donePayload = await doneResponse.json().catch(() => ({}));
+    const morningPayload = await morningResponse.json().catch(() => ({}));
+    if ([riskResponse, publicationResponse, manualResponse, doneResponse, morningResponse].some((response) => response.status === 401)) {
+      window.renderTodayTodos([], { authRequired: true });
+      return;
+    }
     if (!riskResponse.ok || !riskPayload.ok) throw new Error(riskPayload.error || "HTTP " + riskResponse.status);
     if (!publicationResponse.ok || !publicationPayload.ok) throw new Error(publicationPayload.error || "HTTP " + publicationResponse.status);
-    const openRiskCount = Number(riskPayload.total) || 0;
+    if (!manualResponse.ok || !manualPayload.ok) throw new Error(manualPayload.error || "HTTP " + manualResponse.status);
+    if (!doneResponse.ok || !donePayload.ok) throw new Error(donePayload.error || "HTTP " + doneResponse.status);
+    if (!morningResponse.ok || !morningPayload.ok) throw new Error(morningPayload.error || "HTTP " + morningResponse.status);
+    const openRiskCount = (riskPayload.items || []).length;
     const pendingBackfillCount = (publicationPayload.items || []).filter(publicationNeedsEffectBackfill).length;
-    renderTodayTodoList([
-      { key: "riskTickets", count: openRiskCount, text: openRiskCount + " 条待处理风险工单" },
-      { key: "publications", count: pendingBackfillCount, text: pendingBackfillCount + " 条发布还没有回流效果" }
-    ]);
+    window.renderTodayTodos((manualPayload.items || []).map((item) => ({ ...item, kind: "manual" })), {
+      riskCount: openRiskCount,
+      publicationCount: pendingBackfillCount,
+      riskItems: riskPayload.items || [],
+      publicationItems: (publicationPayload.items || []).filter(publicationNeedsEffectBackfill),
+      todoCount: (manualPayload.items || []).length,
+      doneItems: donePayload.items || [],
+      morningRuns: morningPayload.items || []
+    });
   } catch (_error) {
-    container.innerHTML = '<p class="source-status source-mock">存档服务不可用（本机 8796 端口），无法汇总今日待办</p>';
+    window.renderTodayTodos([], { error: true });
   }
-}
-
-document.querySelector("#refresh-today-todos")?.addEventListener("click", loadTodayTodos);
-loadTodayTodos();
+};
 
 let llmModelName = "";
-
-async function checkLlmHealth(expectedModeGeneration = serviceModeGuard.current()) {
 
 /* ---- 项目档案 ---- */
 
 function collectProfileFromPage() {
   return {
-    versionNote: document.querySelector("#version-theme")?.value.trim() || "",
-    competitors: (document.querySelector("#content-competitor")?.value || "").split(/\n+/).map(s=>s.trim()).filter(Boolean).slice(0,10),
-    kolNames: currentCreatorRows.slice(0, 20).map((row) => row.name),
+    content: {
+      platform: document.querySelector("#platform")?.value || "",
+      input: document.querySelector("#content-input")?.value || ""
+    },
+    version: {
+      theme: document.querySelector("#version-theme")?.value.trim() || "",
+      points: document.querySelector("#version-points")?.value || "",
+      audience: document.querySelector("#version-audience")?.value || "",
+      style: document.querySelector("#version-style")?.value || ""
+    },
+    creator: {
+      input: document.querySelector("#creator-input")?.value || "",
+      ...getCreatorBriefInput(),
+      goal: document.querySelector("#creator-goal")?.value || "",
+      activity: document.querySelector("#creator-activity")?.value || "",
+      budget: document.querySelector("#creator-budget")?.value || ""
+    },
     cooperationNotes: document.querySelector("#profile-coop-notes")?.value || "",
     savedAt: new Date().toISOString()
   };
 }
 
 function fillGameInputs(game) {
-  for (const selector of ["#trending-game", "#version-game", "#feedback-game", "#segment-game", "#publication-game"]) {
+  for (const selector of ["#game-name", "#trending-game", "#version-game", "#feedback-game", "#segment-game", "#creator-game", "#publication-game"]) {
     const input = document.querySelector(selector);
     if (input) input.value = game;
   }
+  const riskInput = document.querySelector("#risk-ticket-game");
+  if (riskInput) riskInput.value = game;
+  window.refreshDailyProjectContext?.();
+  if (window.loadTodayTodos) window.loadTodayTodos();
 }
 
 async function refreshProfileList() {
   const select = document.querySelector("#profile-select");
-  if (!select || isOnlineServiceMode()) return;
+  if (!select) return;
   try {
-    const data = await fetch(ARCHIVE_SERVICE_URL + "/profiles", { cache: "no-store" }).then((r) => r.json());
+    const data = await archiveRequest(ARCHIVE_SERVICE_URL + "/profiles", { cache: "no-store" }).then((r) => r.json());
     select.innerHTML = '';
     const placeholder = document.createElement("option");
     placeholder.value = "";
@@ -1344,12 +1364,8 @@ async function saveCurrentProfile() {
     if (status) { status.textContent = "项目档案：请先填写游戏名，再保存档案。"; status.className = "source-status source-mock"; }
     return;
   }
-  if (isOnlineServiceMode()) {
-    if (status) { status.textContent = "项目档案：线上模式不支持本地档案，请切换本地模式。"; status.className = "source-status source-mock"; }
-    return;
-  }
   try {
-    const response = await fetch(ARCHIVE_SERVICE_URL + "/profile", {
+    const response = await archiveRequest(ARCHIVE_SERVICE_URL + "/profile", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ game, profile: collectProfileFromPage() })
@@ -1374,10 +1390,25 @@ function loadSelectedProfile() {
   try {
     const profile = JSON.parse(option.dataset.payload || "{}");
     fillGameInputs(option.value);
+    setFieldValue("#platform", profile.content?.platform);
+    setFieldValue("#content-input", profile.content?.input);
+    setFieldValue("#version-theme", profile.version?.theme ?? profile.versionNote);
+    setFieldValue("#version-points", profile.version?.points);
+    setFieldValue("#version-audience", profile.version?.audience);
+    setFieldValue("#version-style", profile.version?.style);
+    setFieldValue("#creator-input", profile.creator?.input);
+    setFieldValue("#creator-category", profile.creator?.category ?? profile.creatorBrief?.category ?? "");
+    setFieldValue("#creator-audience", profile.creator?.audience ?? profile.creatorBrief?.audience ?? "");
+    setFieldValue("#creator-goal", profile.creator?.goal);
+    setFieldValue("#creator-activity", profile.creator?.activity);
+    setFieldValue("#creator-budget", profile.creator?.budget);
     const notesArea = document.querySelector("#profile-coop-notes");
     if (notesArea) notesArea.value = profile.cooperationNotes || "";
+    analyzeContent();
+    generateVersionPackage();
+    analyzeCreators();
     analyzeTrending();
-    if (status) { status.textContent = "项目档案：已载入「" + option.value + "」，各模块游戏名已同步并刷新热点。"; status.className = "source-status source-real"; }
+    if (status) { status.textContent = "项目档案：已载入「" + option.value + "」，已恢复内容、版本和达人条件。"; status.className = "source-status source-real"; }
   } catch (error) {
     if (status) { status.textContent = "项目档案：载入失败（" + error.message + "）。"; status.className = "source-status source-mock"; }
   }
@@ -1385,7 +1416,8 @@ function loadSelectedProfile() {
 
 document.querySelector("#save-profile")?.addEventListener("click", saveCurrentProfile);
 document.querySelector("#load-profile")?.addEventListener("click", loadSelectedProfile);
-refreshProfileList();
+
+async function checkLlmHealth(expectedModeGeneration = serviceModeGuard.current()) {
   const controller = new AbortController();
   const timeout = window.setTimeout(() => controller.abort(), 2400);
   try {
@@ -2588,15 +2620,11 @@ async function convertFeedbackRiskToTicket(event, button) {
     setFeedbackRiskTicketStatus("请先填写游戏名，再转工单。", "mock");
     return;
   }
-  if (isOnlineServiceMode()) {
-    setFeedbackRiskTicketStatus("线上模式暂不支持本地工单，请切换本地模式后再转工单。", "mock");
-    return;
-  }
   button.disabled = true;
   button.textContent = "转工单中…";
   setFeedbackRiskTicketStatus("正在转工单：「" + event.title + "」…", "");
   try {
-    const response = await fetch(ARCHIVE_SERVICE_URL + "/risk-events", {
+    const response = await archiveRequest(ARCHIVE_SERVICE_URL + "/risk-events", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -3720,16 +3748,30 @@ function generateFollowUpTopics(gameName, topic) {
   ];
 }
 
-function normalizeRealHotspot(item, index) {
-  if (item.trend && item.risk && typeof item.heat === "string") {
-    return { ...item, rank: index + 1 };
-  }
+function normalizeHotspotBadge(value, kind) {
+  const presets = kind === "trend"
+    ? {
+      "trend-up": { icon: "↑", cls: "trend-up", label: "上升" },
+      "trend-flat": { icon: "→", cls: "trend-flat", label: "持平" },
+      "trend-down": { icon: "↓", cls: "trend-down", label: "下降" }
+    }
+    : {
+      "risk-low": { cls: "risk-low", level: "正常" },
+      "risk-medium": { cls: "risk-medium", level: "中风险" },
+      "risk-high": { cls: "risk-high", level: "高风险" }
+    };
+  return presets[String(value?.cls || "")] || (kind === "trend" ? presets["trend-up"] : presets["risk-low"]);
+}
 
-  const tag = classifyHotspot(item.title, "视频");
-  const risk = getRiskSignal(item.title || "");
+function normalizeRealHotspot(item, index) {
+  const title = String(item?.title || "未命名视频");
+  const tag = classifyHotspot(title, "视频");
+  const inferredRisk = getRiskSignal(title);
+  const risk = item?.risk ? normalizeHotspotBadge(item.risk, "risk") : inferredRisk;
+  const trend = item?.trend ? normalizeHotspotBadge(item.trend, "trend") : { icon: "↑", cls: "trend-up", label: "真实" };
   return {
     rank: index + 1,
-    title: item.title || "未命名视频",
+    title,
     heat: item.heat ? `热度 ${formatNumberCompact(item.heat)}` : item.views ? `${formatNumberCompact(item.views)}播放` : "暂无播放数据",
     heatScore: Number(item.heat || item.views || 0),
     views: Number(item.views || 0),
@@ -3740,7 +3782,7 @@ function normalizeRealHotspot(item, index) {
     url: item.url || "",
     source: "real",
     risk,
-    trend: { icon: "↑", cls: "trend-up", label: "真实" },
+    trend,
     tag,
     suffix: item.danmaku ? `${Number(item.danmaku).toLocaleString()}弹幕` : ""
   };
@@ -3768,7 +3810,7 @@ function getRangeLabel(range) {
 
 function getActiveViewName() {
   const active = document.querySelector(".nav-button.active")?.dataset.view;
-  return active || "overview";
+  return active || "daily";
 }
 
 function updateChainBar(viewName = "overview", sourceText = "") {
@@ -3777,6 +3819,7 @@ function updateChainBar(viewName = "overview", sourceText = "") {
   if (!flow || !source) return;
 
   const flowMap = {
+    daily: "每日待办 → 简报汇总 → 风险处置 → 发布回流",
     overview: "热点发现 → 评论分析 → 风险事件 → 运营动作",
     content: "竞品内容 → 标题拆解 → 情绪提炼 → 选题改写",
     feedback: "评论导入 → 情绪识别 → 风险事件 → 应对建议",
@@ -3949,6 +3992,7 @@ function renderTrendingDetail(gameName, platform, topic) {
     <p class="detail-advice">风险判断：${escapeHtml(risk.advice || "当前未命中明显负面词，可作为常规热点跟进。")}</p>
     <div class="detail-actions">
       <button class="secondary-button" id="copy-topic-plan" type="button">复制选题方案</button>
+      <button class="secondary-button" id="add-topic-to-daily-todo" type="button">加入今日待办</button>
       <button class="secondary-button topic-handoff-button" type="button" data-handoff-target="content">→ 竞品拆解</button>
       <button class="secondary-button topic-handoff-button" type="button" data-handoff-target="version">→ 生成版本文案</button>
     </div>
@@ -4045,6 +4089,47 @@ function showSourceStatus(message, className) {
   if (!sourceStatus) return;
   sourceStatus.textContent = message;
   sourceStatus.className = `source-status ${className || ""}`;
+}
+
+function topicFollowUpRequestId(game, platform, topic) {
+  const date = businessDate();
+  const source = `${game}|${platform}|${topic.url || topic.title || ""}|${date}`;
+  let hash = 0;
+  for (let index = 0; index < source.length; index += 1) hash = (hash * 31 + source.charCodeAt(index)) >>> 0;
+  return `topic-task-${date}-${hash.toString(36)}`;
+}
+
+async function addSelectedTopicToDailyTodo(button) {
+  const topic = currentTrendingTopics[selectedTrendingIndex];
+  if (!topic) return;
+  if (button?.disabled) return;
+  if (button) button.disabled = true;
+  const game = document.querySelector("#trending-game")?.value.trim() || "鸣潮";
+  const platform = document.querySelector("#trending-platform")?.value || "B站";
+  const risk = topic.risk?.level || "正常";
+  const action = risk === "高风险" ? "评估热点风险" : "跟进热点";
+  try {
+    const response = await archiveRequest(ARCHIVE_SERVICE_URL + "/daily-todos", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Idempotency-Key": topicFollowUpRequestId(game, platform, topic) },
+      body: JSON.stringify({
+        game,
+        title: `${action}：${String(topic.title || "未命名热点").slice(0, 180)}`,
+        priority: risk === "高风险" ? "high" : "medium",
+        source: "trending",
+        link_view: "trending",
+        notes: `平台：${platform}；类型：${topic.tag || "未分类"}；风险：${risk}；链接：${topic.url || "未提供"}`
+      })
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || !payload.ok) throw new Error(payload.error || "HTTP " + response.status);
+    showSourceStatus(payload.idempotent ? "热点待办已在今日行动队列中。" : "已将当前热点加入今日行动队列。", "source-real");
+    await window.loadTodayTodos?.();
+  } catch (error) {
+    showSourceStatus("热点待办添加失败（" + (error.message || "存档服务不可用") + "）。", "source-mock");
+  } finally {
+    if (button) button.disabled = false;
+  }
 }
 
 async function copySelectedTopicPlan() {
@@ -4794,178 +4879,476 @@ const creatorDemoRows = [
   "硬核拆包社,B站,56000,33000,12.4%,机制拆解/数据测试,动作/硬核/独立游戏,高,8000,低"
 ].join("\n");
 
-const creatorActivityConfigs = {
-  newLaunch: {
-    label: "新品上线/首曝",
-    weights: { launch: 0.5, review: 0.12, guide: 0.1, value: 0.28 },
-    logic: "新品首曝更看重触达规模和破圈效率，因此新品曝光权重最高，同时保留性价比约束。"
-  },
-  version: {
-    label: "版本节点传播",
-    weights: { launch: 0.34, review: 0.24, guide: 0.22, value: 0.2 },
-    logic: "版本节点需要兼顾声量、内容解释和玩家行动路径，所以曝光、测评和攻略权重更均衡。"
-  },
-  guidePush: {
-    label: "攻略内容铺量",
-    weights: { launch: 0.12, review: 0.16, guide: 0.52, value: 0.2 },
-    logic: "攻略铺量更看重垂类匹配、互动率、收藏价值和内容可复用性，因此攻略扩散权重最高。"
-  },
-  live: {
-    label: "直播活动引流",
-    weights: { launch: 0.38, review: 0.08, guide: 0.14, value: 0.4 },
-    logic: "直播引流需要短期触达和预算效率，优先看曝光能力与单位成本，深度测评权重较低。"
-  },
-  reputation: {
-    label: "社区口碑建设",
-    weights: { launch: 0.1, review: 0.48, guide: 0.24, value: 0.18 },
-    logic: "口碑建设更依赖可信内容、评论质量和深度表达，因此深度测评权重最高。"
-  },
-  budget: {
-    label: "低预算测试",
-    weights: { launch: 0.14, review: 0.14, guide: 0.24, value: 0.48 },
-    logic: "低预算测试优先验证单位成本和内容反馈，性价比权重最高。"
-  }
-};
-
-function clampScore(value) {
-  return Math.max(0, Math.min(100, Math.round(value)));
-}
-
-function parseMetricValue(value) {
-  const raw = String(value || "").trim().replace(/,/g, "");
-  if (!raw) return 0;
-  const number = Number(raw.replace(/[%万wWkK千+]/g, "")) || 0;
-  if (/[万wW]/.test(raw)) return number * 10000;
-  if (/[kK千]/.test(raw)) return number * 1000;
-  return number;
-}
-
-function parseRateValue(value) {
-  const raw = String(value || "").trim();
-  const number = Number(raw.replace("%", "")) || 0;
-  if (raw.includes("%")) return number;
-  if (number > 0 && number <= 1) return number * 100;
-  return number;
-}
-
-function qualityScore(value) {
-  const text = String(value || "");
-  if (text.includes("高") || text.includes("优")) return 90;
-  if (text.includes("低") || text.includes("差") || text.includes("水")) return 35;
-  return 65;
-}
-
-function densityScore(value) {
-  const text = String(value || "");
-  if (text.includes("高")) return 30;
-  if (text.includes("低")) return 85;
-  return 60;
-}
+const {
+  CREATOR_TIER,
+  creatorKey,
+  getCreatorHistoryScore,
+  parseMetricValue,
+  parseRateValue,
+  getActivityConfig,
+  scoreCreator,
+  scoreByGoal,
+  isEligibleCreator,
+  chooseCreatorsByBudget
+} = window.CreatorRanking;
 
 function splitCreatorLine(line) {
   return line.includes("\t") ? line.split("\t") : line.split(/,|，/);
 }
 
 function parseCreators(input) {
-  return String(input || "")
+  const lines = String(input || "")
     .split(/\n+/)
     .map((line) => line.trim())
     .filter(Boolean)
-    .filter((line) => !/^达人名[,，\t]/.test(line))
+  const hasHeader = lines.length > 0 && /^达人名[,，\t]/.test(lines[0]);
+  const headerCells = hasHeader ? splitCreatorLine(lines[0]).map(normalizeCreatorHeader) : [];
+  const hasIdentityColumns = headerCells.some((cell) => ["账号id", "uid", "用户id", "主页链接", "账号链接", "主页", "profileurl", "accounturl", "url"].includes(cell));
+  return lines
+    .filter((_line, index) => !(hasHeader && index === 0))
     .map((line, index) => {
       const cells = splitCreatorLine(line).map((cell) => cell.trim());
+      const offset = hasIdentityColumns ? 2 : 0;
       return {
         id: index + 1,
         name: cells[0] || `达人 ${index + 1}`,
         platform: cells[1] || "未标注",
-        followers: parseMetricValue(cells[2]),
-        avgViews: parseMetricValue(cells[3]),
-        engagementRate: parseRateValue(cells[4]),
-        contentType: cells[5] || "综合内容",
-        gameHistory: cells[6] || "未标注",
-        commentQuality: cells[7] || "中",
-        quote: parseMetricValue(cells[8]),
-        commercialDensity: cells[9] || "中"
+        accountId: hasIdentityColumns ? cells[2] || "" : "",
+        accountUrl: hasIdentityColumns ? cells[3] || "" : "",
+        followers: parseMetricValue(cells[2 + offset]),
+        avgViews: parseMetricValue(cells[3 + offset]),
+        engagementRate: parseRateValue(cells[4 + offset]),
+        contentType: cells[5 + offset] || "综合内容",
+        gameHistory: cells[6 + offset] || "未标注",
+        commentQuality: cells[7 + offset] || "",
+        quote: parseMetricValue(cells[8 + offset]),
+        commercialDensity: cells[9 + offset] || ""
       };
     });
 }
 
-function inferCreatorType(row) {
-  if (row.followers >= 800000) return "头部 KOL";
-  if (row.followers >= 200000) return "腰部达人";
-  if (row.followers >= 50000) return "垂类 KOC";
-  return "长尾 KOC";
-}
-
-function hasAny(text, words) {
-  return words.some((word) => String(text || "").includes(word));
-}
-
-const CREATOR_TIER = Object.freeze({
-  A: "A档优先邀约",
-  B: "B档补充合作",
-  C: "C档低预算测试",
-  RISK: "风险名单"
-});
-
-function scoreCreator(row) {
-  const type = inferCreatorType(row);
-  const conversionRate = parseRateValue(row.conversionRate);
-  const conversionScore = conversionRate > 0 ? clampScore(conversionRate * 5) : 0;
-  const content = `${row.contentType} ${row.gameHistory}`;
-  const fanScore = Math.min(100, Math.log10(Math.max(row.followers, 1)) * 18);
-  const viewScore = Math.min(100, Math.log10(Math.max(row.avgViews, 1)) * 20);
-  const engagementScore = Math.min(100, row.engagementRate * 8);
-  const quality = qualityScore(row.commentQuality);
-  const density = densityScore(row.commercialDensity);
-  const quote = row.quote || 1;
-  const cpm = row.avgViews ? (quote / row.avgViews) * 1000 : quote;
-  const cpe = row.avgViews && row.engagementRate ? quote / (row.avgViews * row.engagementRate / 100) : quote;
-  const verticalBonus = hasAny(content, ["二游", "动作", "射击", "赛车", "竞速", "MMO", "开放世界", "策略", "卡牌", "MOBA"]) ? 10 : 0;
-  const reviewBonus = hasAny(content, ["测评", "拆解", "数据", "机制", "硬核", "长视频"]) ? 18 : 0;
-  const guideBonus = hasAny(content, ["攻略", "养成", "合集", "技巧", "新手", "实战"]) ? 20 : 0;
-  const exposureBonus = hasAny(content, ["资讯", "热点", "挑战", "泛娱乐", "短视频", "直播切片"]) ? 14 : 0;
-  const riskPenalty = (density < 50 ? 14 : 0) + (quality < 50 ? 18 : 0) + (row.engagementRate > 18 ? 10 : 0) + (!verticalBonus ? 8 : 0);
-
-  const launch = clampScore(fanScore * 0.32 + viewScore * 0.34 + engagementScore * 0.12 + quality * 0.1 + density * 0.06 + exposureBonus + verticalBonus * 0.4 - riskPenalty * 0.35);
-  const review = clampScore(viewScore * 0.18 + engagementScore * 0.18 + quality * 0.3 + density * 0.08 + reviewBonus + verticalBonus - riskPenalty * 0.3);
-  const guide = clampScore(viewScore * 0.18 + engagementScore * 0.28 + quality * 0.24 + density * 0.1 + guideBonus + verticalBonus * 0.7 - riskPenalty * 0.25);
-  const value = clampScore(100 - Math.min(60, cpm * 1.3) - Math.min(25, cpe * 0.2) + engagementScore * 0.25 + quality * 0.2 + density * 0.12 + conversionScore * 0.12 - riskPenalty * 0.45);
-  const overall = clampScore(launch * 0.28 + review * 0.24 + guide * 0.24 + value * 0.24);
-  const risks = [];
-  if (row.commercialDensity.includes("高")) risks.push("商单密度偏高");
-  if (quality < 50) risks.push("评论质量偏低");
-  if (row.engagementRate > 18) risks.push("互动率异常，需核查刷量");
-  if (!verticalBonus) risks.push("历史游戏品类匹配不足");
-  if (cpm > 120) risks.push("CPM 偏高");
-
+function getCreatorBriefInput() {
   return {
-    ...row,
-    type,
-    conversionRate,
-    conversionScore,
-    cpm,
-    cpe,
-    scores: { launch, review, guide, value, overall },
-    risks,
-    tier: risks.length >= 3 || quality < 50 ? CREATOR_TIER.RISK : overall >= 78 ? CREATOR_TIER.A : overall >= 62 ? CREATOR_TIER.B : CREATOR_TIER.C
+    game: document.querySelector("#creator-game")?.value.trim() || "",
+    category: document.querySelector("#creator-category")?.value.trim() || "",
+    audience: document.querySelector("#creator-audience")?.value.trim() || ""
   };
 }
 
-function getActivityConfig(activity) {
-  return creatorActivityConfigs[activity] || creatorActivityConfigs.newLaunch;
+function readCreatorLibrary() {
+  try {
+    const raw = window.localStorage?.getItem(CREATOR_LIBRARY_STORAGE_KEY);
+    const parsed = raw ? JSON.parse(raw) : {};
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+  } catch (_error) {
+    return {};
+  }
 }
 
-function scoreByGoal(row, goal, activity = "newLaunch") {
-  if (goal === "value") return row.scores.value;
-  const config = getActivityConfig(activity);
-  const baseScore = Object.entries(config.weights).reduce((total, [key, weight]) => total + row.scores[key] * weight, 0);
-  const goalBoost = {
-    launch: row.scores.launch * 0.12,
-    review: row.scores.review * 0.12,
-    guide: row.scores.guide * 0.12
-  }[goal] || 0;
-  return clampScore(baseScore * 0.88 + goalBoost);
+function writeCreatorLibrary(library) {
+  try {
+    window.localStorage?.setItem(CREATOR_LIBRARY_STORAGE_KEY, JSON.stringify(library));
+    return true;
+  } catch (_error) {
+    return false;
+  }
+}
+
+function creatorSnapshot(row) {
+  return {
+    accountId: row.accountId || "",
+    accountUrl: row.accountUrl || "",
+    followers: row.followers || 0,
+    avgViews: row.avgViews || 0,
+    engagementRate: row.engagementRate || 0,
+    conversionRate: row.conversionRate || "",
+    quote: row.quote || 0,
+    contentType: row.contentType || "",
+    gameHistory: row.gameHistory || "",
+    commentQuality: row.commentQuality || "",
+    commercialDensity: row.commercialDensity || "",
+    scores: row.scores || {},
+    tier: row.tier || "",
+    capturedAt: new Date().toISOString()
+  };
+}
+
+function creatorProfileKeys(row) {
+  const primary = creatorKey(row);
+  const legacy = creatorKey({ ...row, accountId: "", accountUrl: "" });
+  return [...new Set([primary, legacy])];
+}
+
+function findCreatorProfile(library, row, migrate = false) {
+  const [primary, legacy] = creatorProfileKeys(row);
+  if (library[primary]) return { key: primary, profile: library[primary] };
+  if (!library[legacy]) return { key: primary, profile: null };
+  if (migrate && primary !== legacy) {
+    library[primary] = { ...library[legacy], key: primary, accountId: row.accountId || library[legacy].accountId || "", accountUrl: row.accountUrl || library[legacy].accountUrl || "", updatedAt: new Date().toISOString() };
+    delete library[legacy];
+    return { key: primary, profile: library[primary] };
+  }
+  return { key: legacy, profile: library[legacy] };
+}
+
+function saveCreatorToLibrary(row) {
+  const library = readCreatorLibrary();
+  const resolved = findCreatorProfile(library, row, true);
+  const key = resolved.key;
+  const existing = resolved.profile || {};
+  const now = new Date().toISOString();
+  library[key] = {
+    key,
+    name: row.name || "未命名达人",
+    platform: row.platform || "未标注",
+    accountId: row.accountId || existing.accountId || "",
+    accountUrl: row.accountUrl || existing.accountUrl || "",
+    status: existing.status || "未合作",
+    notes: existing.notes || "",
+    collaborations: Array.isArray(existing.collaborations) ? existing.collaborations : [],
+    createdAt: existing.createdAt || now,
+    updatedAt: now,
+    snapshot: creatorSnapshot(row)
+  };
+  return writeCreatorLibrary(library);
+}
+
+function syncCreatorBackfillToLibrary(row, patch) {
+  const library = readCreatorLibrary();
+  const resolved = findCreatorProfile(library, row, true);
+  const key = resolved.key;
+  const profile = resolved.profile;
+  if (!profile) return;
+  const now = new Date().toISOString();
+  const collaborations = Array.isArray(profile.collaborations) ? [...profile.collaborations] : [];
+  const project = document.querySelector("#creator-game")?.value.trim() || "未命名项目";
+  const duplicate = [...collaborations].reverse().find((item) => item.source === "backfill"
+    && item.project === project
+    && (patch.contentUrl ? item.url === patch.contentUrl : !item.url));
+  const record = {
+    id: duplicate?.id || `${now}-${collaborations.length + 1}`,
+    source: "backfill",
+    project,
+    url: patch.contentUrl || "",
+    result: "效果回填同步",
+    actualViews: patch.avgViews || null,
+    actualEngagementRate: patch.engagementRate || null,
+    actualConversionRate: patch.conversionRate || null,
+    actualCost: patch.actualCost || null,
+    baselineViews: profile.snapshot?.avgViews || row.avgViews || null,
+    baselineQuote: profile.snapshot?.quote || row.quote || null,
+    baselineConversionRate: profile.snapshot?.conversionRate || row.conversionRate || null,
+    createdAt: duplicate?.createdAt || now
+  };
+  const nextCollaborations = duplicate
+    ? collaborations.map((item) => item.id === duplicate.id ? { ...item, ...record } : item)
+    : [...collaborations, record];
+  const snapshotRow = {
+    ...row,
+    ...(patch.avgViews ? { avgViews: patch.avgViews } : {}),
+    ...(patch.engagementRate ? { engagementRate: patch.engagementRate } : {}),
+    ...(patch.actualCost ? { quote: patch.actualCost } : {}),
+    ...(patch.conversionRate ? { conversionRate: patch.conversionRate } : {})
+  };
+  library[key] = {
+    ...profile,
+    status: "已复盘",
+    collaborations: nextCollaborations,
+    updatedAt: now,
+    snapshot: creatorSnapshot(snapshotRow)
+  };
+  writeCreatorLibrary(library);
+}
+
+function creatorLibraryOption(value) {
+  return CREATOR_LIBRARY_STATUSES
+    .map((status) => `<option value="${escapeHtml(status)}"${status === value ? " selected" : ""}>${escapeHtml(status)}</option>`)
+    .join("");
+}
+
+function renderCreatorLibrary() {
+  const container = document.querySelector("#creator-library-list");
+  const count = document.querySelector("#creator-library-count");
+  if (!container) return;
+  const allProfiles = Object.values(readCreatorLibrary());
+  const query = document.querySelector("#creator-library-search")?.value.trim().toLowerCase() || "";
+  const statusFilter = document.querySelector("#creator-library-status-filter")?.value || "";
+  const profiles = allProfiles
+    .filter((profile) => {
+      const searchable = `${profile.name || ""} ${profile.platform || ""}`.toLowerCase();
+      return (!query || searchable.includes(query)) && (!statusFilter || profile.status === statusFilter);
+    })
+    .sort((a, b) => String(b.updatedAt || "").localeCompare(String(a.updatedAt || "")));
+  if (count) count.textContent = String(allProfiles.length);
+  if (!profiles.length && !allProfiles.length) {
+    container.innerHTML = '<div class="creator-library-empty">还没有保存创作者。先在下方筛选名单中点击“加入库”，把值得长期关注的达人留下来。</div>';
+    return;
+  }
+  if (!profiles.length) {
+    container.innerHTML = '<div class="creator-library-empty">没有匹配的创作者，请调整搜索词或合作状态。</div>';
+    return;
+  }
+  container.innerHTML = profiles.map((profile) => {
+    const snapshot = profile.snapshot || {};
+    const history = Array.isArray(profile.collaborations) ? profile.collaborations : [];
+    const historyScore = getCreatorHistoryScore(history);
+    const historyCopy = history.slice(-2).reverse().map((item) => {
+      const metrics = [
+        item.actualViews ? `播放 ${formatWan(item.actualViews)}` : "",
+        item.actualConversionRate ? `转化 ${Number(item.actualConversionRate).toFixed(1)}%` : "",
+        item.quotedCost ? `报价 ${formatCurrency(item.quotedCost)}` : "",
+        item.actualCost ? `实际 ${formatCurrency(item.actualCost)}` : ""
+      ].filter(Boolean).join("，") || "已记录合作";
+      return `${item.project || "未命名项目"}：${metrics}${item.result ? `，${item.result}` : ""}`;
+    }).join("；");
+    return `
+      <article class="creator-library-card" data-creator-library-key="${escapeHtml(profile.key)}">
+        <div class="creator-library-card-header">
+          <strong>${escapeHtml(profile.name)}<small>${escapeHtml(profile.platform)} · 最近更新 ${escapeHtml(String(profile.updatedAt || "").slice(0, 10) || "未记录")}</small></strong>
+          <span class="creator-data-badge">${escapeHtml(profile.status || "未合作")}</span>
+        </div>
+        <p class="creator-library-snapshot">${formatWan(snapshot.followers)} 粉 · 均播 ${formatWan(snapshot.avgViews)} · 互动率 ${Number(snapshot.engagementRate || 0).toFixed(1)}% · 报价 ${formatCurrency(snapshot.quote)}${historyScore ? ` · 合作可信度 ${historyScore.score}（${historyScore.count} 次）` : ""}</p>
+        <div class="creator-library-fields">
+          <label>合作状态<select data-library-status>${creatorLibraryOption(profile.status || "未合作")}</select></label>
+          <label>我的判断<textarea data-library-notes rows="2" placeholder="内容质量、配合度、风险或适合场景">${escapeHtml(profile.notes || "")}</textarea></label>
+        </div>
+        <div class="creator-library-collaboration">
+          <label>本次项目<input data-library-project placeholder="如：S39 版本首曝" /></label>
+          <label>发布链接<input data-library-url placeholder="可选，填写实际内容链接" /></label>
+          <label>实际播放<input data-library-views type="number" min="0" placeholder="如：82000" /></label>
+          <label>实际互动率<input data-library-engagement type="number" min="0" step="0.1" placeholder="如：7.2" /></label>
+          <label>实际点击<input data-library-clicks type="number" min="0" placeholder="可选" /></label>
+          <label>实际转化<input data-library-conversions type="number" min="0" placeholder="可选" /></label>
+          <label>本次报价<input data-library-quoted-cost type="number" min="0" placeholder="可选" /></label>
+          <label>实际成本<input data-library-cost type="number" min="0" placeholder="可选" /></label>
+          <label>是否按时<select data-library-ontime><option value="unknown">未记录</option><option value="yes">按时</option><option value="no">延期</option></select></label>
+          <label>内容质量<select data-library-quality><option value="">未评分</option><option value="5">5 · 很好</option><option value="4">4 · 较好</option><option value="3">3 · 一般</option><option value="2">2 · 较差</option><option value="1">1 · 很差</option></select></label>
+          <label>再次合作<select data-library-recommendation><option value="observe">待观察</option><option value="again">推荐再次合作</option><option value="avoid">不建议合作</option></select></label>
+          <label>合作结果<textarea data-library-result rows="2" placeholder="如：按时发布，评论质量高；实际播放 8.2 万"></textarea></label>
+        </div>
+        ${historyCopy ? `<p class="creator-library-history">历史合作：${escapeHtml(historyCopy)}</p>` : ""}
+        <div class="creator-library-actions">
+          <button class="secondary-button" type="button" data-library-save>保存档案</button>
+          <button class="text-button" type="button" data-library-remove>移出个人库</button>
+        </div>
+      </article>
+    `;
+  }).join("");
+}
+
+function saveCreatorLibraryCard(card) {
+  const key = card?.dataset.creatorLibraryKey;
+  if (!key) return;
+  const library = readCreatorLibrary();
+  const profile = library[key];
+  if (!profile) return;
+  const project = card.querySelector("[data-library-project]")?.value.trim() || "";
+  const url = card.querySelector("[data-library-url]")?.value.trim() || "";
+  const result = card.querySelector("[data-library-result]")?.value.trim() || "";
+  const readNumber = (selector) => {
+    const raw = card.querySelector(selector)?.value.trim() || "";
+    if (!raw) return null;
+    const value = Number(raw);
+    return Number.isFinite(value) && value >= 0 ? value : null;
+  };
+  const actualViews = readNumber("[data-library-views]");
+  const actualEngagementRate = readNumber("[data-library-engagement]");
+  const actualClicks = readNumber("[data-library-clicks]");
+  const actualConversions = readNumber("[data-library-conversions]");
+  const quotedCost = readNumber("[data-library-quoted-cost]");
+  const actualCost = readNumber("[data-library-cost]");
+  const onTime = card.querySelector("[data-library-ontime]")?.value || "unknown";
+  const quality = card.querySelector("[data-library-quality]")?.value || "";
+  const recommendation = card.querySelector("[data-library-recommendation]")?.value || "observe";
+  const now = new Date().toISOString();
+  const collaborations = Array.isArray(profile.collaborations) ? [...profile.collaborations] : [];
+  if (project || url || result || actualViews !== null || actualEngagementRate !== null || actualClicks !== null || actualConversions !== null || quotedCost !== null || actualCost !== null || onTime !== "unknown" || quality) {
+    collaborations.push({
+      id: `${now}-${collaborations.length + 1}`,
+      project,
+      url,
+      result,
+      actualViews,
+      actualEngagementRate,
+      actualClicks,
+      actualConversions,
+      actualConversionRate: actualClicks && actualConversions !== null ? actualConversions / actualClicks * 100 : null,
+      quotedCost,
+      actualCost,
+      baselineViews: profile.snapshot?.avgViews || null,
+      baselineQuote: quotedCost || profile.snapshot?.quote || null,
+      baselineConversionRate: profile.snapshot?.conversionRate || null,
+      onTime,
+      quality: quality ? Number(quality) : null,
+      recommendation,
+      createdAt: now
+    });
+  }
+  library[key] = {
+    ...profile,
+    status: card.querySelector("[data-library-status]")?.value || profile.status || "未合作",
+    notes: card.querySelector("[data-library-notes]")?.value.trim() || "",
+    collaborations,
+    updatedAt: now
+  };
+  const persisted = writeCreatorLibrary(library);
+  renderCreatorLibrary();
+  const status = document.querySelector("#creator-status");
+  if (status) {
+    status.textContent = persisted
+      ? `个人库：已保存 ${profile.name} 的档案${project || result ? "，并记录本次合作" : ""}。`
+      : "个人库：浏览器存储空间不足，未能保存本次修改。";
+    status.className = `source-status ${persisted ? "source-real" : "source-mock"}`;
+  }
+}
+
+function removeCreatorFromLibrary(card) {
+  const key = card?.dataset.creatorLibraryKey;
+  if (!key) return;
+  const library = readCreatorLibrary();
+  const profile = library[key];
+  if (!profile) return;
+  delete library[key];
+  const persisted = writeCreatorLibrary(library);
+  renderCreatorLibrary();
+  renderCreatorTable(currentCreatorRows, document.querySelector("#creator-goal")?.value || "launch", document.querySelector("#creator-activity")?.value || "newLaunch");
+  const status = document.querySelector("#creator-status");
+  if (status && !persisted) {
+    status.textContent = "个人库：浏览器存储空间不足，未能移出创作者。";
+    status.className = "source-status source-mock";
+  }
+}
+
+function exportCreatorLibrary() {
+  const library = readCreatorLibrary();
+  const profiles = Object.values(library);
+  if (!profiles.length) {
+    const status = document.querySelector("#creator-status");
+    if (status) {
+      status.textContent = "个人库：暂无可导出的创作者。";
+      status.className = "source-status source-mock";
+    }
+    return;
+  }
+  const date = new Date().toISOString().slice(0, 10);
+  downloadFile(
+    `KOL-KOC个人库-${date}.json`,
+    JSON.stringify({ version: 1, exportedAt: new Date().toISOString(), creators: library }, null, 2),
+    "application/json;charset=utf-8"
+  );
+}
+
+function importCreatorLibrary(event) {
+  const file = event.target.files?.[0];
+  const status = document.querySelector("#creator-status");
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      const parsed = JSON.parse(String(reader.result || ""));
+      const incoming = parsed?.creators && typeof parsed.creators === "object" ? parsed.creators : parsed;
+      if (!incoming || typeof incoming !== "object" || Array.isArray(incoming)) throw new Error("文件格式不正确");
+      const library = readCreatorLibrary();
+      let imported = 0;
+      Object.entries(incoming).forEach(([key, profile]) => {
+        if (!profile || typeof profile !== "object" || !profile.name || !profile.platform) return;
+        const safeKey = creatorKey(profile);
+        const existing = library[safeKey] || library[key] || {};
+        library[safeKey] = {
+          ...existing,
+          ...profile,
+          key: safeKey,
+          name: String(profile.name).trim(),
+          platform: String(profile.platform).trim(),
+          accountId: typeof profile.accountId === "string" ? profile.accountId.trim() : (existing.accountId || ""),
+          accountUrl: typeof profile.accountUrl === "string" ? profile.accountUrl.trim() : (existing.accountUrl || ""),
+          status: CREATOR_LIBRARY_STATUSES.includes(profile.status) ? profile.status : (existing.status || "未合作"),
+          notes: typeof profile.notes === "string" ? profile.notes : (existing.notes || ""),
+          collaborations: Array.isArray(profile.collaborations) ? profile.collaborations.filter((item) => item && typeof item === "object") : (existing.collaborations || []),
+          updatedAt: profile.updatedAt || new Date().toISOString()
+        };
+        imported += 1;
+      });
+      if (!imported) throw new Error("没有识别到有效创作者");
+      writeCreatorLibrary(library);
+      renderCreatorLibrary();
+      renderCreatorTable(currentCreatorRows, document.querySelector("#creator-goal")?.value || "launch", document.querySelector("#creator-activity")?.value || "newLaunch");
+      if (status) {
+        status.textContent = `个人库：已导入 ${imported} 位创作者。`;
+        status.className = "source-status source-real";
+      }
+    } catch (error) {
+      if (status) {
+        status.textContent = `个人库：导入失败，${error.message || "请检查 JSON 文件"}`;
+        status.className = "source-status source-mock";
+      }
+    } finally {
+      event.target.value = "";
+    }
+  };
+  reader.readAsText(file);
+}
+
+function mergeCreatorLibraries(local, remote) {
+  const merged = { ...(remote || {}) };
+  Object.entries(local || {}).forEach(([key, profile]) => {
+    const other = merged[key];
+    if (!other) {
+      merged[key] = profile;
+      return;
+    }
+    const localUpdated = String(profile?.updatedAt || "");
+    const remoteUpdated = String(other?.updatedAt || "");
+    const base = localUpdated > remoteUpdated ? { ...other, ...profile } : { ...profile, ...other };
+    const records = [...(Array.isArray(other.collaborations) ? other.collaborations : []), ...(Array.isArray(profile.collaborations) ? profile.collaborations : [])];
+    const byId = new Map();
+    records.forEach((record) => {
+      if (!record || typeof record !== "object") return;
+      const id = String(record.id || `${record.createdAt || ""}-${record.project || ""}-${record.url || ""}`);
+      const previous = byId.get(id);
+      byId.set(id, previous ? (String(record.createdAt || "") >= String(previous.createdAt || "") ? { ...previous, ...record } : previous) : record);
+    });
+    merged[key] = { ...base, key, collaborations: [...byId.values()] };
+  });
+  return merged;
+}
+
+async function syncCreatorLibrary() {
+  const status = document.querySelector("#creator-status");
+  const setStatus = (text, real = false) => {
+    if (status) {
+      status.textContent = text;
+      status.className = `source-status ${real ? "source-real" : "source-mock"}`;
+    }
+  };
+  setStatus("个人库：正在同步…");
+  try {
+    const remoteResponse = await archiveRequest(ARCHIVE_SERVICE_URL + "/creator-library", { cache: "no-store" });
+    const remote = await remoteResponse.json().catch(() => ({}));
+    if (!remoteResponse.ok || !remote.ok) throw new Error(remoteResponse.status === 401 ? "请先登录存档服务" : remote.error || `HTTP ${remoteResponse.status}`);
+    let merged = mergeCreatorLibraries(readCreatorLibrary(), remote.library || {});
+    const put = async (baseUpdatedAt, library) => {
+      const response = await archiveRequest(ARCHIVE_SERVICE_URL + "/creator-library", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ library, base_updated_at: baseUpdatedAt })
+      });
+      const payload = await response.json().catch(() => ({}));
+      return { response, payload };
+    };
+    let result = await put(remote.updated_at || null, merged);
+    if (result.response.status === 409 && result.payload.library) {
+      merged = mergeCreatorLibraries(merged, result.payload.library);
+      result = await put(result.payload.updated_at || null, merged);
+    }
+    if (!result.response.ok || !result.payload.ok) throw new Error(result.payload.error || `HTTP ${result.response.status}`);
+    if (!writeCreatorLibrary(merged)) throw new Error("浏览器存储空间不足，无法写入同步结果");
+    renderCreatorLibrary();
+    renderCreatorTable(currentCreatorRows, document.querySelector("#creator-goal")?.value || "launch", document.querySelector("#creator-activity")?.value || "newLaunch");
+    setStatus(`个人库：已同步 ${Object.keys(merged).length} 位创作者。`, true);
+  } catch (error) {
+    setStatus(`个人库：同步失败，${error.message || "存档服务不可用"}。本地数据未受影响。`);
+  }
 }
 
 function explainCreatorScore(goal, activity) {
@@ -4974,10 +5357,7 @@ function explainCreatorScore(goal, activity) {
   const weights = Object.entries(config.weights)
     .map(([key, value]) => ({ launch: "曝光", review: "测评", guide: "攻略", value: "性价比" }[key] + ` ${Math.round(value * 100)}%`))
     .join("、");
-  if (goal === "value") {
-    return `目标分当前等同于性价比分：用均播、互动率、评论质量和商单密度修正报价效率，核心看 CPM/CPE 是否划算。性价比不是单纯报价低，而是单位播放和单位互动更有效。`;
-  }
-  return `目标分会随活动场景动态调整。当前场景「${config.label}」的基础权重为：${weights}；合作目标「${goalLabels[goal] || "综合"}」会额外强化对应能力。${config.logic} 性价比分单独展示，用来判断同等合作效果下谁的预算效率更高。`;
+  return `目标分会随活动场景动态调整。当前场景「${config.label}」的基础权重为：${weights}；合作目标「${goalLabels[goal] || "综合"}」会额外强化对应能力。${config.logic} 缺少粉丝数、均播、互动率或预估报价的达人会进入待补数据，不参与推荐组合。`;
 }
 
 function formatWan(value) {
@@ -5044,25 +5424,9 @@ function getCreatorAnomalies(row) {
   return anomalies;
 }
 
-function chooseCreatorsByBudget(candidates, budget, scoreKey, limit = 8) {
-  const selected = [];
-  let used = 0;
-  [...candidates]
-    .filter((row) => row.tier !== CREATOR_TIER.RISK && row.quote > 0)
-    .sort((a, b) => (b.scores[scoreKey] / Math.max(b.quote, 1)) - (a.scores[scoreKey] / Math.max(a.quote, 1)))
-    .forEach((row) => {
-      if (selected.length >= limit) return;
-      if (used + row.quote <= budget) {
-        selected.push(row);
-        used += row.quote;
-      }
-    });
-  return { selected, used };
-}
-
 function buildCreatorBudgetPlans(rows, budget) {
-  const usableBudget = budget || rows.filter((row) => row.tier !== CREATOR_TIER.RISK).reduce((sum, row) => sum + row.quote, 0);
-  const available = rows.filter((row) => row.tier !== CREATOR_TIER.RISK);
+  const usableBudget = budget || rows.filter(isEligibleCreator).reduce((sum, row) => sum + row.quote, 0);
+  const available = rows.filter(isEligibleCreator);
   const exposurePool = [...available].sort((a, b) => b.scores.launch - a.scores.launch);
   const stablePool = [...available].sort((a, b) => b.scores.overall - a.scores.overall);
   const valuePool = [...available].sort((a, b) => b.scores.value - a.scores.value);
@@ -5074,19 +5438,19 @@ function buildCreatorBudgetPlans(rows, budget) {
     {
       title: `曝光组合 · ${formatCurrency(exposure.used)}`,
       body: exposure.selected.length
-        ? `${exposure.selected.map((row) => row.name).join("、")}。适合版本首曝、节点造势和短期破圈。`
+        ? `${exposure.selected.map((row) => row.name).join("、")}。覆盖 ${exposure.platformCount} 个平台，同一平台最多 2 位，适合版本首曝、节点造势和短期破圈。`
         : "当前预算下没有可推荐的曝光组合。"
     },
     {
       title: `稳妥组合 · ${formatCurrency(stable.used)}`,
       body: stable.selected.length
-        ? `${stable.selected.map((row) => row.name).join("、")}。适合兼顾曝光、内容质量和风险控制。`
+        ? `${stable.selected.map((row) => row.name).join("、")}。覆盖 ${stable.platformCount} 个平台，适合兼顾曝光、内容质量和风险控制。`
         : "当前预算下没有可推荐的稳妥组合。"
     },
     {
       title: `性价比组合 · ${formatCurrency(value.used)}`,
       body: value.selected.length
-        ? `${value.selected.map((row) => row.name).join("、")}。适合多点测试和 KOC 铺量。`
+        ? `${value.selected.map((row) => row.name).join("、")}。覆盖 ${value.platformCount} 个平台，适合多点测试和 KOC 铺量。`
         : "当前预算下没有可推荐的性价比组合。"
     }
   ];
@@ -5098,7 +5462,7 @@ function renderCreatorBudgetPlans(rows, budget) {
 
 function renderCreatorBriefs(rows, goal, activity) {
   const selected = [...rows]
-    .filter((row) => row.tier !== CREATOR_TIER.RISK)
+    .filter(isEligibleCreator)
     .sort((a, b) => scoreByGoal(b, goal, activity) - scoreByGoal(a, goal, activity))
     .slice(0, 4);
   renderCopyCards(
@@ -5120,6 +5484,7 @@ function renderCreatorAnomalies(rows) {
 function renderCreatorTable(rows, goal, activity) {
   const container = document.querySelector("#creator-table");
   if (!container) return;
+  const library = readCreatorLibrary();
   container.innerHTML = rows.length
     ? `
       <div class="creator-table-head">
@@ -5127,7 +5492,7 @@ function renderCreatorTable(rows, goal, activity) {
       </div>
       ${rows.map((row) => `
         <div class="creator-table-row">
-          <strong>${escapeHtml(row.name)}${row.dataSource === "backfill" ? '<em class="creator-data-badge">实测</em>' : ""}<small>${escapeHtml(row.platform)} · ${formatWan(row.followers)}粉 · 均播${formatWan(row.avgViews)}</small></strong>
+          <strong>${escapeHtml(row.name)}${row.dataSource === "backfill" ? '<em class="creator-data-badge">实测</em>' : ""}<small>${escapeHtml(row.platform)} · ${formatWan(row.followers)}粉 · 均播${formatWan(row.avgViews)}</small><small class="creator-decision ${row.tier === CREATOR_TIER.PENDING ? "creator-decision-pending" : ""}">${escapeHtml(row.tier === CREATOR_TIER.PENDING ? `待补：${row.dataGaps.join("、")}` : row.reasons.slice(0, 2).join(" · ") || row.risks.slice(0, 1).join("、") || "等待进一步核验")}</small><span class="creator-row-actions"><button type="button" data-library-row-key="${escapeHtml(creatorKey(row))}">${findCreatorProfile(library, row).profile ? "已在个人库" : "加入个人库"}</button>${isEligibleCreator(row) ? `<button type="button" data-creator-task-key="${escapeHtml(creatorKey(row))}">加入今日待办</button>` : ""}</span></strong>
           <span>${escapeHtml(row.type)}</span>
           <span>${escapeHtml(getCreatorFit(row))}</span>
           <span class="score-pill">${scoreByGoal(row, goal, activity)}</span>
@@ -5139,8 +5504,61 @@ function renderCreatorTable(rows, goal, activity) {
     : `<p class="muted-copy">暂无达人数据，请导入名单或载入示例。</p>`;
 }
 
+function creatorFollowUpRequestId(row) {
+  const date = businessDate();
+  const source = `${creatorKey(row)}|${date}`;
+  let hash = 0;
+  for (let index = 0; index < source.length; index += 1) hash = (hash * 31 + source.charCodeAt(index)) >>> 0;
+  return `creator-task-${date}-${hash.toString(36)}`;
+}
+
+async function addCreatorFollowUp(row, button) {
+  const status = document.querySelector("#creator-status");
+  if (!row || !isEligibleCreator(row)) {
+    if (status) {
+      status.textContent = "达人待办：请先补齐核心数据并通过风险准入。";
+      status.className = "source-status source-mock";
+    }
+    return;
+  }
+  if (button?.disabled) return;
+  if (button) button.disabled = true;
+  const game = document.querySelector("#creator-game")?.value.trim() || "未命名项目";
+  const activity = getActivityConfig(document.querySelector("#creator-activity")?.value || "newLaunch").label;
+  try {
+    const response = await archiveRequest(ARCHIVE_SERVICE_URL + "/daily-todos", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Idempotency-Key": creatorFollowUpRequestId(row) },
+      body: JSON.stringify({
+        game,
+        title: `联系 ${row.name}：${activity}`,
+        priority: row.tier === CREATOR_TIER.A ? "high" : "medium",
+        source: "creator",
+        link_view: "creator",
+        notes: `平台：${row.platform}；${getCreatorFit(row)}；预估报价：${formatCurrency(row.quote)}。`
+      })
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || !payload.ok) throw new Error(payload.error || "HTTP " + response.status);
+    saveCreatorToLibrary(row);
+    renderCreatorLibrary();
+    if (status) {
+      status.textContent = payload.idempotent ? `达人待办：${row.name} 今天已在行动队列中。` : `达人待办：已将 ${row.name} 加入今日行动队列。`;
+      status.className = "source-status source-real";
+    }
+    await window.loadTodayTodos?.();
+  } catch (error) {
+    if (status) {
+      status.textContent = `达人待办：添加失败，${error.message || "存档服务不可用"}。`;
+      status.className = "source-status source-mock";
+    }
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
 function renderCreatorTiers(rows) {
-  const groups = [CREATOR_TIER.A, CREATOR_TIER.B, CREATOR_TIER.C, CREATOR_TIER.RISK];
+  const groups = [CREATOR_TIER.A, CREATOR_TIER.B, CREATOR_TIER.C, CREATOR_TIER.PENDING, CREATOR_TIER.RISK];
   renderCopyCards(
     document.querySelector("#creator-tier-list"),
     groups.map((group) => {
@@ -5164,7 +5582,7 @@ function renderCreatorScenarios(rows) {
     document.querySelector("#creator-scenario-list"),
     scenarios.map(([label, key]) => {
       const selected = [...rows]
-        .filter((row) => row.tier !== CREATOR_TIER.RISK)
+        .filter(isEligibleCreator)
         .sort((a, b) => b.scores[key] - a.scores[key])
         .slice(0, 3);
       return {
@@ -5176,22 +5594,23 @@ function renderCreatorScenarios(rows) {
 }
 
 function renderCreatorRisks(rows) {
-  const risky = rows.filter((row) => row.risks.length);
+  const risky = rows.filter((row) => row.risks.length || row.dataGaps.length);
   renderList(
     document.querySelector("#creator-risk-list"),
     risky.length
-      ? risky.slice(0, 6).map((row) => `${row.name}：${row.risks.join("、")}`)
+      ? risky.slice(0, 8).map((row) => `${row.name}：${row.dataGaps.length ? `待补 ${row.dataGaps.join("、")}` : row.risks.join("、")}`)
       : ["当前名单未命中明显高风险达人，仍建议合作前抽查近期内容、评论区和报价口径。"]
   );
 }
 
 function summarizeCreators(rows, goal, budget, activity) {
   if (!rows.length) return "导入达人名单后，会自动生成合作优先级、场景适配和风险提示。";
-  const available = rows.filter((row) => row.tier !== CREATOR_TIER.RISK);
+  const available = rows.filter(isEligibleCreator);
   const top = available[0] || rows[0];
   const totalQuote = available.reduce((sum, row) => sum + row.quote, 0);
+  const pendingCount = rows.filter((row) => row.tier === CREATOR_TIER.PENDING).length;
   const goalLabels = { launch: "新品曝光", review: "深度测评", guide: "攻略扩散", value: "性价比优先" };
-  return `本轮共识别 ${rows.length} 位达人，其中可优先推进 ${available.filter((row) => row.tier === CREATOR_TIER.A).length} 位，风险名单 ${rows.filter((row) => row.tier === CREATOR_TIER.RISK).length} 位。当前场景为「${getActivityConfig(activity).label}」，目标为「${goalLabels[goal] || "综合合作"}」，首推 ${top.name}（${scoreByGoal(top, goal, activity)}分，${getCreatorFit(top)}）。若只推进非风险达人，预估报价合计 ${formatCurrency(totalQuote)}，${budget && totalQuote > budget ? "已超过预算，建议优先保留 A 档与性价比 TOP 达人。" : "在当前预算内可做组合测试。"}`;
+  return `本轮共识别 ${rows.length} 位达人，可推进 ${available.length} 位，其中 A 档 ${available.filter((row) => row.tier === CREATOR_TIER.A).length} 位，待补数据 ${pendingCount} 位，风险名单 ${rows.filter((row) => row.tier === CREATOR_TIER.RISK).length} 位。当前场景为「${getActivityConfig(activity).label}」，目标为「${goalLabels[goal] || "综合合作"}」，${available.length ? `首推 ${top.name}（${scoreByGoal(top, goal, activity)}分，${getCreatorFit(top)}）。` : "请先补齐关键数据后再做推荐。"} 可推进名单预估报价合计 ${formatCurrency(totalQuote)}，${budget && totalQuote > budget ? "已超过预算，建议优先保留 A 档与性价比 TOP 达人。" : "在当前预算内可做组合测试。"}`;
 }
 
 function parseDelimitedRows(text, delimiter) {
@@ -5243,10 +5662,12 @@ function normalizeCreatorHeader(value) {
 }
 
 function creatorRowsToText(rows) {
-  const standardHeader = ["达人名", "平台", "粉丝数", "平均播放", "互动率", "内容类型", "历史游戏品类", "评论质量", "预估报价", "商单密度"];
+  const standardHeader = ["达人名", "平台", "账号ID", "主页链接", "粉丝数", "平均播放", "互动率", "内容类型", "历史游戏品类", "评论质量", "预估报价", "商单密度"];
   const aliases = [
     ["达人名", "达人", "名称", "账号", "博主", "up主", "kol", "koc"],
     ["平台", "渠道"],
+    ["账号id", "账号ID", "uid", "用户id", "用户ID"],
+    ["主页链接", "账号链接", "主页", "profileurl", "accounturl", "url"],
     ["粉丝数", "粉丝", "followers"],
     ["平均播放", "均播", "播放量", "avgviews"],
     ["互动率", "互动", "engagement"],
@@ -5268,9 +5689,13 @@ function creatorRowsToText(rows) {
     return index >= 0 ? index : fallbackIndex;
   });
   const hasHeader = firstRow.some((cell) => aliases.flat().map(normalizeCreatorHeader).includes(cell));
+  const hasIdentityColumns = firstRow.some((cell) => ["账号id", "uid", "用户id", "主页链接", "账号链接", "主页", "profileurl", "accounturl", "url"].includes(cell));
   const dataRows = hasHeader ? cleanRows.slice(1) : cleanRows;
   const mappedRows = dataRows
-    .map((row) => headerIndex.map((index) => row[index] || ""))
+    .map((row) => hasHeader && hasIdentityColumns
+      ? headerIndex.map((index) => row[index] || "")
+      : [row[0] || "", row[1] || "", "", "", ...row.slice(2, 10)])
+    .map((row) => row.slice(0, standardHeader.length))
     .filter((row) => row[0]);
 
   return [standardHeader, ...mappedRows].map((row) => row.join("\t")).join("\n");
@@ -5435,15 +5860,27 @@ function analyzeCreators(rowsOverride = null) {
   const activity = document.querySelector("#creator-activity")?.value || "newLaunch";
   const budget = numberValue(document.querySelector("#creator-budget")?.value);
   const parsed = rowsOverride || parseCreators(input);
+  const brief = getCreatorBriefInput();
+  const library = readCreatorLibrary();
+  renderCreatorLibrary();
   currentCreatorRows = parsed
-    .map(scoreCreator)
+    .map((row) => {
+      const scored = scoreCreator(row, brief);
+      const history = getCreatorHistoryScore(findCreatorProfile(library, row).profile?.collaborations);
+      return {
+        ...scored,
+        historyCount: history?.count || 0,
+        historyScore: history && history.count >= 2 ? history.score : null
+      };
+    })
     .sort((a, b) => scoreByGoal(b, goal, activity) - scoreByGoal(a, goal, activity));
 
-  const available = currentCreatorRows.filter((row) => row.tier !== CREATOR_TIER.RISK);
+  const available = currentCreatorRows.filter(isEligibleCreator);
   renderMetrics(document.querySelector("#creator-metrics"), [
     { label: "导入达人", value: currentCreatorRows.length },
     { label: "可推进", value: available.length },
-    { label: "A档达人", value: currentCreatorRows.filter((row) => row.tier === CREATOR_TIER.A).length }
+    { label: "A档达人", value: currentCreatorRows.filter((row) => row.tier === CREATOR_TIER.A).length },
+    { label: "待补数据", value: currentCreatorRows.filter((row) => row.tier === CREATOR_TIER.PENDING).length }
   ]);
   renderCreatorTable(currentCreatorRows, goal, activity);
   renderCreatorTiers(currentCreatorRows);
@@ -5473,11 +5910,13 @@ function exportCreatorCsv() {
   if (!currentCreatorRows.length) return;
   const activity = document.querySelector("#creator-activity")?.value || "newLaunch";
   const goal = document.querySelector("#creator-goal")?.value || "launch";
-  const rows = [["达人名", "平台", "类型", "粉丝数", "平均播放", "互动率", "内容类型", "历史游戏品类", "评论质量", "预估报价", "商单密度", "目标分", "新品曝光", "深度测评", "攻略扩散", "性价比", "综合分", "分层", "风险", "数据异常", "合作建议", "Brief建议"]];
+  const rows = [["达人名", "平台", "账号ID", "主页链接", "类型", "粉丝数", "平均播放", "互动率", "内容类型", "历史游戏品类", "评论质量", "预估报价", "实际成本", "商单密度", "数据状态", "评分依据", "目标分", "新品曝光", "深度测评", "攻略扩散", "性价比", "综合分", "分层", "风险", "数据异常", "合作建议", "Brief建议"]];
   currentCreatorRows.forEach((row) => {
     rows.push([
       row.name,
       row.platform,
+      row.accountId || "",
+      row.accountUrl || "",
       row.type,
       row.followers,
       row.avgViews,
@@ -5486,7 +5925,10 @@ function exportCreatorCsv() {
       row.gameHistory,
       row.commentQuality,
       row.quote,
+      row.actualCost || "",
       row.commercialDensity,
+      row.dataGaps.length ? `待补：${row.dataGaps.join("/")}` : "完整",
+      row.reasons.join(" / ") || "",
       scoreByGoal(row, goal, activity),
       row.scores.launch,
       row.scores.review,
@@ -5506,9 +5948,9 @@ function exportCreatorCsv() {
 
 function downloadCreatorTemplate() {
   const rows = [
-    ["达人名", "平台", "粉丝数", "平均播放", "互动率", "内容类型", "历史游戏品类", "评论质量", "预估报价", "商单密度"],
-    ["示例攻略UP主", "B站", "18万", "4.5万", "7.2%", "攻略/测评", "开放世界/二游", "高", "12000", "低"],
-    ["示例直播KOC", "抖音", "6万", "1.8万", "9%", "直播切片/整活", "竞速/动作", "中", "3500", "中"]
+    ["达人名", "平台", "账号ID", "主页链接", "粉丝数", "平均播放", "互动率", "内容类型", "历史游戏品类", "评论质量", "预估报价", "商单密度"],
+    ["示例攻略UP主", "B站", "uid-demo-001", "https://space.bilibili.com/10001", "18万", "4.5万", "7.2%", "攻略/测评", "开放世界/二游", "高", "12000", "低"],
+    ["示例直播KOC", "抖音", "douyin-demo-001", "https://www.douyin.com/user/demo", "6万", "1.8万", "9%", "直播切片/整活", "竞速/动作", "中", "3500", "中"]
   ];
   downloadFile("KOL-KOC导入模板.csv", `\uFEFF${toCsv(rows)}`, "text/csv;charset=utf-8");
 }
@@ -5750,6 +6192,9 @@ async function loadOperationCase(caseId) {
 
   setSelectValue("#creator-goal", item.creator.goal);
   setSelectValue("#creator-activity", item.creator.activity);
+  setFieldValue("#creator-game", item.content.game);
+  setFieldValue("#creator-category", item.creator.category || "");
+  setFieldValue("#creator-audience", item.creator.audience || "");
   setFieldValue("#creator-budget", item.creator.budget);
   setFieldValue("#creator-input", item.creator.input);
 
@@ -5782,7 +6227,7 @@ async function loadDemoRoute(routeId) {
 function collectProjectState() {
   const controls = {};
   document.querySelectorAll("input[id], textarea[id], select[id]").forEach((element) => {
-    if (element.type === "file") return;
+    if (!shouldPersistProjectControl(element)) return;
     controls[element.id] = element.type === "checkbox" ? element.checked : element.value;
   });
 
@@ -5802,6 +6247,7 @@ function collectProjectState() {
 }
 
 function restoreProjectState(state) {
+  state = sanitizeProjectState(state);
   if (!state?.controls) throw new Error("没有可恢复的项目数据");
 
   Object.entries(state.controls).forEach(([id, value]) => {
@@ -5883,6 +6329,9 @@ function navigateToView(viewName) {
   views[viewName].element.classList.add("active");
   document.querySelector("#view-title").textContent = views[viewName].title;
   updateChainBar(viewName);
+  if (window.history.replaceState) {
+    window.history.replaceState(null, "", "#/" + viewName);
+  }
 }
 
 function collectListText(selector) {
@@ -6272,6 +6721,9 @@ document.querySelector("#creator-form")?.addEventListener("submit", (event) => {
 
 document.querySelector("#creator-goal")?.addEventListener("change", analyzeCreators);
 document.querySelector("#creator-activity")?.addEventListener("change", analyzeCreators);
+["#creator-game", "#creator-category", "#creator-audience"].forEach((selector) => {
+  document.querySelector(selector)?.addEventListener("change", analyzeCreators);
+});
 document.querySelector("#creator-file")?.addEventListener("change", handleCreatorFileUpload);
 document.querySelector("#load-creator-demo")?.addEventListener("click", loadCreatorDemo);
 document.querySelector("#download-creator-template")?.addEventListener("click", downloadCreatorTemplate);
@@ -6281,6 +6733,53 @@ document.querySelector("#copy-version-package")?.addEventListener("click", copyV
 document.querySelector("#export-version-package")?.addEventListener("click", exportVersionPackage);
 
 document.querySelector("#recalc-creator-backfill")?.addEventListener("click", recalcWithBackfill);
+document.querySelector("#creator-library-list")?.addEventListener("click", (event) => {
+  const card = event.target.closest("[data-creator-library-key]");
+  if (!card) return;
+  if (event.target.closest("[data-library-save]")) saveCreatorLibraryCard(card);
+  if (event.target.closest("[data-library-remove]")) removeCreatorFromLibrary(card);
+});
+document.querySelector("#creator-table")?.addEventListener("click", (event) => {
+  const taskButton = event.target.closest("[data-creator-task-key]");
+  if (taskButton) {
+    const row = currentCreatorRows.find((item) => creatorKey(item) === taskButton.dataset.creatorTaskKey);
+    addCreatorFollowUp(row, taskButton);
+    return;
+  }
+  const button = event.target.closest("[data-library-row-key]");
+  if (!button) return;
+  const row = currentCreatorRows.find((item) => creatorKey(item) === button.dataset.libraryRowKey);
+  if (!row) return;
+  const persisted = saveCreatorToLibrary(row);
+  renderCreatorLibrary();
+  renderCreatorTable(currentCreatorRows, document.querySelector("#creator-goal")?.value || "launch", document.querySelector("#creator-activity")?.value || "newLaunch");
+  const status = document.querySelector("#creator-status");
+  if (status) {
+    status.textContent = persisted
+      ? `个人库：已保存 ${row.name}，可在上方补充合作状态和复盘结果。`
+      : "个人库：浏览器存储空间不足，未能保存创作者。";
+    status.className = `source-status ${persisted ? "source-real" : "source-mock"}`;
+  }
+});
+document.querySelector("#save-eligible-creators")?.addEventListener("click", () => {
+  const eligible = currentCreatorRows.filter(isEligibleCreator);
+  const persistedCount = eligible.reduce((count, row) => count + (saveCreatorToLibrary(row) ? 1 : 0), 0);
+  renderCreatorLibrary();
+  renderCreatorTable(currentCreatorRows, document.querySelector("#creator-goal")?.value || "launch", document.querySelector("#creator-activity")?.value || "newLaunch");
+  const status = document.querySelector("#creator-status");
+  if (status) {
+    status.textContent = eligible.length
+      ? persistedCount === eligible.length ? `个人库：已保存 ${persistedCount} 位可推进达人。` : `个人库：仅保存 ${persistedCount}/${eligible.length} 位，浏览器存储空间可能不足。`
+      : "个人库：当前没有满足准入条件的达人。";
+    status.className = `source-status ${persistedCount === eligible.length && eligible.length ? "source-real" : "source-mock"}`;
+  }
+});
+document.querySelector("#export-creator-library")?.addEventListener("click", exportCreatorLibrary);
+document.querySelector("#import-creator-library")?.addEventListener("click", () => document.querySelector("#creator-library-file")?.click());
+document.querySelector("#creator-library-file")?.addEventListener("change", importCreatorLibrary);
+document.querySelector("#sync-creator-library")?.addEventListener("click", syncCreatorLibrary);
+document.querySelector("#creator-library-search")?.addEventListener("input", renderCreatorLibrary);
+document.querySelector("#creator-library-status-filter")?.addEventListener("change", renderCreatorLibrary);
 document.querySelector("#refresh-trending")?.addEventListener("click", () => {
   analyzeTrending();
 });
@@ -6298,6 +6797,13 @@ document.querySelectorAll("[data-service-mode]")?.forEach((button) => {
     checkLauncherStatus();
     checkOcrHealth();
     refreshOverviewServiceStatus();
+    refreshArchiveSession().then(() => {
+      loadTrendStats();
+      loadPublications();
+      loadRiskTickets();
+      refreshProfileList();
+      if (window.loadTodayTodos) window.loadTodayTodos();
+    });
     const status = document.querySelector("#overview-status");
     if (status) {
       status.textContent = mode === "online"
@@ -6326,6 +6832,11 @@ document.querySelector("#trending-detail")?.addEventListener("click", (event) =>
   }
   if (event.target.closest("#copy-topic-plan")) {
     copySelectedTopicPlan();
+    return;
+  }
+  const taskButton = event.target.closest("#add-topic-to-daily-todo");
+  if (taskButton) {
+    addSelectedTopicToDailyTodo(taskButton);
   }
 });
 
@@ -6384,6 +6895,30 @@ document.querySelector("#trending-list")?.addEventListener("keydown", (event) =>
 /* ---- 结论看板 ---- */
 
 const PROJECT_SLOTS_KEY = "gameops-project-slots-v2";
+
+function purgeSensitiveProjectStateStorage() {
+  let storage = null;
+  try {
+    storage = window.localStorage;
+    const savedState = storage.getItem(PROJECT_STORAGE_KEY);
+    if (savedState) {
+      const state = JSON.parse(savedState);
+      const sanitized = sanitizeProjectState(state);
+      const serialized = JSON.stringify(sanitized);
+      if (serialized !== savedState) storage.setItem(PROJECT_STORAGE_KEY, serialized);
+    }
+    const savedSlots = storage.getItem(PROJECT_SLOTS_KEY);
+    if (savedSlots) {
+      const slots = JSON.parse(savedSlots);
+      if (Array.isArray(slots)) {
+        const serialized = JSON.stringify(sanitizeProjectSlots(slots));
+        if (serialized !== savedSlots) storage.setItem(PROJECT_SLOTS_KEY, serialized);
+      }
+    }
+  } catch (_error) {
+    /* Private browsing, unavailable storage, and malformed legacy values stay untouched. */
+  }
+}
 
 function readProjectSlotStorage() {
   let storage = null;
@@ -6711,7 +7246,9 @@ function parseCreatorBackfill(input) {
       avgViews: parseMetricValue(values[0]),
       engagementRate: parseRateValue(values[1]),
       commentQuality: values[2] || "",
-      conversionRate: values[3] || ""
+      conversionRate: values[3] || "",
+      actualCost: parseMetricValue(values[4]),
+      contentUrl: values[5] || ""
     };
   }).filter(Boolean);
 }
@@ -6725,7 +7262,7 @@ function recalcWithBackfill() {
   const status = document.querySelector("#creator-status");
   if (!backfillText) {
     if (status) {
-      status.textContent = "达人来源：请先输入效果回填数据，每条格式如「达人名：实际播放/互动率/评论质量/转化」。";
+      status.textContent = "达人来源：请先输入效果回填数据，每条格式如「达人名：实际播放/互动率/评论质量/转化/实际成本/内容链接」。";
       status.className = "source-status source-mock";
     }
     return;
@@ -6734,7 +7271,7 @@ function recalcWithBackfill() {
   const backfills = parseCreatorBackfill(backfillText);
   if (!backfills.length) {
     if (status) {
-      status.textContent = "达人来源：未识别有效回填数据，请使用「达人名：实际播放/互动率/评论质量/转化」格式。";
+      status.textContent = "达人来源：未识别有效回填数据，请使用「达人名：实际播放/互动率/评论质量/转化/实际成本/内容链接」格式。";
       status.className = "source-status source-mock";
     }
     return;
@@ -6747,12 +7284,15 @@ function recalcWithBackfill() {
     const patch = backfillMap.get(creatorNameKey(row.name));
     if (!patch) return row;
     matched += 1;
+    syncCreatorBackfillToLibrary(row, patch);
     return {
       ...row,
       ...(patch.avgViews ? { avgViews: patch.avgViews } : {}),
       ...(patch.engagementRate ? { engagementRate: patch.engagementRate } : {}),
       ...(patch.commentQuality ? { commentQuality: patch.commentQuality } : {}),
       ...(patch.conversionRate ? { conversionRate: patch.conversionRate } : {}),
+      ...(patch.actualCost ? { quotedCost: row.quote, quote: patch.actualCost, actualCost: patch.actualCost } : {}),
+      ...(patch.contentUrl ? { contentUrl: patch.contentUrl } : {}),
       dataSource: "backfill"
     };
   });
@@ -6826,6 +7366,8 @@ renderReviewGrade();
 /* ---- 初始化 ---- */
 
 renderServiceModeControls();
+purgeSensitiveProjectStateStorage();
+const archiveSessionReady = refreshArchiveSession();
 checkOcrHealth();
 checkLauncherStatus();
 refreshOverviewServiceStatus();
@@ -6837,3 +7379,11 @@ analyzeTrending();
 generateVersionPackage();
 generateSegmentPlan();
 loadCreatorDemo();
+archiveSessionReady.finally(() => {
+  refreshProfileList();
+  window.initDailyWorkbench?.();
+});
+if (views.daily) {
+  const initialView = decodeURIComponent(window.location.hash.replace(/^#\/?/, "")) || "daily";
+  navigateToView(views[initialView] ? initialView : "daily");
+}

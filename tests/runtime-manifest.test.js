@@ -34,6 +34,7 @@ test("runtime manifest covers every local require of runtime entrypoints", () =>
 
   collect("start-demo.js");
   collect("restart-demo.js");
+  assert.ok(RUNTIME_FILES.includes("lib/business-date.js"), "runtime manifest 缺少 archive-server 的业务时间依赖");
 });
 
 test("runtime manifest files all exist in the project", () => {

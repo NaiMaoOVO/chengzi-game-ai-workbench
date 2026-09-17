@@ -1,5 +1,6 @@
 const path = require("node:path");
 require("./lib/env-file").loadProjectEnv(__dirname);
+const { assertSafeProviderUrl } = require("./lib/platform-provider");
 
 const cwd = __dirname;
 const allowedOrigin = process.env.ALLOWED_ORIGIN || "";
@@ -7,6 +8,20 @@ const ocrProvider = process.env.OCR_PROVIDER || "macos";
 
 if (!allowedOrigin || allowedOrigin.includes("example.com")) {
   throw new Error("部署前必须设置 ALLOWED_ORIGIN=https://你的真实域名");
+}
+
+if (process.env.ALLOW_FILE_ORIGIN === "1") {
+  throw new Error("线上部署禁止 ALLOW_FILE_ORIGIN=1；file:// 页面不能访问公网 API");
+}
+
+try {
+  assertSafeProviderUrl(process.env.LLM_BASE_URL || "https://api.deepseek.com/v1");
+} catch (error) {
+  throw new Error("LLM_BASE_URL 配置不安全：" + error.message);
+}
+
+if (process.env.ARCHIVE_AUTH_ENABLED === "1" && String(process.env.ARCHIVE_ADMIN_PASSWORD || "").length < 12) {
+  throw new Error("启用 ARCHIVE_AUTH_ENABLED 时必须设置至少 12 位的 ARCHIVE_ADMIN_PASSWORD");
 }
 
 if (ocrProvider === "remote" && (!process.env.OCR_REMOTE_URL || process.env.OCR_REMOTE_URL.includes("example.com"))) {
@@ -31,6 +46,8 @@ function app(name, script, env) {
     env: {
       NODE_ENV: "production",
       ALLOWED_ORIGIN: allowedOrigin,
+      // All public traffic reaches Node through the bundled localhost Nginx proxy.
+      TRUST_PROXY: "1",
       ...env
     }
   };

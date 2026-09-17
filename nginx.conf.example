@@ -6,6 +6,10 @@ server {
     listen [::]:80;
     server_name example.com;
 
+    # 线上部署只允许 HTTP 跳转到 HTTPS；不要以本配置直接暴露页面或 API。
+    # 完整的受保护站点请使用 nginx-https.conf.example。
+    return 301 https://$host$request_uri;
+
     root /var/www/game-content-ops-ai-workbench/public;
     index index.html;
 
@@ -17,10 +21,6 @@ server {
     add_header Referrer-Policy "strict-origin-when-cross-origin" always;
     add_header Permissions-Policy "camera=(), microphone=(), geolocation=()" always;
     add_header Content-Security-Policy "default-src 'self'; img-src 'self' https: data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'" always;
-
-    # Optional for a private interview demo:
-    # auth_basic "GameOps Demo";
-    # auth_basic_user_file /etc/nginx/.htpasswd;
 
     location / {
         try_files $uri $uri/ /index.html;

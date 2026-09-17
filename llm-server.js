@@ -3,6 +3,7 @@ const https = require("node:https");
 const crypto = require("node:crypto");
 const { createRateLimiter, stableSerialize, createSingleFlightCache } = require("./lib/http-guards");
 const { createCors } = require("./lib/cors");
+const { assertSafeProviderUrl } = require("./lib/platform-provider");
 require("./lib/env-file").loadProjectEnv(__dirname);
 
 const PORT = Number(process.env.LLM_PORT) || 8794;
@@ -17,7 +18,7 @@ const RATE_LIMIT_WINDOW_MS = 60 * 1000;
 const RATE_LIMIT_MAX = Number(process.env.LLM_RATE_LIMIT_MAX) || 20;
 const MAX_REQUEST_BYTES = 256 * 1024;
 
-const cors = createCors({ allowedOrigins: process.env.ALLOWED_ORIGIN, methods: "GET, POST, OPTIONS" });
+const cors = createCors({ allowedOrigins: process.env.ALLOWED_ORIGIN, methods: "GET, POST, OPTIONS", allowFileOrigin: process.env.ALLOW_FILE_ORIGIN === "1" || process.env.NODE_ENV !== "production" });
 const checkRateLimit = createRateLimiter({
   windowMs: RATE_LIMIT_WINDOW_MS,
   max: RATE_LIMIT_MAX,
@@ -30,7 +31,11 @@ let activeJobs = 0;
 
 function providerStatus() {
   if (!LLM_API_KEY) return { ready: false, llm: "no_key", detail: "LLM_API_KEY 未配置，运行在规则模式" };
-  if (!/^https?:\/\//.test(LLM_BASE_URL)) return { ready: false, llm: "not_ready", detail: "LLM_BASE_URL 无效" };
+  try {
+    assertSafeProviderUrl(LLM_BASE_URL);
+  } catch (error) {
+    return { ready: false, llm: "not_ready", detail: "LLM_BASE_URL 无效：" + error.message };
+  }
   return { ready: true, llm: "ready", detail: `已接入 ${LLM_MODEL}` };
 }
 
@@ -420,6 +425,10 @@ const server = http.createServer((request, response) => {
     }
     // P1-2：仅当显式 stream === true 时走 SSE 增量分支；其余请求与历史非流式行为保持逐字节一致。
     if (body.stream === true) {
+      if (activeJobs >= LLM_MAX_CONCURRENCY) {
+        sendJson(request, response, 503, { error: "LLM 服务繁忙，请稍后重试" }, { "Retry-After": "2" });
+        return;
+      }
       await handleStreamGenerate(request, response, body.task, task, prompt);
       return;
     }

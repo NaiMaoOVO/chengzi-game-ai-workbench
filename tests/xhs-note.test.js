@@ -10,7 +10,8 @@ const {
   runMcpCall,
   createSearchGate,
   parseXhsCount,
-  extractNoteStats
+  extractNoteStats,
+  isNoteDetailRoute
 } = require("../xiaohongshu-bridge");
 
 const NOTE_ID = "67a1b2c3d4e5f607182934b5c6d7e8f9";
@@ -201,6 +202,13 @@ test("search and note gates are independent single-flight slots", () => {
   gate.release();
   other.release();
   assert.equal(gate.tryAcquire(), true);
+});
+
+test("note stats uses the same detail route as a note request", () => {
+  assert.equal(isNoteDetailRoute("GET", "/note"), true);
+  assert.equal(isNoteDetailRoute("GET", "/note-stats"), true, "发布台账回流必须读取笔记详情");
+  assert.equal(isNoteDetailRoute("GET", "/search"), false);
+  assert.equal(isNoteDetailRoute("POST", "/note-stats"), false);
 });
 
 // /note-stats 的数值化解析：展示串「1.2万」「3,456」必须落到台账可存的整数。

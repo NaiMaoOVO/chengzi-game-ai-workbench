@@ -36,6 +36,59 @@ let LAUNCHER_SERVICE_URL = SERVICE_URL_PRESETS.local.launcher;
 let LLM_SERVICE_URL = SERVICE_URL_PRESETS.local.llm;
 let ARCHIVE_SERVICE_URL = SERVICE_URL_PRESETS.local.archive;
 let XHS_SERVICE_URL = SERVICE_URL_PRESETS.local.xiaohongshu;
+let archiveCsrfToken = "";
+let archiveSessionUser = null;
+let archiveAuthRequired = false;
+
+function setArchiveSession(payload) {
+  archiveAuthRequired = payload?.auth_required === true || Boolean(payload?.user);
+  archiveSessionUser = payload?.user || null;
+  archiveCsrfToken = typeof payload?.csrf_token === "string" ? payload.csrf_token : "";
+  try {
+    if (archiveCsrfToken) window.sessionStorage?.setItem("gameops-archive-csrf", archiveCsrfToken);
+    else window.sessionStorage?.removeItem("gameops-archive-csrf");
+  } catch (_error) { /* sessionStorage may be unavailable. */ }
+  document.dispatchEvent(new CustomEvent("gameops:archive-session", { detail: { required: archiveAuthRequired, user: archiveSessionUser } }));
+  return { required: archiveAuthRequired, user: archiveSessionUser };
+}
+
+function archiveRequest(url, options = {}) {
+  const headers = new Headers(options.headers || {});
+  const method = String(options.method || "GET").toUpperCase();
+  if (!["GET", "HEAD", "OPTIONS"].includes(method) && archiveCsrfToken) headers.set("X-CSRF-Token", archiveCsrfToken);
+  return fetch(url, { ...options, headers, credentials: "same-origin" });
+}
+
+async function refreshArchiveSession() {
+  try {
+    const response = await archiveRequest(ARCHIVE_SERVICE_URL + "/auth/session", { cache: "no-store" });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      setArchiveSession({ auth_required: response.status === 401 });
+      return { required: response.status === 401, user: null };
+    }
+    return setArchiveSession(payload);
+  } catch (_error) {
+    return setArchiveSession({});
+  }
+}
+
+async function loginArchiveUser(username, password) {
+  const response = await archiveRequest(ARCHIVE_SERVICE_URL + "/auth/login", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ username, password })
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok || !payload.ok) throw new Error(payload.error || "登录失败");
+  return setArchiveSession({ auth_required: true, ...payload });
+}
+
+async function logoutArchiveUser() {
+  const response = await archiveRequest(ARCHIVE_SERVICE_URL + "/auth/logout", { method: "POST" });
+  if (!response.ok) throw new Error("退出登录失败");
+  return setArchiveSession({ auth_required: true });
+}
 
 function inferDefaultServiceMode() {
   if (typeof window === "undefined" || !window.location) return "local";

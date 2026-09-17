@@ -4,7 +4,7 @@ require("./lib/env-file").loadProjectEnv(__dirname);
 const { calculateHeatScore, rankHotspots } = require("./lib/hotspot-ranking");
 const { fetchPlatformProvider } = require("./lib/platform-provider");
 const { parseRequestUrl } = require("./lib/safe-request-url");
-const { createRetryBudget } = require("./lib/http-guards");
+const { createRateLimiter, createRetryBudget } = require("./lib/http-guards");
 const { createFetchWithRetry } = require("./lib/fetch-with-retry");
 const { createCors } = require("./lib/cors");
 const PORT = Number(process.env.HOTSPOT_PORT || 8790);
@@ -16,7 +16,7 @@ const DOUYIN_PROVIDER_TOKEN = process.env.DOUYIN_PROVIDER_TOKEN || "";
 const XIAOHONGSHU_PROVIDER_URL = process.env.XIAOHONGSHU_PROVIDER_URL || "";
 const XIAOHONGSHU_PROVIDER_TOKEN = process.env.XIAOHONGSHU_PROVIDER_TOKEN || "";
 const PLATFORM_PROVIDER_TIMEOUT_MS = Math.max(1000, Number(process.env.PLATFORM_PROVIDER_TIMEOUT_MS) || 15000);
-const cors = createCors({ allowedOrigins: process.env.ALLOWED_ORIGIN, methods: "GET, OPTIONS" });
+const cors = createCors({ allowedOrigins: process.env.ALLOWED_ORIGIN, methods: "GET, OPTIONS", allowFileOrigin: process.env.ALLOW_FILE_ORIGIN === "1" || process.env.NODE_ENV !== "production" });
 const RATE_LIMIT_WINDOW_MS = Math.max(1000, Number(process.env.RATE_LIMIT_WINDOW_MS || 60000));
 const RATE_LIMIT_MAX = Math.max(1, Number(process.env.RATE_LIMIT_MAX || 60));
 const CACHE_TTL_MS = Math.max(0, Number(process.env.CACHE_TTL_MS || 30000));
@@ -28,7 +28,11 @@ const fetchWithRetry = createFetchWithRetry({
   timeoutMs: UPSTREAM_TIMEOUT_MS,
   retryBudget: upstreamRetryBudget
 });
-const rateLimits = new Map();
+const checkRateLimit = createRateLimiter({
+  windowMs: RATE_LIMIT_WINDOW_MS,
+  max: RATE_LIMIT_MAX,
+  trustProxy: process.env.TRUST_PROXY === "1"
+});
 const responseCache = new Map();
 const SUPPORTED_PLATFORMS = new Set(["B站", "抖音", "小红书", "TapTap", "微博"]);
 const SUPPORTED_RANGES = new Set(["today", "24h", "3d", "7d"]);
@@ -81,28 +85,8 @@ function sendJson(request, response, statusCode, payload, extraHeaders = {}) {
   response.end(JSON.stringify(payload));
 }
 
-function clientIp(request) {
-  const forwarded = String(request.headers["x-forwarded-for"] || "").split(",")[0].trim();
-  const socketAddress = request.socket.remoteAddress || "unknown";
-  const localProxy = socketAddress === "127.0.0.1" || socketAddress === "::1" || socketAddress === "::ffff:127.0.0.1";
-  return localProxy && forwarded ? forwarded : socketAddress;
-}
-
 function allowRequest(request) {
-  const now = Date.now();
-  const key = clientIp(request);
-  const current = rateLimits.get(key);
-  if (!current || now >= current.resetAt) {
-    if (rateLimits.size > 1000) {
-      for (const [ip, entry] of rateLimits) {
-        if (entry.resetAt <= now) rateLimits.delete(ip);
-      }
-    }
-    rateLimits.set(key, { count: 1, resetAt: now + RATE_LIMIT_WINDOW_MS });
-    return true;
-  }
-  current.count += 1;
-  return current.count <= RATE_LIMIT_MAX;
+  return checkRateLimit(request).allowed;
 }
 
 function getCached(key) {

@@ -13,7 +13,7 @@ const REPLY_URL = "https://api.bilibili.com/x/v2/reply/main";
 const REPLY_FALLBACK_URL = "https://api.bilibili.com/x/v2/reply";
 const BILIBILI_COOKIE = process.env.BILIBILI_COOKIE || "";
 const DEFAULT_PROBE_URL = "https://www.bilibili.com/video/BV1GJ411x7h7";
-const cors = createCors({ allowedOrigins: process.env.ALLOWED_ORIGIN, methods: "GET, OPTIONS" });
+const cors = createCors({ allowedOrigins: process.env.ALLOWED_ORIGIN, methods: "GET, OPTIONS", allowFileOrigin: process.env.ALLOW_FILE_ORIGIN === "1" || process.env.NODE_ENV !== "production" });
 const RATE_LIMIT_WINDOW_MS = Math.max(1000, Number(process.env.RATE_LIMIT_WINDOW_MS || 60000));
 const RATE_LIMIT_MAX = Math.max(1, Number(process.env.RATE_LIMIT_MAX || 60));
 const CACHE_TTL_MS = Math.max(0, Number(process.env.CACHE_TTL_MS || 30000));

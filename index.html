@@ -18,7 +18,8 @@
         </div>
 
         <nav class="nav-list">
-          <button class="nav-button active" data-view="overview">项目总览</button>
+          <button class="nav-button active" data-view="daily">每日工作台</button>
+          <button class="nav-button" data-view="overview">项目总览</button>
           <button class="nav-button" data-view="content">竞品内容拆解</button>
           <button class="nav-button" data-view="feedback">玩家评论分析</button>
           <button class="nav-button" data-view="review">活动复盘生成</button>
@@ -29,7 +30,7 @@
         </nav>
 
         <section class="sidebar-panel">
-          <p class="panel-label">面试展示闭环</p>
+          <p class="panel-label">个人运营闭环</p>
           <ol class="flow-list">
             <li>追踪平台热点趋势</li>
             <li>看竞品内容方向</li>
@@ -47,20 +48,29 @@
       <section class="workspace">
         <header class="topbar">
           <div>
-            <p class="eyebrow">Portfolio Demo</p>
-            <h2 id="view-title">项目总览</h2>
+            <p class="eyebrow">Daily Workbench</p>
+            <h2 id="view-title">每日工作台</h2>
           </div>
           <div class="status-strip" aria-label="当前能力标签">
             <span>内容策略</span>
             <span>玩家洞察</span>
             <span>复盘归因</span>
           </div>
+          <div class="archive-auth-panel" id="archive-auth-panel" hidden>
+            <span class="archive-auth-status" id="archive-auth-status" aria-live="polite"></span>
+            <form id="archive-login-form" class="archive-login-form">
+              <input id="archive-login-username" autocomplete="username" placeholder="用户名" aria-label="用户名" required />
+              <input id="archive-login-password" type="password" autocomplete="current-password" placeholder="密码" aria-label="密码" required />
+              <button class="secondary-button" type="submit">登录</button>
+            </form>
+            <button class="secondary-button" id="archive-logout" type="button" hidden>退出</button>
+          </div>
         </header>
 
-        <section class="demo-chain-bar" aria-label="当前演示链路">
+        <section class="demo-chain-bar" aria-label="当前工作流">
           <div>
             <span class="chain-label">当前链路</span>
-            <strong id="chain-flow-text">热点发现 → 评论分析 → 风险事件 → 运营动作</strong>
+            <strong id="chain-flow-text">每日待办 → 简报汇总 → 风险处置 → 发布回流</strong>
           </div>
           <div>
             <span class="chain-label">数据口径</span>
@@ -68,7 +78,7 @@
           </div>
         </section>
 
-        <section class="view active" id="overview-view" data-screen-label="项目总览">
+        <section class="view" id="overview-view" data-screen-label="项目总览">
           <div class="overview-layout">
             <section class="section-block overview-hero">
               <p class="eyebrow">Operation Loop</p>
@@ -92,10 +102,10 @@
                   <small id="service-mode-status">本地模式</small>
                 </div>
                 <button class="secondary-button" id="refresh-service-status" type="button">刷新服务状态</button>
-                <button class="secondary-button" id="run-demo-check" type="button">演示前自检</button>
+                <button class="secondary-button" id="run-demo-check" type="button">工作台自检</button>
                 <label class="demo-mode-toggle">
-                  <input id="demo-mode-toggle" type="checkbox" checked />
-                  <span>失败时样例兜底</span>
+                  <input id="demo-mode-toggle" type="checkbox" />
+                  <span>允许样例兜底（演示）</span>
                 </label>
               </div>
               <div class="overview-toolbar"><div class="conclusion-panel" id="overview-conclusion">
@@ -138,20 +148,95 @@
 
             </section>
 
-            <section class="section-block briefing-panel" id="today-todo-panel" aria-label="今日待办">
-              <h3>今日待办</h3>
-              <p class="muted-copy launcher-note">跨模块汇总今天需要处理的事。</p>
-              <div class="launcher-buttons">
-                <button class="secondary-button" id="refresh-today-todos" type="button">刷新待办</button>
+          </div>
+        </section>
+
+        <section class="view active" id="daily-view" data-screen-label="每日工作台" data-caliber="每日工作台聚合三类信息：手动待办、待处理风险工单、待回流发布内容。线上模式启用认证后按账号隔离读写；简报保留各模块当前数据状态标记，不把样例数据伪装成真实数据。">
+          <div class="overview-layout daily-workbench-layout">
+            <section class="section-block daily-hero" aria-label="今日概览">
+              <div class="daily-hero-copy">
+                <div class="daily-kicker-row">
+                  <p class="eyebrow">Daily Workbench</p>
+                  <span id="daily-date-label" class="daily-date-label"></span>
+                </div>
+                <h3>今天先处理这些事</h3>
+                <p class="daily-hero-subtitle" id="daily-progress-summary">正在同步今日工作状态…</p>
+                <p class="daily-project-context" id="daily-project-context" aria-live="polite">工作范围：全部项目 · 新增待办归属：正在识别项目…</p>
+                <p class="daily-connection-state" id="daily-connection-state" aria-live="polite">正在连接工作台服务…</p>
+                <p class="daily-morning-status" id="daily-morning-status" aria-live="polite">晨报：正在检查最近运行状态…</p>
               </div>
-              <div class="briefing-archive-list today-todo-list" id="today-todo-list">
-                <p class="muted-copy">正在汇总今日待办……</p>
+              <div class="daily-stat-grid" aria-label="今日工作量">
+                <article class="daily-stat-card daily-stat-todo">
+                  <span class="daily-stat-index">01</span>
+                  <strong id="daily-stat-todo">0</strong>
+                  <span>待办事项</span>
+                </article>
+                <article class="daily-stat-card daily-stat-risk">
+                  <span class="daily-stat-index">02</span>
+                  <strong id="daily-stat-risk">0</strong>
+                  <span>待处理风险</span>
+                </article>
+                <article class="daily-stat-card daily-stat-publish">
+                  <span class="daily-stat-index">03</span>
+                  <strong id="daily-stat-publish">0</strong>
+                  <span>待回流内容</span>
+                </article>
               </div>
             </section>
 
+            <section class="section-block daily-timeline-panel" aria-label="今日时间线">
+              <div class="daily-panel-head">
+                <div>
+                  <h3>行动队列</h3>
+                  <p class="muted-copy">风险优先，其次是待回流和手动待办。</p>
+                </div>
+                <button class="secondary-button" id="refresh-daily-todos" type="button">刷新</button>
+              </div>
+
+              <form class="daily-quick-add" id="daily-todo-form">
+                <input id="daily-todo-title" placeholder="添加今天最重要的一件事…" aria-label="待办任务" />
+                <details class="daily-advanced-options">
+                  <summary>高级选项</summary>
+                  <div class="daily-advanced-fields">
+                    <label for="daily-todo-priority">优先级
+                      <select id="daily-todo-priority">
+                        <option value="high">高</option>
+                        <option value="medium" selected>中</option>
+                        <option value="low">低</option>
+                      </select>
+                    </label>
+                    <label for="daily-todo-due">日期
+                      <input id="daily-todo-due" type="date" />
+                    </label>
+                  </div>
+                </details>
+                <button class="secondary-button launcher-primary-action" type="submit">添加</button>
+              </form>
+
+              <div class="daily-filter-bar" aria-label="行动队列筛选">
+                <button class="daily-filter active" type="button" data-daily-filter="all" aria-pressed="true">全部</button>
+                <button class="daily-filter" type="button" data-daily-filter="risk" aria-pressed="false">风险</button>
+                <button class="daily-filter" type="button" data-daily-filter="publication" aria-pressed="false">待回流</button>
+                <button class="daily-filter" type="button" data-daily-filter="manual" aria-pressed="false">待办</button>
+              </div>
+              <p class="source-status" id="daily-todo-status" aria-live="polite">每日工作台：等待读取本地待办。</p>
+              <div class="daily-timeline" id="daily-todo-list">
+                <p class="muted-copy">正在汇总今日待办……</p>
+              </div>
+              <details class="daily-done-list" id="daily-done-list" hidden>
+                <summary></summary>
+                <div class="daily-timeline daily-timeline-done" id="daily-done-container"></div>
+              </details>
+            </section>
+
             <section class="section-block briefing-panel" id="briefing-panel" aria-label="今日运营简报">
-              <h3>今日运营简报</h3>
-              <p class="muted-copy launcher-note">汇总热点榜单、舆情预警与待办建议，一键生成并存档，形成可持续回看的工作日志。</p>
+              <div class="daily-panel-head">
+                <div>
+                  <h3>今日简报</h3>
+                  <p class="muted-copy">汇总热点、舆情和待办建议，形成可持续回看的工作日志。</p>
+                </div>
+                <span class="daily-briefing-time" id="daily-briefing-time">尚未生成</span>
+              </div>
               <div class="launcher-buttons">
                 <button class="secondary-button launcher-primary-action" id="generate-briefing" type="button">生成今日简报</button>
                 <button class="secondary-button" id="archive-briefing" type="button">存档本次简报</button>
@@ -169,12 +254,17 @@
               <div class="briefing-archive-list" id="briefing-archive-list"></div>
             </section>
 
-            <section class="section-block briefing-panel" id="publication-panel" aria-label="发布台账">
-              <h3>发布台账</h3>
-              <p class="muted-copy launcher-note">把每条内容串进「生成 → 发布 → 回流」闭环：发布后登记渠道与链接，B站内容可一键拉取播放/点赞/评论/弹幕，让 AI 产出的选题和文案能被真实效果验证。</p>
+            <details class="section-block briefing-panel daily-management-panel" id="publication-panel">
+              <summary>
+                <span>
+                  <h3>发布台账</h3>
+                  <p>登记发布链接，回流真实效果，验证 AI 产出。</p>
+                </span>
+                <small id="publication-count-badge">0 条</small>
+              </summary>
               <div class="launcher-buttons publication-form">
                 <label class="publication-field" for="publication-game">游戏
-                  <input id="publication-game" placeholder="默认取当前热点游戏" />
+                  <input id="publication-game" placeholder="默认取当前项目" />
                 </label>
                 <label class="publication-field publication-field-grow" for="publication-title">标题
                   <input id="publication-title" placeholder="如：2.0 前瞻爆料：新角色实机首曝" />
@@ -200,11 +290,16 @@
               </div>
               <p class="source-status" id="publication-status" aria-live="polite">发布台账：尚未操作。记录后可对 B站链接一键回流效果数据。</p>
               <div class="briefing-archive-list publication-list" id="publication-list"></div>
-            </section>
+            </details>
 
-            <section class="section-block briefing-panel" id="risk-ticket-panel" aria-label="风险工单">
-              <h3>风险工单</h3>
-              <p class="muted-copy launcher-note">把评论分析里检测到的风险事件转成可跟踪的工单：待处理 → 处理中 → 已解决，形成舆情处置台账；误报可直接放弃或删除。</p>
+            <details class="section-block briefing-panel daily-management-panel daily-risk-panel" id="risk-ticket-panel">
+              <summary>
+                <span>
+                  <h3>风险工单</h3>
+                  <p>评论风险转工单，跟踪处理、解决或放弃。</p>
+                </span>
+                <small id="risk-ticket-count-badge">0 条</small>
+              </summary>
               <div class="launcher-buttons publication-form">
                 <label class="publication-field" for="risk-ticket-game">游戏
                   <input id="risk-ticket-game" placeholder="选填，按游戏过滤" />
@@ -223,8 +318,13 @@
               </div>
               <p class="source-status" id="risk-ticket-status" aria-live="polite">风险工单：尚未查询。点击「查询」加载最近的工单列表。</p>
               <div class="briefing-archive-list publication-list" id="risk-ticket-list"></div>
-            </section>
+            </details>
 
+          </div>
+        </section>
+
+        <section class="view" id="overview-view" data-screen-label="项目总览">
+          <div class="overview-layout">
             <section class="service-status-panel" aria-label="本地服务状态">
               <article class="service-status-card" id="service-status-ocr">
                 <span class="service-dot"></span>
@@ -500,7 +600,7 @@
                 <h3>舆情风险预警</h3>
                 <div class="risk-hero" id="feedback-risk-hero"></div>
                 <p id="feedback-risk-summary"></p>
-                <p class="source-status" id="feedback-risk-ticket-status" aria-live="polite">风险工单：尚未转派；转出后可在总览的「风险工单」面板跟踪处理。</p>
+                <p class="source-status" id="feedback-risk-ticket-status" aria-live="polite">风险工单：尚未转派；转出后可在「每日工作台」的风险工单面板跟踪处理。</p>
                 <div class="risk-event-list" id="feedback-risk-events"></div>
                 <ul id="feedback-risk-list" class="result-list"></ul>
               </div>
@@ -892,7 +992,7 @@
           </div>
         </section>
 
-        <section class="view" id="creator-view" data-screen-label="KOL/KOC筛选" data-caliber="目标分基于活动场景动态加权：新品曝光看粉丝量和均播，深度测评看内容类型和评论质量，攻略扩散看互动率和品类垂直度，性价比看 CPM/CPE/商单密度。回填字段可修改评分权重，试算新合作方案。">
+        <section class="view" id="creator-view" data-screen-label="KOL/KOC筛选" data-caliber="先按关键数据完整度和风险准入，再按活动场景、合作目标与项目品类排序。回填实测数据会更新效率评分，但不会修改场景权重。">
           <div class="tool-layout">
             <form class="input-panel" id="creator-form">
               <label>
@@ -915,6 +1015,20 @@
                   <option value="budget">低预算测试</option>
                 </select>
               </label>
+              <div class="creator-brief-fields">
+                <label>
+                  项目/游戏
+                  <input id="creator-game" value="巅峰极速" placeholder="如：巅峰极速" />
+                </label>
+                <label>
+                  目标品类
+                  <input id="creator-category" value="赛车/竞速" placeholder="如：赛车/竞速" />
+                </label>
+                <label>
+                  目标受众
+                  <input id="creator-audience" value="竞速玩家" placeholder="如：竞速玩家、新手" />
+                </label>
+              </div>
               <label>
                 本轮预算
                 <input id="creator-budget" type="number" value="80000" />
@@ -930,8 +1044,8 @@
               </label>
               <div class="field-requirement">
                 <strong>上传字段要求</strong>
-                <p>表格首行建议包含：达人名、平台、粉丝数、平均播放、互动率、内容类型、历史游戏品类、评论质量、预估报价、商单密度。</p>
-                <p>评论质量可填“高/中/低”，商单密度可填“高/中/低”；粉丝数、平均播放、报价支持 10万、8k、50000 等写法。</p>
+                <p>表格首行建议包含：达人名、平台、账号ID、主页链接、粉丝数、平均播放、互动率、内容类型、历史游戏品类、评论质量、预估报价、商单密度。账号ID或主页链接用于防止改名后生成重复档案。</p>
+                <p>粉丝数、平均播放、互动率、预估报价为准入必填项；缺任一项会进入“待补数据”，不参与推荐组合。评论质量可填“高/中/低”，商单密度可填“高/中/低”。</p>
               </div>
               <div class="trending-actions">
                 <button type="submit">生成筛选表</button>
@@ -939,11 +1053,39 @@
                 <button class="secondary-button" id="download-creator-template" type="button">下载 CSV 模板</button>
                 <button class="secondary-button" id="export-creator-csv" type="button">导出 CSV</button>
               </div>
-              <p class="source-status" id="creator-status" aria-live="polite">达人来源：等待导入</p><label>效果回填（可选）<textarea id="creator-backfill" rows="3" placeholder="活动结束后回填每位达人的实际播放、互动率、评论质量和转化情况。填写后点击“重新计算性价比”可更新实际效率评分。"></textarea></label><button class="secondary-button" id="recalc-creator-backfill" type="button">回填后重新计算性价比</button>
+              <p class="source-status" id="creator-status" aria-live="polite">达人来源：等待导入</p><label>效果回填（可选）<textarea id="creator-backfill" rows="3" placeholder="活动结束后回填每位达人：实际播放/互动率/评论质量/转化/实际成本/内容链接。填写后重新计算效率评分。"></textarea></label><button class="secondary-button" id="recalc-creator-backfill" type="button">回填后重新计算性价比</button>
             </form>
 
             <div class="output-panel">
               <div class="metrics-grid compact-metrics" id="creator-metrics"></div>
+              <div class="section-block creator-library-panel">
+                <div class="section-heading-row">
+                  <div>
+                    <h3>我的创作者库 <span class="creator-library-count" id="creator-library-count">0</span></h3>
+                    <p class="muted-copy">保存值得长期关注的达人，并记录合作状态、实际结果和历史性价比。默认保存在当前浏览器，也可登录存档服务后跨浏览器同步。</p>
+                  </div>
+                  <div class="creator-library-actions">
+                    <button class="secondary-button" id="save-eligible-creators" type="button">保存可推进达人</button>
+                    <button class="secondary-button" id="export-creator-library" type="button">导出个人库</button>
+                    <button class="secondary-button" id="import-creator-library" type="button">导入个人库</button>
+                    <button class="secondary-button" id="sync-creator-library" type="button">同步个人库</button>
+                    <input id="creator-library-file" type="file" accept="application/json,.json" hidden />
+                  </div>
+                </div>
+                <div class="creator-library-filters">
+                  <input id="creator-library-search" type="search" placeholder="搜索达人名或平台" aria-label="搜索个人库创作者" />
+                  <select id="creator-library-status-filter" aria-label="按合作状态筛选个人库">
+                    <option value="">全部状态</option>
+                    <option value="未合作">未合作</option>
+                    <option value="已联系">已联系</option>
+                    <option value="已确认">已确认</option>
+                    <option value="已发布">已发布</option>
+                    <option value="已复盘">已复盘</option>
+                    <option value="暂停合作">暂停合作</option>
+                  </select>
+                </div>
+                <div id="creator-library-list" class="creator-library-list"></div>
+              </div>
               <div class="section-block">
                 <h3>评分口径说明</h3>
                 <p id="creator-score-explain"></p>
@@ -1043,11 +1185,14 @@
 </div>
 
     <script src="./utils.js"></script>
+    <script src="./lib/business-date.js"></script>
     <script src="./lib/project-slots.js"></script>
+    <script src="./daily-workbench.js"></script>
     <script src="./lib/ui-guards.js"></script>
     <script src="./lib/safe-storage.js"></script>
     <script src="./launcher-sync-status.js"></script>
     <script src="./launcher.js"></script>
+    <script src="./creator-ranking.js"></script>
     <script src="./app.js"></script>
 </body>
 </html>

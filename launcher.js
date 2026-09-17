@@ -33,6 +33,44 @@ function waitForLauncher(timeoutMs = 10000) {
   });
 }
 
+function waitForArchiveService(timeoutMs = 15000) {
+  return new Promise((resolve) => {
+    const startedAt = Date.now();
+    const poll = async () => {
+      try {
+        const response = await fetch(LAUNCHER_SERVICE_URL + "/status", { cache: "no-store" });
+        const payload = response.ok ? await response.json() : null;
+        if (payload?.service === "gameops-local-controller" && payload.services?.some((service) => service.name === "存档服务" && service.running)) {
+          resolve(true);
+          return;
+        }
+      } catch (_error) {
+        /* The controller may still be starting its child services. */
+      }
+      if (Date.now() - startedAt >= timeoutMs) {
+        resolve(false);
+        return;
+      }
+      window.setTimeout(poll, 500);
+    };
+    poll();
+  });
+}
+
+async function finishLocalServiceStart(status) {
+  const archiveReady = await waitForArchiveService();
+  await checkLauncherStatus();
+  await refreshOverviewServiceStatus();
+  if (!archiveReady) {
+    status.textContent = "控制台状态：已启动，但存档服务仍在准备。请稍等后点击“刷新状态”。";
+    status.className = "source-status source-mock";
+    return;
+  }
+  status.textContent = "控制台状态：存档服务已就绪，正在刷新每日工作台。";
+  status.className = "source-status source-real";
+  document.dispatchEvent(new CustomEvent("gameops:local-archive-ready"));
+}
+
 async function bootstrapLocalLauncher() {
   const status = document.querySelector("#launcher-status");
   if (!status || renderLauncherOnlineMode(status)) return;
@@ -47,10 +85,9 @@ async function bootstrapLocalLauncher() {
     return;
   }
 
-  status.textContent = "控制台状态：本地控制进程已启动，正在检查服务…";
+  status.textContent = "控制台状态：本地控制进程已启动，正在等待存档服务…";
   status.className = "source-status source-real";
-  await checkLauncherStatus();
-  await refreshOverviewServiceStatus();
+  await finishLocalServiceStart(status);
 }
 
 async function restartLocalLauncher() {
@@ -68,8 +105,7 @@ async function restartLocalLauncher() {
     status.className = "source-status source-mock";
     return;
   }
-  await checkLauncherStatus();
-  await refreshOverviewServiceStatus();
+  await finishLocalServiceStart(status);
 }
 
 function renderLauncherOnlineMode(status) {

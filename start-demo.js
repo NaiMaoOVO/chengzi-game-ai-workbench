@@ -108,7 +108,7 @@ async function ensureServices() {
   var srv = http.createServer(async function(req, res) {
     var url = parseRequestUrl(req);
     // 与其他六个服务共用同一 CORS 工厂：非法 Origin 统一 403，不再硬编码只放行 localhost。
-    var cors = createCors({ allowedOrigins: process.env.ALLOWED_ORIGIN, methods: "GET, OPTIONS" });
+    var cors = createCors({ allowedOrigins: process.env.ALLOWED_ORIGIN, methods: "GET, OPTIONS", allowFileOrigin: process.env.ALLOW_FILE_ORIGIN === "1" || process.env.NODE_ENV !== "production" });
     function j(c, d) {
       var headers = {"Content-Type":"application/json; charset=utf-8", ...cors.corsHeaders(req)};
       res.writeHead(c, headers);

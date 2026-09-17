@@ -4,9 +4,8 @@ const crypto = require("node:crypto");
 
 const root = path.resolve(__dirname, "..");
 const output = path.join(root, "public");
-const files = ["index.html", "styles.css", "utils.js", "launcher.js", "app.js", "lib/project-slots.js", "lib/ui-guards.js", "lib/safe-storage.js"];
+const files = ["index.html", "styles.css", "utils.js", "launcher.js", "creator-ranking.js", "app.js", "daily-workbench.js", "lib/business-date.js", "lib/project-slots.js", "lib/ui-guards.js", "lib/safe-storage.js"];
 
-fs.rmSync(output, { recursive: true, force: true });
 fs.mkdirSync(output, { recursive: true });
 
 for (const file of files) {

@@ -123,6 +123,21 @@ test("create -> list roundtrip keeps fields and parses metrics into objects", as
   assert.equal(JSON.parse(otherChannel.text).items.some((item) => item.id === createPayload.publication.id), false);
 });
 
+test("publication retries with one idempotency key create only one ledger row", async () => {
+  const headers = { "Content-Type": "application/json", "Idempotency-Key": "publication-retry-20260916" };
+  const body = JSON.stringify({ game: "鸣潮", title: "版本内容回流", channel: "B站" });
+  const first = await httpRequest("/publications", { method: "POST", headers, body });
+  const second = await httpRequest("/publications", { method: "POST", headers, body });
+  assert.equal(first.status, 201);
+  assert.equal(second.status, 200);
+  const firstPublication = JSON.parse(first.text).publication;
+  const secondPayload = JSON.parse(second.text);
+  assert.equal(secondPayload.idempotent, true);
+  assert.equal(secondPayload.publication.id, firstPublication.id);
+  const listed = JSON.parse((await httpRequest("/publications?game=" + encodeURIComponent("鸣潮"))).text);
+  assert.equal(listed.items.filter((item) => item.title === "版本内容回流").length, 1);
+});
+
 test("update accepts metrics object, persists string storage, returns parsed object", async () => {
   const created = JSON.parse((await postPublication({
     game: "巅峰极速",

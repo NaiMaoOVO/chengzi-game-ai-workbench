@@ -6,7 +6,7 @@ const os = require("node:os");
 const path = require("node:path");
 
 const projectRoot = path.resolve(__dirname, "..");
-const PORT = 19712;
+const PORT = 19713;
 
 function httpRequest(requestPath, options) {
   const { method = "GET", headers = {}, body = null } = options || {};
@@ -138,6 +138,21 @@ test("create -> list roundtrip keeps fields, fills defaults and honors filters",
 
   const limited = JSON.parse((await httpRequest("/risk-events?limit=1")).text);
   assert.equal(limited.items.length, 1);
+});
+
+test("risk event retries with one idempotency key create only one work order", async () => {
+  const headers = { "Content-Type": "application/json", "Idempotency-Key": "risk-retry-20260916" };
+  const body = JSON.stringify({ game: "鸣潮", title: "重复提交的风险工单" });
+  const first = await httpRequest("/risk-events", { method: "POST", headers, body });
+  const second = await httpRequest("/risk-events", { method: "POST", headers, body });
+  assert.equal(first.status, 201);
+  assert.equal(second.status, 200);
+  const firstRisk = JSON.parse(first.text).risk_event;
+  const secondPayload = JSON.parse(second.text);
+  assert.equal(secondPayload.idempotent, true);
+  assert.equal(secondPayload.risk_event.id, firstRisk.id);
+  const listed = JSON.parse((await httpRequest("/risk-events?game=" + encodeURIComponent("鸣潮"))).text);
+  assert.equal(listed.items.filter((item) => item.title === "重复提交的风险工单").length, 1);
 });
 
 test("partial update drives open -> processing -> resolved without touching other fields", async () => {

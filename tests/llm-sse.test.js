@@ -126,7 +126,7 @@ function createFakeOpenAiUpstream(port, behavior = {}) {
 async function withLlmService(envOverrides, run) {
   const child = spawn(process.execPath, [path.join(projectRoot, "llm-server.js")], {
     cwd: projectRoot,
-    env: { ...process.env, ...envOverrides },
+    env: { ...process.env, ALLOWED_ORIGIN: "null", ...envOverrides },
     stdio: ["ignore", "pipe", "pipe"]
   });
   let stderrText = "";
@@ -238,6 +238,48 @@ test("llm rate limit still applies to stream requests", async () => {
     const retryAfter = Number(limited.headers["retry-after"]);
     assert.ok(Number.isInteger(retryAfter) && retryAfter >= 1 && retryAfter <= 60, "Retry-After 应为 1-60 的整数秒");
   });
+});
+
+test("llm rejects a remote HTTP upstream before it can receive an API key", async () => {
+  const llmPort = 19535;
+  await withLlmService({
+    LLM_PORT: String(llmPort),
+    LLM_API_KEY: "sse-test-key",
+    LLM_BASE_URL: "http://public-provider.example/v1",
+    LLM_RATE_LIMIT_MAX: "100"
+  }, async () => {
+    const ready = await fetch("http://127.0.0.1:" + llmPort + "/ready");
+    assert.equal(ready.status, 503);
+    const payload = await ready.json();
+    assert.equal(payload.llm, "not_ready");
+    assert.match(payload.detail, /HTTPS/);
+  });
+});
+
+test("llm stream requests share the configured concurrency limit", async () => {
+  const llmPort = 19536;
+  const upstreamPort = 19636;
+  const upstream = await createFakeOpenAiUpstream(upstreamPort);
+  try {
+    await withLlmService({
+      LLM_PORT: String(llmPort),
+      LLM_API_KEY: "sse-test-key",
+      LLM_BASE_URL: "http://127.0.0.1:" + upstreamPort + "/v1",
+      LLM_MODEL: "test-model",
+      LLM_MAX_CONCURRENCY: "2",
+      LLM_RATE_LIMIT_MAX: "100"
+    }, async () => {
+      const first = postStream(llmPort, { ...VERSION_COPY_BODY, stream: true });
+      const second = postStream(llmPort, { ...VERSION_COPY_BODY, stream: true });
+      await new Promise((resolve) => setTimeout(resolve, 25));
+      const limited = await postStream(llmPort, { ...VERSION_COPY_BODY, stream: true });
+      assert.equal(limited.status, 503);
+      assert.equal(limited.headers["retry-after"], "2");
+      await Promise.all([first, second]);
+    });
+  } finally {
+    await upstream.close();
+  }
 });
 
 test("llm stream emits an error event when the upstream dies mid-stream", async () => {

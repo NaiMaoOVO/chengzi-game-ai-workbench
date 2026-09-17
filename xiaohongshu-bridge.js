@@ -207,7 +207,7 @@ function unwrapMcpContent(value) {
 
 // 前端（file:// 页面，Origin: null）直接 fetch 本 bridge，此前响应不带 ACAO 会被浏览器拦截，
 // 小红书笔记导入与效果回流在真实浏览器里静默失败；现在与其他服务共用同一套 CORS 工厂。
-const cors = createCors({ allowedOrigins: process.env.ALLOWED_ORIGIN, methods: "GET, OPTIONS" });
+const cors = createCors({ allowedOrigins: process.env.ALLOWED_ORIGIN, methods: "GET, OPTIONS", allowFileOrigin: process.env.ALLOW_FILE_ORIGIN === "1" || process.env.NODE_ENV !== "production" });
 
 function sendJson(request, response, statusCode, payload, extraHeaders = {}) {
   response.writeHead(statusCode, {
@@ -280,6 +280,10 @@ function runMcpSearch(keyword, range = "24h", options = {}) {
   return runMcpCall(buildSearchArgs(MCP_SERVER, keyword, range), options);
 }
 
+function isNoteDetailRoute(method, pathname) {
+  return method === "GET" && (pathname === "/note" || pathname === "/note-stats");
+}
+
 const server = http.createServer(async (request, response) => {
   if (!cors.isOriginAllowed(request)) {
     sendJson(request, response, 403, { error: "origin not allowed" });
@@ -310,7 +314,7 @@ const server = http.createServer(async (request, response) => {
     return;
   }
 
-  if (isNote) {
+  if (isNoteDetailRoute(request.method, url.pathname)) {
     const target = parseNoteTarget(url.searchParams.get("url"), { token: url.searchParams.get("xsec_token") });
     if (!target.ok) {
       const mapped = NOTE_TARGET_ERRORS[target.code] || { status: 400, message: "无效的笔记请求。" };
@@ -390,6 +394,7 @@ module.exports = {
   NOTE_TARGET_ERRORS,
   parseXhsCount,
   extractNoteStats,
+  isNoteDetailRoute,
   mcpPublishTime,
   createSearchGate,
   resolveMcporterBin,
