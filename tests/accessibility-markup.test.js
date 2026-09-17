@@ -6,6 +6,7 @@ const path = require("node:path");
 const root = path.resolve(__dirname, "..");
 const html = fs.readFileSync(path.join(root, "index.html"), "utf8");
 const app = fs.readFileSync(path.join(root, "app.js"), "utf8");
+const dailyWorkbench = fs.readFileSync(path.join(root, "daily-workbench.js"), "utf8");
 const css = fs.readFileSync(path.join(root, "styles.css"), "utf8");
 const launcher = fs.readFileSync(path.join(root, "launcher.js"), "utf8");
 
@@ -155,6 +156,15 @@ test("creator library dates use the shared date formatter", () => {
   const source = app.slice(start, end);
   assert.match(source, /formatPublicationDate\(profile\.updatedAt\)/);
   assert.doesNotMatch(source, /updatedAt \|\| \"\"\)\.slice\(0, 10\)/);
+});
+
+test("daily todo creation uses an idempotency key", () => {
+  const start = dailyWorkbench.indexOf("async function addTodo");
+  const end = dailyWorkbench.indexOf("async function updateTodo", start);
+  assert.ok(start >= 0 && end > start);
+  const source = dailyWorkbench.slice(start, end);
+  assert.match(dailyWorkbench, /function dailyTodoRequestId/);
+  assert.match(source, /Idempotency-Key/);
 });
 
 test("daily workbench aggregates every project while assigning new tasks to the current project", () => {

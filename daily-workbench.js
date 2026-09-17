@@ -98,6 +98,13 @@
     return businessDate();
   }
 
+  function dailyTodoRequestId(game, title, priority, dueDate) {
+    const source = JSON.stringify({ game, title, priority, dueDate });
+    let hash = 0;
+    for (let index = 0; index < source.length; index += 1) hash = (hash * 31 + source.charCodeAt(index)) >>> 0;
+    return `daily-todo-${hash.toString(36)}`;
+  }
+
   function dueState(item, referenceDate = today()) {
     const dueDate = typeof item?.due_date === "string" ? item.due_date.trim() : "";
     if (!/^\d{4}-\d{2}-\d{2}$/.test(dueDate)) return "unscheduled";
@@ -357,15 +364,21 @@
     const submitButton = document.querySelector("#daily-todo-form button[type=\"submit\"]");
     if (submitButton?.disabled) return;
     if (submitButton) submitButton.disabled = true;
+    const game = currentGame();
+    const priority = priorityEl()?.value || "medium";
+    const dueDate = dueEl()?.value || today();
     try {
       await request("/daily-todos", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "Idempotency-Key": dailyTodoRequestId(game, title, priority, dueDate)
+        },
         body: JSON.stringify({
-          game: currentGame(),
+          game,
           title,
-          priority: priorityEl()?.value || "medium",
-          due_date: dueEl()?.value || today()
+          priority,
+          due_date: dueDate
         })
       });
       titleEl().value = "";
