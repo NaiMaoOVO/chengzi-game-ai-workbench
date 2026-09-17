@@ -167,6 +167,14 @@ test("daily todo creation uses an idempotency key", () => {
   assert.match(source, /Idempotency-Key/);
 });
 
+test("morning run timestamps use the Shanghai time zone", () => {
+  const start = dailyWorkbench.indexOf("function formatMorningTime");
+  const end = dailyWorkbench.indexOf("function renderMorningStatus", start);
+  assert.ok(start >= 0 && end > start);
+  const source = dailyWorkbench.slice(start, end);
+  assert.match(source, /timeZone: "Asia\/Shanghai"/);
+});
+
 test("daily workbench aggregates every project while assigning new tasks to the current project", () => {
   const daily = fs.readFileSync(path.join(root, "daily-workbench.js"), "utf8");
 

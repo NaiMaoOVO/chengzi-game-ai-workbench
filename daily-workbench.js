@@ -45,7 +45,13 @@
   function formatMorningTime(value) {
     const date = new Date(value);
     if (Number.isNaN(date.getTime())) return "未知时间";
-    return new Intl.DateTimeFormat("zh-CN", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" }).format(date);
+    return new Intl.DateTimeFormat("zh-CN", {
+      timeZone: "Asia/Shanghai",
+      month: "numeric",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit"
+    }).format(date);
   }
 
   function renderMorningStatus(items = [], loading = false, unavailable = false) {
