@@ -110,6 +110,10 @@ test("trend week boundaries use the Shanghai business date", () => {
   assert.doesNotMatch(source, /toISOString\(\)\.slice\(0, 10\)/);
 });
 
+test("export filenames use the Shanghai business date", () => {
+  assert.doesNotMatch(app, /const date = new Date\(\)\.toISOString\(\)\.slice\(0, 10\)/);
+});
+
 test("daily workbench aggregates every project while assigning new tasks to the current project", () => {
   const daily = fs.readFileSync(path.join(root, "daily-workbench.js"), "utf8");
 

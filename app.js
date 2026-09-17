@@ -3247,7 +3247,7 @@ function exportFeedbackAnalysis() {
     ]);
   });
 
-  const date = new Date().toISOString().slice(0, 10);
+  const date = businessDate();
   downloadFile(`玩家评论分析-${date}.csv`, `\uFEFF${toCsv(rows)}`, "text/csv;charset=utf-8");
 }
 
@@ -4207,7 +4207,7 @@ function exportTrendingCsv() {
     ]);
   });
 
-  const date = new Date().toISOString().slice(0, 10);
+  const date = businessDate();
   downloadFile(`${game}-${platform}-热点榜单-${date}.csv`, `\uFEFF${toCsv(rows)}`, "text/csv;charset=utf-8");
   showSourceStatus("已导出当前热点榜单 CSV。", "source-real");
 }
@@ -4597,7 +4597,7 @@ async function copyVersionPackage() {
 function exportVersionPackage() {
   generateVersionPackage();
   const game = document.querySelector("#version-game").value.trim() || "目标游戏";
-  const date = new Date().toISOString().slice(0, 10);
+  const date = businessDate();
   downloadFile(`${game}-版本包装方案-${date}.txt`, buildVersionPackageText(), "text/plain;charset=utf-8");
 }
 
@@ -4890,7 +4890,7 @@ async function copySegmentPlan() {
 }
 
 function exportSegmentPlan() {
-  const date = new Date().toISOString().slice(0, 10);
+  const date = businessDate();
   downloadFile(`玩家分层运营策略-${date}.txt`, buildSegmentPlanText(), "text/plain;charset=utf-8");
 }
 
@@ -5261,7 +5261,7 @@ function exportCreatorLibrary() {
     }
     return;
   }
-  const date = new Date().toISOString().slice(0, 10);
+  const date = businessDate();
   downloadFile(
     `KOL-KOC个人库-${date}.json`,
     JSON.stringify({ version: 1, exportedAt: new Date().toISOString(), creators: library }, null, 2),
@@ -5973,7 +5973,7 @@ function exportCreatorCsv() {
       getCreatorBriefDetail(row)
     ]);
   });
-  const date = new Date().toISOString().slice(0, 10);
+  const date = businessDate();
   downloadFile(`KOL-KOC合作筛选表-${date}.csv`, `\uFEFF${toCsv(rows)}`, "text/csv;charset=utf-8");
 }
 
@@ -6427,7 +6427,7 @@ function buildFullOperationReportText() {
   const dataQuality = sampleSources.length
     ? `⚠️ 数据状态：本报告包含样例/兜底数据：${sampleSources.join("；")}，不代表真实平台表现。`
     : "数据状态：当前已生成模块未检测到样例兜底标记，请结合原始来源复核。";
-  const date = new Date().toISOString().slice(0, 10);
+  const date = businessDate();
   const topTopics = currentTrendingTopics.slice(0, 5).map((topic) => `- TOP${topic.rank} ${topic.title}（${topic.tag} / ${topic.risk?.level || "正常"}）`).join("\n");
   const creatorTop = currentCreatorRows.slice(0, 5).map((row) => `- ${row.name}：目标分 ${scoreByGoal(row, document.querySelector("#creator-goal")?.value || "launch", document.querySelector("#creator-activity")?.value || "newLaunch")}，${row.tier}，${getCreatorFit(row)}`).join("\n");
 
@@ -6519,7 +6519,7 @@ async function exportFullOperationReport() {
 
   const text = buildFullOperationReportText();
   const game = document.querySelector("#version-game")?.value.trim() || "目标游戏";
-  const date = new Date().toISOString().slice(0, 10);
+  const date = businessDate();
   downloadFile(`${game}-完整运营方案-${date}.md`, text, "text/markdown;charset=utf-8");
 
   if (status) {
