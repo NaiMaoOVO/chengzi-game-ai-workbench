@@ -200,6 +200,15 @@ test("daily queue keeps manual todos visible when optional sources fail", () => 
   assert.match(dailyWorkbench, /state\.publicationUnavailable/);
 });
 
+test("project save reports unavailable browser storage instead of throwing", () => {
+  const start = app.indexOf("function saveProjectState");
+  const end = app.indexOf("function loadProjectState", start);
+  assert.ok(start >= 0 && end > start);
+  const source = app.slice(start, end);
+  assert.match(source, /try/);
+  assert.match(source, /保存失败/);
+});
+
 test("daily workbench aggregates every project while assigning new tasks to the current project", () => {
   const daily = fs.readFileSync(path.join(root, "daily-workbench.js"), "utf8");
 

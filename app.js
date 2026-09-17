@@ -6351,7 +6351,17 @@ function restoreProjectState(state) {
 
 function saveProjectState() {
   const status = document.querySelector("#overview-status");
-  localStorage.setItem(PROJECT_STORAGE_KEY, JSON.stringify(collectProjectState()));
+  try {
+    const storage = window.localStorage;
+    if (!storage) throw new Error("浏览器存储不可用");
+    storage.setItem(PROJECT_STORAGE_KEY, JSON.stringify(collectProjectState()));
+  } catch (_error) {
+    if (status) {
+      status.textContent = "总览状态：保存失败，本机存储暂不可用。";
+      status.className = "source-status source-mock";
+    }
+    return;
+  }
   if (status) {
     status.textContent = "总览状态：当前项目已保存到本机浏览器，下次演示可直接载入。";
     status.className = "source-status source-real";
