@@ -25,10 +25,10 @@
     if (element) element.textContent = String(value);
   }
 
-  function setStats({ todoCount = 0, riskCount = 0, publicationCount = 0, doneItems = [] } = {}) {
+  function setStats({ todoCount = 0, riskCount = 0, publicationCount = 0, doneItems = [], riskUnavailable = false, publicationUnavailable = false } = {}) {
     setText("#daily-stat-todo", todoCount);
-    setText("#daily-stat-risk", riskCount);
-    setText("#daily-stat-publish", publicationCount);
+    setText("#daily-stat-risk", riskUnavailable ? "—" : riskCount);
+    setText("#daily-stat-publish", publicationUnavailable ? "—" : publicationCount);
     const totalManual = todoCount + doneItems.length;
     setText("#daily-progress-summary", totalManual
       ? `已完成 ${doneItems.length}/${totalManual} 项手动待办，优先清空高风险事项。`
@@ -364,8 +364,12 @@
       if (summary) summary.textContent = `已完成（${doneItems.length}）`;
       doneItems.forEach((item) => doneContainer.append(buildManualRow(item, true)));
     }
-    setConnection("已连接 · 队列实时汇总中", "success");
-    setStatus(`已汇总 ${rows.length} 条待办${doneItems.length ? `，另有 ${doneItems.length} 条已完成` : ""}。`, "real");
+    const unavailable = [
+      state.riskUnavailable ? "风险工单" : "",
+      state.publicationUnavailable ? "发布回流" : ""
+    ].filter(Boolean);
+    setConnection(unavailable.length ? "部分数据不可用 · 手动待办仍可用" : "已连接 · 队列实时汇总中", unavailable.length ? "warning" : "success");
+    setStatus(`已汇总 ${rows.length} 条待办${doneItems.length ? `，另有 ${doneItems.length} 条已完成` : ""}${unavailable.length ? `；${unavailable.join("、")}暂不可用` : ""}。`, unavailable.length ? "mock" : "real");
   };
 
   async function request(path, options) {

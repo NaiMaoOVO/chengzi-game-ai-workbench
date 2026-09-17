@@ -193,6 +193,13 @@ test("daily summary loads enough risk and publication records for long-term use"
   assert.match(app, /\/publications\?limit=200/);
 });
 
+test("daily queue keeps manual todos visible when optional sources fail", () => {
+  assert.match(app, /riskUnavailable/);
+  assert.match(app, /publicationUnavailable/);
+  assert.match(dailyWorkbench, /state\.riskUnavailable/);
+  assert.match(dailyWorkbench, /state\.publicationUnavailable/);
+});
+
 test("daily workbench aggregates every project while assigning new tasks to the current project", () => {
   const daily = fs.readFileSync(path.join(root, "daily-workbench.js"), "utf8");
 

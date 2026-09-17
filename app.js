@@ -1316,18 +1316,22 @@ window.loadTodayTodos = async function loadTodayTodos() {
       window.renderTodayTodos([], { authRequired: true });
       return;
     }
-    for (const result of [risk, publication, manual, done]) {
+    for (const result of [manual, done]) {
       if (!result.response || !result.response.ok || !result.payload.ok) {
         throw new Error(result.payload.error || "请求失败");
       }
     }
+    const riskUnavailable = !risk.response || !risk.response.ok || !risk.payload.ok;
+    const publicationUnavailable = !publication.response || !publication.response.ok || !publication.payload.ok;
     const morningUnavailable = !morning.response || !morning.response.ok || !morning.payload.ok;
-    const riskItems = risk.payload.items || [];
-    const publicationItems = publication.payload.items || [];
+    const riskItems = riskUnavailable ? [] : risk.payload.items || [];
+    const publicationItems = publicationUnavailable ? [] : publication.payload.items || [];
     const manualItems = manual.payload.items || [];
     window.renderTodayTodos(manualItems.map((item) => ({ ...item, kind: "manual" })), {
-      riskCount: riskItems.length,
+      riskCount: risk.payload.total ?? riskItems.length,
       publicationCount: publicationItems.filter(publicationNeedsEffectBackfill).length,
+      riskUnavailable,
+      publicationUnavailable,
       riskItems,
       publicationItems: publicationItems.filter(publicationNeedsEffectBackfill),
       todoCount: manualItems.length,
