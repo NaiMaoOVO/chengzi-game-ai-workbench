@@ -300,6 +300,19 @@ test("eligible creator decisions can become idempotent daily follow-up tasks", (
   assert.match(app, /\/daily-todos/);
 });
 
+test("publication and risk ticket writes carry idempotency keys", () => {
+  const publicationStart = app.indexOf("async function recordPublication");
+  const publicationEnd = app.indexOf("async function loadRiskTickets", publicationStart);
+  const riskStart = app.indexOf("async function convertFeedbackRiskToTicket");
+  const riskEnd = app.indexOf("function renderFeedbackRiskEvents", riskStart);
+  assert.ok(publicationStart >= 0 && publicationEnd > publicationStart);
+  assert.ok(riskStart >= 0 && riskEnd > riskStart);
+  assert.match(app.slice(publicationStart, publicationEnd), /publicationRequestId/);
+  assert.match(app.slice(publicationStart, publicationEnd), /Idempotency-Key/);
+  assert.match(app.slice(riskStart, riskEnd), /riskTicketRequestId/);
+  assert.match(app.slice(riskStart, riskEnd), /Idempotency-Key/);
+});
+
 test("local service recovery waits for archive readiness and reloads the daily queue", () => {
   const daily = fs.readFileSync(path.join(root, "daily-workbench.js"), "utf8");
   assert.match(launcher, /function waitForArchiveService/);

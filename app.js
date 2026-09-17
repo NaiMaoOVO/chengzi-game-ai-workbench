@@ -888,6 +888,13 @@ function publicationGameFromContext() {
     || document.querySelector("#version-game")?.value.trim() || "";
 }
 
+function publicationRequestId(payload) {
+  const source = JSON.stringify(payload);
+  let hash = 0;
+  for (let index = 0; index < source.length; index += 1) hash = (hash * 31 + source.charCodeAt(index)) >>> 0;
+  return `publication-${businessDate()}-${hash.toString(36)}`;
+}
+
 function formatPublicationDate(value) {
   if (!value) return "";
   const date = new Date(value);
@@ -1036,18 +1043,19 @@ async function recordPublication() {
   const recordButton = document.querySelector("#record-publication");
   if (recordButton?.disabled) return;
   if (recordButton) recordButton.disabled = true;
+  const publication = {
+    game,
+    title,
+    channel,
+    url: document.querySelector("#publication-url")?.value.trim() || "",
+    related_topic: document.querySelector("#publication-topic")?.value.trim() || "",
+    published_at: document.querySelector("#publication-date")?.value.trim() || ""
+  };
   try {
     const response = await archiveRequest(ARCHIVE_SERVICE_URL + "/publications", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        game,
-        title,
-        channel,
-        url: document.querySelector("#publication-url")?.value.trim() || "",
-        related_topic: document.querySelector("#publication-topic")?.value.trim() || "",
-        published_at: document.querySelector("#publication-date")?.value.trim() || ""
-      })
+      headers: { "Content-Type": "application/json", "Idempotency-Key": publicationRequestId(publication) },
+      body: JSON.stringify(publication)
     });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok || !payload.ok) throw new Error(payload.error || "HTTP " + response.status);
@@ -1162,6 +1170,13 @@ function setRiskTicketStatus(text, tone) {
   if (!status) return;
   status.textContent = "风险工单：" + text;
   status.className = "source-status" + (tone === "real" ? " source-real" : tone === "mock" ? " source-mock" : "");
+}
+
+function riskTicketRequestId(game, event) {
+  const source = JSON.stringify({ game, title: event?.title || "", source: event?.source || "评论分析", level: event?.severity || "中", detail: buildFeedbackRiskEventDetail(event || {}) });
+  let hash = 0;
+  for (let index = 0; index < source.length; index += 1) hash = (hash * 31 + source.charCodeAt(index)) >>> 0;
+  return `risk-ticket-${businessDate()}-${hash.toString(36)}`;
 }
 
 function riskTicketActionButton(label, handler) {
@@ -2697,10 +2712,11 @@ async function convertFeedbackRiskToTicket(event, button) {
   button.disabled = true;
   button.textContent = "转工单中…";
   setFeedbackRiskTicketStatus("正在转工单：「" + event.title + "」…", "");
+  const requestId = riskTicketRequestId(game, event);
   try {
     const response = await archiveRequest(ARCHIVE_SERVICE_URL + "/risk-events", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "Idempotency-Key": requestId },
       body: JSON.stringify({
         game,
         title: event.title,
