@@ -83,6 +83,8 @@ let selectedTrendingIndex = 0;
 const trendingRequestGuard = createGenerationGuard();
 const serviceModeGuard = createGenerationGuard();
 const todayTodosRequestGuard = createGenerationGuard();
+const publicationListRequestGuard = createGenerationGuard();
+const riskTicketListRequestGuard = createGenerationGuard();
 let currentFeedbackRows = [];
 const FEEDBACK_XHS_SOURCE = "小红书笔记";
 let feedbackImportTarget = "bili";
@@ -1031,9 +1033,11 @@ function renderPublicationList(items) {
 async function loadPublications() {
   const container = document.querySelector("#publication-list");
   if (!container) return;
+  const requestGeneration = publicationListRequestGuard.next();
   try {
     const response = await archiveRequest(ARCHIVE_SERVICE_URL + "/publications?limit=200", { cache: "no-store" });
     const payload = await response.json().catch(() => ({}));
+    if (!publicationListRequestGuard.isCurrent(requestGeneration)) return;
     if (!response.ok || !payload.ok) throw new Error(payload.error || "HTTP " + response.status);
     if (!Array.isArray(payload.items)) throw new Error("发布接口返回格式错误");
     const items = payload.items;
@@ -1042,6 +1046,7 @@ async function loadPublications() {
     setPublicationStatus(total > items.length ? `已加载最近 ${items.length}/${total} 条。` : `已加载 ${items.length} 条。`, total > items.length ? "mock" : "real");
     if (window.loadTodayTodos) window.loadTodayTodos();
   } catch (error) {
+    if (!publicationListRequestGuard.isCurrent(requestGeneration)) return;
     currentPublications = [];
     container.innerHTML = '<p class="muted-copy">存档服务不可用（本机 8796 端口）。启动 archive-server 后点击「刷新列表」重试。</p>';
     setPublicationStatus("读取失败（" + (error.message || "存档服务不可用") + "）。", "mock");
@@ -1287,6 +1292,7 @@ function renderRiskTicketList(items) {
 async function loadRiskTickets() {
   const container = document.querySelector("#risk-ticket-list");
   if (!container) return;
+  const requestGeneration = riskTicketListRequestGuard.next();
   const game = document.querySelector("#risk-ticket-game")?.value.trim() || "";
   const statusFilter = document.querySelector("#risk-ticket-status-filter")?.value.trim() || "";
   const params = new URLSearchParams();
@@ -1296,6 +1302,7 @@ async function loadRiskTickets() {
   try {
     const response = await archiveRequest(ARCHIVE_SERVICE_URL + "/risk-events?" + params.toString(), { cache: "no-store" });
     const payload = await response.json().catch(() => ({}));
+    if (!riskTicketListRequestGuard.isCurrent(requestGeneration)) return;
     if (!response.ok || !payload.ok) throw new Error(payload.error || "HTTP " + response.status);
     if (!Array.isArray(payload.items)) throw new Error("风险工单接口返回格式错误");
     const items = payload.items;
@@ -1304,6 +1311,7 @@ async function loadRiskTickets() {
     setRiskTicketStatus(total > items.length ? `已加载最近 ${items.length}/${total} 条。` : `已加载 ${items.length} 条。`, total > items.length ? "mock" : "real");
     if (window.loadTodayTodos) window.loadTodayTodos();
   } catch (error) {
+    if (!riskTicketListRequestGuard.isCurrent(requestGeneration)) return;
     currentRiskTickets = [];
     container.innerHTML = '<p class="muted-copy">存档服务不可用（本机 8796 端口）。启动 archive-server 后点击「刷新」重试。</p>';
     setRiskTicketStatus("读取失败（" + (error.message || "存档服务不可用") + "）。", "mock");

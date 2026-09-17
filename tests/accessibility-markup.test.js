@@ -383,6 +383,20 @@ test("publication and risk lists reject malformed item payloads", () => {
   assert.match(app.slice(riskStart, riskEnd), /Array\.isArray\(payload\.items\)/);
 });
 
+test("publication and risk list refreshes ignore stale responses", () => {
+  const publicationStart = app.indexOf("async function loadPublications");
+  const publicationEnd = app.indexOf("async function recordPublication", publicationStart);
+  const riskStart = app.indexOf("async function loadRiskTickets");
+  const riskEnd = app.indexOf("async function updateRiskTicketStatus", riskStart);
+  assert.ok(publicationStart >= 0 && publicationEnd > publicationStart && riskStart >= 0 && riskEnd > riskStart);
+  assert.match(app, /const publicationListRequestGuard = createGenerationGuard\(\)/);
+  assert.match(app, /const riskTicketListRequestGuard = createGenerationGuard\(\)/);
+  assert.match(app.slice(publicationStart, publicationEnd), /publicationListRequestGuard\.next\(\)/);
+  assert.match(app.slice(publicationStart, publicationEnd), /publicationListRequestGuard\.isCurrent\(/);
+  assert.match(app.slice(riskStart, riskEnd), /riskTicketListRequestGuard\.next\(\)/);
+  assert.match(app.slice(riskStart, riskEnd), /riskTicketListRequestGuard\.isCurrent\(/);
+});
+
 test("briefing archive surfaces response failures and corrupted entries", () => {
   const renderStart = app.indexOf("function renderBriefArchiveItem");
   const renderEnd = app.indexOf("async function loadBriefingArchive", renderStart);
