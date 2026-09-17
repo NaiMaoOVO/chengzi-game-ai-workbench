@@ -193,6 +193,21 @@ test("daily summary loads enough risk and publication records for long-term use"
   assert.match(app, /\/publications\?limit=200/);
 });
 
+test("risk and publication management lists expose truncation instead of hiding history", () => {
+  const publicationStart = app.indexOf("async function loadPublications");
+  const publicationEnd = app.indexOf("async function recordPublication", publicationStart);
+  const riskStart = app.indexOf("async function loadRiskTickets");
+  const riskEnd = app.indexOf("async function updateRiskTicketStatus", riskStart);
+  assert.ok(publicationStart >= 0 && publicationEnd > publicationStart);
+  assert.ok(riskStart >= 0 && riskEnd > riskStart);
+  const publicationSource = app.slice(publicationStart, publicationEnd);
+  const riskSource = app.slice(riskStart, riskEnd);
+  assert.match(publicationSource, /\/publications\?limit=200/);
+  assert.match(riskSource, /params\.set\("limit", "200"\)/);
+  assert.match(publicationSource, /payload\.total/);
+  assert.match(riskSource, /payload\.total/);
+});
+
 test("daily queue keeps manual todos visible when optional sources fail", () => {
   assert.match(app, /riskUnavailable/);
   assert.match(app, /publicationUnavailable/);

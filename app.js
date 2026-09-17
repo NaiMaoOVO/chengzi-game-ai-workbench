@@ -994,10 +994,13 @@ async function loadPublications() {
   const container = document.querySelector("#publication-list");
   if (!container) return;
   try {
-    const response = await archiveRequest(ARCHIVE_SERVICE_URL + "/publications?limit=20", { cache: "no-store" });
+    const response = await archiveRequest(ARCHIVE_SERVICE_URL + "/publications?limit=200", { cache: "no-store" });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok || !payload.ok) throw new Error(payload.error || "HTTP " + response.status);
-    renderPublicationList(payload.items || []);
+    const items = payload.items || [];
+    const total = Number.isFinite(Number(payload.total)) ? Number(payload.total) : items.length;
+    renderPublicationList(items);
+    setPublicationStatus(total > items.length ? `已加载最近 ${items.length}/${total} 条。` : `已加载 ${items.length} 条。`, total > items.length ? "mock" : "real");
     if (window.loadTodayTodos) window.loadTodayTodos();
   } catch (_error) {
     currentPublications = [];
@@ -1241,12 +1244,15 @@ async function loadRiskTickets() {
   const params = new URLSearchParams();
   if (game) params.set("game", game);
   if (statusFilter) params.set("status", statusFilter);
-  params.set("limit", "20");
+  params.set("limit", "200");
   try {
     const response = await archiveRequest(ARCHIVE_SERVICE_URL + "/risk-events?" + params.toString(), { cache: "no-store" });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok || !payload.ok) throw new Error(payload.error || "HTTP " + response.status);
-    renderRiskTicketList(payload.items || []);
+    const items = payload.items || [];
+    const total = Number.isFinite(Number(payload.total)) ? Number(payload.total) : items.length;
+    renderRiskTicketList(items);
+    setRiskTicketStatus(total > items.length ? `已加载最近 ${items.length}/${total} 条。` : `已加载 ${items.length} 条。`, total > items.length ? "mock" : "real");
     if (window.loadTodayTodos) window.loadTodayTodos();
   } catch (_error) {
     currentRiskTickets = [];
