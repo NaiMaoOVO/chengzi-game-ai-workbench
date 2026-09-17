@@ -1040,9 +1040,10 @@ async function loadPublications() {
     renderPublicationList(items);
     setPublicationStatus(total > items.length ? `已加载最近 ${items.length}/${total} 条。` : `已加载 ${items.length} 条。`, total > items.length ? "mock" : "real");
     if (window.loadTodayTodos) window.loadTodayTodos();
-  } catch (_error) {
+  } catch (error) {
     currentPublications = [];
     container.innerHTML = '<p class="muted-copy">存档服务不可用（本机 8796 端口）。启动 archive-server 后点击「刷新列表」重试。</p>';
+    setPublicationStatus("读取失败（" + (error.message || "存档服务不可用") + "）。", "mock");
   }
 }
 
@@ -1300,9 +1301,10 @@ async function loadRiskTickets() {
     renderRiskTicketList(items);
     setRiskTicketStatus(total > items.length ? `已加载最近 ${items.length}/${total} 条。` : `已加载 ${items.length} 条。`, total > items.length ? "mock" : "real");
     if (window.loadTodayTodos) window.loadTodayTodos();
-  } catch (_error) {
+  } catch (error) {
     currentRiskTickets = [];
     container.innerHTML = '<p class="muted-copy">存档服务不可用（本机 8796 端口）。启动 archive-server 后点击「刷新」重试。</p>';
+    setRiskTicketStatus("读取失败（" + (error.message || "存档服务不可用") + "）。", "mock");
   }
 }
 

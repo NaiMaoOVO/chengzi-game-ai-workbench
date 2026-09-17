@@ -363,6 +363,16 @@ test("corrupted project profiles cannot be loaded as if they were restored", () 
   assert.match(source, /重新保存/);
 });
 
+test("publication and risk list failures update their status bars", () => {
+  const publicationStart = app.indexOf("async function loadPublications");
+  const publicationEnd = app.indexOf("async function recordPublication", publicationStart);
+  const riskStart = app.indexOf("async function loadRiskTickets");
+  const riskEnd = app.indexOf("async function updateRiskTicketStatus", riskStart);
+  assert.ok(publicationStart >= 0 && publicationEnd > publicationStart && riskStart >= 0 && riskEnd > riskStart);
+  assert.match(app.slice(publicationStart, publicationEnd), /setPublicationStatus\("读取失败/);
+  assert.match(app.slice(riskStart, riskEnd), /setRiskTicketStatus\("读取失败/);
+});
+
 test("briefing archive surfaces response failures and corrupted entries", () => {
   const renderStart = app.indexOf("function renderBriefArchiveItem");
   const renderEnd = app.indexOf("async function loadBriefingArchive", renderStart);
