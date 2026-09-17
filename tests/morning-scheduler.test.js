@@ -9,5 +9,8 @@ test("morning fetch uses Shanghai business time and persistent per-game run reco
   assert.match(archive, /businessDate\(now\)/);
   assert.match(archive, /businessTime\(now\)/);
   assert.match(archive, /CREATE TABLE IF NOT EXISTS morning_runs/);
+  assert.match(archive, /owner_key TEXT NOT NULL DEFAULT 'default'/);
+  assert.match(archive, /function listMorningRuns\(url, ownerKey\)/);
+  assert.match(archive, /FROM morning_runs WHERE owner_key = \?/);
   assert.match(archive, /INSERT OR IGNORE INTO snapshots/);
 });

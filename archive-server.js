@@ -181,6 +181,7 @@ CREATE TABLE IF NOT EXISTS creator_libraries (
   updated_at TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS morning_runs (
+  owner_key TEXT NOT NULL DEFAULT 'default',
   run_date TEXT NOT NULL,
   game TEXT NOT NULL,
   platform TEXT NOT NULL,
@@ -205,6 +206,7 @@ function migrateOwnerColumns() {
     if (!hasColumn(table, "owner_key")) db.exec("ALTER TABLE " + table + " ADD COLUMN owner_key TEXT NOT NULL DEFAULT 'default'");
     if (!hasColumn(table, "request_id")) db.exec("ALTER TABLE " + table + " ADD COLUMN request_id TEXT");
   }
+  if (!hasColumn("morning_runs", "owner_key")) db.exec("ALTER TABLE morning_runs ADD COLUMN owner_key TEXT NOT NULL DEFAULT 'default'");
   if (!hasColumn("project_profiles", "owner_key")) {
     db.exec("BEGIN");
     try {
@@ -235,6 +237,7 @@ function migrateOwnerColumns() {
     CREATE INDEX IF NOT EXISTS idx_daily_todos_owner_status ON daily_todos(owner_key, status);
     CREATE INDEX IF NOT EXISTS idx_daily_todos_owner_game ON daily_todos(owner_key, game);
     CREATE INDEX IF NOT EXISTS idx_daily_todos_owner_due ON daily_todos(owner_key, due_date);
+    CREATE INDEX IF NOT EXISTS idx_morning_runs_owner_date ON morning_runs(owner_key, run_date);
     CREATE UNIQUE INDEX IF NOT EXISTS idx_snapshots_owner_request ON snapshots(owner_key, request_id) WHERE request_id IS NOT NULL;
     CREATE UNIQUE INDEX IF NOT EXISTS idx_publications_owner_request ON publications(owner_key, request_id) WHERE request_id IS NOT NULL;
     CREATE UNIQUE INDEX IF NOT EXISTS idx_risk_events_owner_request ON risk_events(owner_key, request_id) WHERE request_id IS NOT NULL;
@@ -267,7 +270,7 @@ function recordOwner(session) {
 
 if (archiveAuth.enabled && archiveAuth.adminUserId) {
   const legacyOwner = `user:${archiveAuth.adminUserId}`;
-  for (const table of ["snapshots", "project_profiles", "publications", "risk_events", "daily_todos", "creator_libraries"]) {
+  for (const table of ["snapshots", "project_profiles", "publications", "risk_events", "daily_todos", "creator_libraries", "morning_runs"]) {
     db.prepare("UPDATE " + table + " SET owner_key = ? WHERE owner_key = 'default'").run(legacyOwner);
   }
 }
@@ -467,10 +470,10 @@ function listRiskEvents(url, ownerKey) {
   return { items: rows, total };
 }
 
-function listMorningRuns(url) {
+function listMorningRuns(url, ownerKey) {
   const limitRaw = Number.parseInt(url.searchParams.get("limit"), 10);
   const limit = Number.isFinite(limitRaw) ? Math.min(50, Math.max(1, limitRaw)) : 20;
-  const rows = db.prepare("SELECT run_date, game, platform, status, started_at, finished_at, error FROM morning_runs ORDER BY run_date DESC, started_at DESC LIMIT ?").all(limit);
+  const rows = db.prepare("SELECT run_date, game, platform, status, started_at, finished_at, error FROM morning_runs WHERE owner_key = ? ORDER BY run_date DESC, started_at DESC LIMIT ?").all(ownerKey, limit);
   return { items: rows };
 }
 
@@ -625,7 +628,7 @@ const server = http.createServer((request, response) => {
   }
   if (request.method === "GET" && url.pathname === "/morning-runs") {
     try {
-      sendJson(request, response, 200, { ok: true, ...listMorningRuns(url) });
+      sendJson(request, response, 200, { ok: true, ...listMorningRuns(url, ownerKey) });
     } catch (error) {
       sendJson(request, response, 400, { ok: false, error: error.message });
     }
@@ -1176,24 +1179,25 @@ server.listen(PORT, "127.0.0.1", () => {
 
 let morningRunning = false;
 const claimMorningRunStatement = db.prepare(`
-  INSERT INTO morning_runs (run_date, game, platform, status, started_at, finished_at, error)
-  VALUES (?, ?, ?, 'running', ?, NULL, '')
+  INSERT INTO morning_runs (owner_key, run_date, game, platform, status, started_at, finished_at, error)
+  VALUES (?, ?, ?, ?, 'running', ?, NULL, '')
   ON CONFLICT(run_date, game, platform) DO UPDATE SET
+    owner_key = excluded.owner_key,
     status = 'running', started_at = excluded.started_at, finished_at = NULL, error = ''
   WHERE morning_runs.status = 'failed'
     OR (morning_runs.status = 'running' AND morning_runs.started_at < ?)
 `);
-const updateMorningRunStatement = db.prepare("UPDATE morning_runs SET status = ?, finished_at = ?, error = ? WHERE run_date = ? AND game = ? AND platform = ?");
+const updateMorningRunStatement = db.prepare("UPDATE morning_runs SET status = ?, finished_at = ?, error = ? WHERE run_date = ? AND game = ? AND platform = ? AND owner_key = ?");
 
-function claimMorningRun(runDate, game, platform, now = new Date()) {
+function claimMorningRun(runDate, game, platform, now = new Date(), ownerKey = recordOwner(null)) {
   const startedAt = now.toISOString();
   const staleBefore = new Date(now.getTime() - 30 * 60 * 1000).toISOString();
-  const result = claimMorningRunStatement.run(runDate, game, platform, startedAt, staleBefore);
+  const result = claimMorningRunStatement.run(ownerKey, runDate, game, platform, startedAt, staleBefore);
   return Number(result.changes) === 1;
 }
 
-function finishMorningRun(runDate, game, platform, status, error = "") {
-  updateMorningRunStatement.run(status, new Date().toISOString(), String(error || "").slice(0, 500), runDate, game, platform);
+function finishMorningRun(runDate, game, platform, status, error = "", ownerKey = recordOwner(null)) {
+  updateMorningRunStatement.run(status, new Date().toISOString(), String(error || "").slice(0, 500), runDate, game, platform, ownerKey);
 }
 
 async function runMorningFetch(runDate = businessDate()) {

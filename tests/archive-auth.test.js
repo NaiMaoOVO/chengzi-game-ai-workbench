@@ -13,6 +13,7 @@ const databasePath = path.join(os.tmpdir(), "gameops-archive-auth-" + process.pi
 // 认证开启前可能已经在个人模式写入创作者库，启动服务前构造一条 legacy default 记录，验证它会迁移给管理员。
 const seedDb = new DatabaseSync(databasePath);
 seedDb.exec("CREATE TABLE creator_libraries (owner_key TEXT PRIMARY KEY, payload TEXT NOT NULL, updated_at TEXT NOT NULL); INSERT INTO creator_libraries VALUES ('default', '{\"demo-key\":{\"name\":\"旧个人库\"}}', '2026-09-15T00:00:00.000Z');");
+seedDb.exec("CREATE TABLE morning_runs (owner_key TEXT NOT NULL DEFAULT 'default', run_date TEXT NOT NULL, game TEXT NOT NULL, platform TEXT NOT NULL, status TEXT NOT NULL, started_at TEXT NOT NULL, finished_at TEXT, error TEXT NOT NULL DEFAULT '', PRIMARY KEY (run_date, game, platform)); INSERT INTO morning_runs (owner_key, run_date, game, platform, status, started_at) VALUES ('user:999', '2026-09-18', '他人私有游戏', 'B站', 'success', '2026-09-18T01:00:00.000Z');");
 seedDb.close();
 
 function request(requestPath, options = {}) {
@@ -103,6 +104,10 @@ test("archive auth requires login, CSRF, and keeps each account's data private",
   const migratedLibrary = await request("/creator-library", { headers: { Cookie: adminCookie } });
   assert.equal(migratedLibrary.status, 200);
   assert.equal(migratedLibrary.payload.library["demo-key"].name, "旧个人库", "认证开启后 legacy 创作者库应迁移给管理员");
+
+  const adminMorningRuns = await request("/morning-runs", { headers: { Cookie: adminCookie } });
+  assert.equal(adminMorningRuns.status, 200);
+  assert.equal(adminMorningRuns.payload.items.some((item) => item.game === "他人私有游戏"), false, "晨报运行记录不应泄露其他账号数据");
 
   const missingCsrf = await request("/daily-todos", {
     method: "POST",
