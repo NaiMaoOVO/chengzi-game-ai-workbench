@@ -180,8 +180,8 @@ test("daily workbench aggregates every project while assigning new tasks to the 
 
   assert.match(daily, /allProjectsScope = "工作范围：全部项目"/);
   assert.match(daily, /allProjectsScope \+ " · 新增待办归属："/);
-  assert.match(app, /\/daily-todos\?status=open&limit=50/);
-  assert.match(app, /\/daily-todos\?status=done&limit=50/);
+  assert.match(app, /\/daily-todos\?status=open&limit=200/);
+  assert.match(app, /\/daily-todos\?status=done&limit=200/);
 });
 
 test("eligible creator decisions can become idempotent daily follow-up tasks", () => {
