@@ -1507,6 +1507,10 @@ a.trending-title:hover {
   line-height: 1.5;
 }
 
+.archive-sync-status {
+  margin: -10px 0 18px;
+}
+
 .source-real {
   color: var(--accent);
 }

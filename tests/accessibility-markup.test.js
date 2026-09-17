@@ -88,6 +88,13 @@ test("daily queue degrades gracefully when the optional morning status endpoint 
   assert.match(daily, /state\.morningUnavailable/);
 });
 
+test("background snapshot writes expose success and failure instead of swallowing errors", () => {
+  assert.match(html, /id="archive-sync-status"[^>]*aria-live="polite"/);
+  assert.match(app, /function setArchiveSyncStatus/);
+  assert.match(app, /存档失败/);
+  assert.doesNotMatch(app, /存档失败不影响主流程/);
+});
+
 test("daily workbench aggregates every project while assigning new tasks to the current project", () => {
   const daily = fs.readFileSync(path.join(root, "daily-workbench.js"), "utf8");
 

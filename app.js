@@ -565,13 +565,31 @@ function gamePlatformLabel() {
   return document.querySelector("#trending-platform")?.value || "B站";
 }
 
+function setArchiveSyncStatus(text, tone = "") {
+  const status = document.querySelector("#archive-sync-status");
+  if (!status) return;
+  status.textContent = text;
+  status.className = "archive-sync-status source-status" + (tone === "real" ? " source-real" : tone === "mock" ? " source-mock" : "");
+}
+
 function archiveSnapshot(kind, game, payload) {
+  const label = kind === "feedback" ? "反馈" : kind === "trending" ? "热点" : kind;
   const body = JSON.stringify({ kind, game, source: payload.source || "sample", payload });
+  setArchiveSyncStatus(`存档：正在保存${label}数据…`);
   archiveRequest(ARCHIVE_SERVICE_URL + "/snapshots", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body
-  }).catch(() => { /* 存档失败不影响主流程 */ });
+  }).then(async (response) => {
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok || !result.ok) throw new Error(result.error || `HTTP ${response.status}`);
+    setArchiveSyncStatus(`存档：${label}数据已保存（编号 #${result.id}）。`, "real");
+    return result;
+  }).catch((error) => {
+    const detail = String(error?.message || "服务不可用").slice(0, 120);
+    setArchiveSyncStatus(`存档失败：${label}数据未保存（${detail}）。主流程已继续，可稍后重试。`, "mock");
+    return null;
+  });
 }
 
 let llmServiceState = "down";
