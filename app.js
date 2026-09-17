@@ -1349,15 +1349,21 @@ window.loadTodayTodos = async function loadTodayTodos() {
     const riskItems = riskUnavailable ? [] : risk.payload.items || [];
     const publicationItems = publicationUnavailable ? [] : publication.payload.items || [];
     const manualItems = manual.payload.items || [];
+    const doneItems = done.payload.items || [];
+    const publicationQueueItems = publicationItems.filter(publicationNeedsEffectBackfill);
     window.renderTodayTodos(manualItems.map((item) => ({ ...item, kind: "manual" })), {
       riskCount: risk.payload.total ?? riskItems.length,
-      publicationCount: publicationItems.filter(publicationNeedsEffectBackfill).length,
+      publicationCount: publicationQueueItems.length,
+      riskTotal: risk.payload.total ?? riskItems.length,
+      publicationTotal: publicationQueueItems.length,
       riskUnavailable,
       publicationUnavailable,
       riskItems,
-      publicationItems: publicationItems.filter(publicationNeedsEffectBackfill),
+      publicationItems: publicationQueueItems,
       todoCount: manualItems.length,
-      doneItems: done.payload.items || [],
+      todoTotal: manual.payload.total ?? manualItems.length,
+      doneItems,
+      doneTotal: done.payload.total ?? doneItems.length,
       morningRuns: morningUnavailable ? [] : morning.payload.items || [],
       morningUnavailable
     });

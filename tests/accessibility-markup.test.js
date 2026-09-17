@@ -243,6 +243,14 @@ test("daily queue keeps manual todos visible when optional sources fail", () => 
   assert.match(dailyWorkbench, /state\.publicationUnavailable/);
 });
 
+test("daily queue explains when server totals exceed the loaded rows", () => {
+  assert.match(app, /todoTotal/);
+  assert.match(app, /doneTotal/);
+  assert.match(app, /riskTotal/);
+  assert.match(app, /publicationTotal/);
+  assert.match(dailyWorkbench, /仅展示最近/);
+});
+
 test("project save reports unavailable browser storage instead of throwing", () => {
   const start = app.indexOf("function saveProjectState");
   const end = app.indexOf("function loadProjectState", start);

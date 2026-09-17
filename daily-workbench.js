@@ -25,13 +25,15 @@
     if (element) element.textContent = String(value);
   }
 
-  function setStats({ todoCount = 0, riskCount = 0, publicationCount = 0, doneItems = [], riskUnavailable = false, publicationUnavailable = false } = {}) {
+  function setStats({ todoCount = 0, todoTotal = todoCount, riskCount = 0, publicationCount = 0, doneItems = [], doneTotal = doneItems.length, riskUnavailable = false, publicationUnavailable = false } = {}) {
     setText("#daily-stat-todo", todoCount);
     setText("#daily-stat-risk", riskUnavailable ? "—" : riskCount);
     setText("#daily-stat-publish", publicationUnavailable ? "—" : publicationCount);
-    const totalManual = todoCount + doneItems.length;
+    const loadedManual = todoCount + doneItems.length;
+    const totalManual = Math.max(todoCount, Number(todoTotal) || 0) + Math.max(doneItems.length, Number(doneTotal) || 0);
+    const loadedHint = loadedManual < totalManual ? `（当前加载 ${loadedManual}/${totalManual} 条）` : "";
     setText("#daily-progress-summary", totalManual
-      ? `已完成 ${doneItems.length}/${totalManual} 项手动待办，优先清空高风险事项。`
+      ? `已完成 ${doneItems.length}/${totalManual} 项手动待办${loadedHint}，优先清空高风险事项。`
       : "从一条关键待办开始，风险与回流会自动汇总到这里。");
   }
 
@@ -329,7 +331,9 @@
     if (renderConnectionState(state)) return;
 
     const rows = [];
-    (state.riskItems || []).slice(0, 5).forEach((risk) => rows.push({ kind: "risk", node: buildAutoRow({
+    const riskItems = state.riskItems || [];
+    const publicationItems = state.publicationItems || [];
+    riskItems.slice(0, 5).forEach((risk) => rows.push({ kind: "risk", node: buildAutoRow({
       kind: "risk",
       title: risk.title,
       badge: "风险工单",
@@ -337,7 +341,7 @@
       actionLabel: "去处理",
       panelId: "#risk-ticket-panel"
     }) }));
-    (state.publicationItems || []).slice(0, 5).forEach((publication) => rows.push({ kind: "publication", node: buildAutoRow({
+    publicationItems.slice(0, 5).forEach((publication) => rows.push({ kind: "publication", node: buildAutoRow({
       kind: "publication",
       title: publication.title,
       badge: "待回流",
@@ -368,8 +372,13 @@
       state.riskUnavailable ? "风险工单" : "",
       state.publicationUnavailable ? "发布回流" : ""
     ].filter(Boolean);
+    const truncations = [];
+    if (!state.riskUnavailable && Number(state.riskTotal) > 5) truncations.push(`风险队列仅展示最近 5/${state.riskTotal} 条`);
+    if (!state.publicationUnavailable && Number(state.publicationTotal) > 5) truncations.push(`回流队列仅展示最近 5/${state.publicationTotal} 条`);
+    if (Number(state.todoTotal) > manualItems.length) truncations.push(`手动待办仅加载最近 ${manualItems.length}/${state.todoTotal} 条`);
+    if (Number(state.doneTotal) > doneItems.length) truncations.push(`已完成仅加载最近 ${doneItems.length}/${state.doneTotal} 条`);
     setConnection(unavailable.length ? "部分数据不可用 · 手动待办仍可用" : "已连接 · 队列实时汇总中", unavailable.length ? "warning" : "success");
-    setStatus(`已汇总 ${rows.length} 条待办${doneItems.length ? `，另有 ${doneItems.length} 条已完成` : ""}${unavailable.length ? `；${unavailable.join("、")}暂不可用` : ""}。`, unavailable.length ? "mock" : "real");
+    setStatus(`已汇总 ${rows.length} 条待办${doneItems.length ? `，另有 ${doneItems.length} 条已完成` : ""}${unavailable.length ? `；${unavailable.join("、")}暂不可用` : ""}${truncations.length ? `；${truncations.join("；")}` : ""}。`, unavailable.length || truncations.length ? "mock" : "real");
   };
 
   async function request(path, options) {
