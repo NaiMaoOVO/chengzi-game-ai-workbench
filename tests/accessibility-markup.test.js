@@ -114,6 +114,15 @@ test("export filenames use the Shanghai business date", () => {
   assert.doesNotMatch(app, /const date = new Date\(\)\.toISOString\(\)\.slice\(0, 10\)/);
 });
 
+test("hotspot timestamps use the Shanghai time zone", () => {
+  const start = app.indexOf("function renderTrendingList");
+  const end = app.indexOf("function generateRealTrendingInsight", start);
+  assert.ok(start >= 0 && end > start);
+  const source = app.slice(start, end);
+  assert.match(source, /timeZone: "Asia\/Shanghai"/);
+  assert.doesNotMatch(source, /now\.getFullYear\(\)/);
+});
+
 test("daily workbench aggregates every project while assigning new tasks to the current project", () => {
   const daily = fs.readFileSync(path.join(root, "daily-workbench.js"), "utf8");
 

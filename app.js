@@ -3917,9 +3917,17 @@ function renderTrendingList(gameName, platform, options = {}) {
   document.querySelector("#trending-game-label").textContent = gameName;
   document.querySelector("#trending-platform-label").textContent = platform;
 
-  const now = new Date();
+  const timestamp = new Intl.DateTimeFormat("zh-CN", {
+    timeZone: "Asia/Shanghai",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23"
+  }).format(new Date()).replace(/\//g, "-");
   document.querySelector("#trending-timestamp").textContent =
-    `更新于 ${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")} ${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+    `更新于 ${timestamp}`;
 
   if (sourceStatus) {
     sourceStatus.textContent = options.source === "real"
