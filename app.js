@@ -6374,7 +6374,12 @@ function loadProjectState() {
 
 function navigateToView(viewName) {
   if (!views[viewName]?.element) return;
-  document.querySelectorAll(".nav-button").forEach((item) => item.classList.toggle("active", item.dataset.view === viewName));
+  document.querySelectorAll(".nav-button").forEach((item) => {
+    const active = item.dataset.view === viewName;
+    item.classList.toggle("active", active);
+    if (active) item.setAttribute("aria-current", "page");
+    else item.removeAttribute("aria-current");
+  });
   document.querySelectorAll(".view").forEach((item) => item.classList.remove("active"));
   views[viewName].element.classList.add("active");
   document.querySelector("#view-title").textContent = views[viewName].title;

@@ -139,6 +139,15 @@ test("failed background snapshots can be retried without rerunning analysis", ()
   assert.match(app, /archiveSnapshot\(lastArchiveSnapshot\.kind/);
 });
 
+test("navigation exposes the active view to assistive technology", () => {
+  const start = app.indexOf("function navigateToView");
+  const end = app.indexOf("function collectListText", start);
+  assert.ok(start >= 0 && end > start);
+  const source = app.slice(start, end);
+  assert.match(source, /aria-current/);
+  assert.match(source, /removeAttribute\("aria-current"\)/);
+});
+
 test("daily workbench aggregates every project while assigning new tasks to the current project", () => {
   const daily = fs.readFileSync(path.join(root, "daily-workbench.js"), "utf8");
 
