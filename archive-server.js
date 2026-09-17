@@ -101,6 +101,14 @@ function textValue(value, field, maxLength, fallback = "") {
   return text;
 }
 
+function parseStoredObject(value) {
+  try {
+    const parsed = typeof value === "string" ? JSON.parse(value) : value;
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) return { value: parsed, valid: true };
+  } catch (_error) { /* 历史数据可能已损坏，交给调用方标记并降级。 */ }
+  return { value: {}, valid: false };
+}
+
 let db;
 let dbPath;
 try {
@@ -675,14 +683,19 @@ const server = http.createServer((request, response) => {
   }
   if (request.method === "GET" && url.pathname === "/profiles") {
     const rows = db.prepare("SELECT game, payload, updated_at FROM project_profiles WHERE owner_key = ? ORDER BY updated_at DESC").all(ownerKey);
-    sendJson(request, response, 200, { ok: true, profiles: rows.map((row) => ({ game: row.game, updated_at: row.updated_at, payload: JSON.parse(row.payload) })) });
+    const profiles = rows.map((row) => {
+      const parsed = parseStoredObject(row.payload);
+      return { game: row.game, updated_at: row.updated_at, payload: parsed.value, invalid: !parsed.valid };
+    });
+    sendJson(request, response, 200, { ok: true, profiles, invalid_count: profiles.filter((profile) => profile.invalid).length });
     return;
   }
   if (request.method === "GET" && url.pathname === "/profile") {
     const game = (url.searchParams.get("game") || "").trim();
     if (!game) { sendJson(request, response, 400, { ok: false, error: "game 参数必填" }); return; }
     const row = db.prepare("SELECT payload, updated_at FROM project_profiles WHERE owner_key = ? AND game = ?").get(ownerKey, game);
-    sendJson(request, response, 200, { ok: true, game, profile: row ? JSON.parse(row.payload) : null, updated_at: row ? row.updated_at : null });
+    const parsed = row ? parseStoredObject(row.payload) : { value: null, valid: true };
+    sendJson(request, response, 200, { ok: true, game, profile: parsed.value, invalid: row ? !parsed.valid : false, updated_at: row ? row.updated_at : null });
     return;
   }
   if (request.method === "GET" && url.pathname === "/latest") {

@@ -331,6 +331,16 @@ test("daily queue normalizes non-object JSON payloads before partial degradation
   assert.match(source, /payload && typeof payload === "object" && !Array\.isArray\(payload\)/);
 });
 
+test("project profile list surfaces archive failures and corrupted records", () => {
+  const start = app.indexOf("async function refreshProfileList");
+  const end = app.indexOf("async function saveCurrentProfile", start);
+  assert.ok(start >= 0 && end > start);
+  const source = app.slice(start, end);
+  assert.match(source, /if \(!response\.ok \|\| !data\.ok\)/);
+  assert.match(source, /item\.invalid/);
+  assert.match(source, /档案损坏/);
+});
+
 test("local service recovery waits for archive readiness and reloads the daily queue", () => {
   const daily = fs.readFileSync(path.join(root, "daily-workbench.js"), "utf8");
   assert.match(launcher, /function waitForArchiveService/);

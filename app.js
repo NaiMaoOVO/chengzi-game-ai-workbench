@@ -1432,9 +1432,12 @@ function fillGameInputs(game) {
 
 async function refreshProfileList() {
   const select = document.querySelector("#profile-select");
+  const status = document.querySelector("#profile-status");
   if (!select) return;
   try {
-    const data = await archiveRequest(ARCHIVE_SERVICE_URL + "/profiles", { cache: "no-store" }).then((r) => r.json());
+    const response = await archiveRequest(ARCHIVE_SERVICE_URL + "/profiles", { cache: "no-store" });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || !data.ok) throw new Error(data.error || "HTTP " + response.status);
     select.innerHTML = '';
     const placeholder = document.createElement("option");
     placeholder.value = "";
@@ -1443,11 +1446,15 @@ async function refreshProfileList() {
     for (const item of data.profiles || []) {
       const option = document.createElement("option");
       option.value = item.game;
-      option.textContent = item.game + "（" + (formatPublicationDate(item.updated_at) || "未知日期") + "）";
-      option.dataset.payload = JSON.stringify(item.payload);
+      option.textContent = item.game + (item.invalid ? "（档案损坏，请重新保存）" : "（" + (formatPublicationDate(item.updated_at) || "未知日期") + "）");
+      option.dataset.payload = JSON.stringify(item.payload && typeof item.payload === "object" && !Array.isArray(item.payload) ? item.payload : {});
+      option.dataset.invalid = item.invalid ? "1" : "";
       select.append(option);
     }
-  } catch (_error) { /* 存档服务不可用时静默 */ }
+    if (status) { status.textContent = data.invalid_count ? "项目档案：有 " + data.invalid_count + " 个档案数据损坏，请重新保存。" : "项目档案：已加载 " + (data.profiles || []).length + " 个档案。"; status.className = data.invalid_count ? "source-status source-mock" : "source-status source-real"; }
+  } catch (error) {
+    if (status) { status.textContent = "项目档案：读取失败（" + error.message + "）。"; status.className = "source-status source-mock"; }
+  }
 }
 
 async function saveCurrentProfile() {
