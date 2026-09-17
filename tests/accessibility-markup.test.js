@@ -331,6 +331,18 @@ test("daily queue normalizes non-object JSON payloads before partial degradation
   assert.match(source, /payload && typeof payload === "object" && !Array\.isArray\(payload\)/);
 });
 
+test("daily queue validates response item arrays before rendering", () => {
+  const start = app.indexOf("window.loadTodayTodos = async function loadTodayTodos");
+  const end = app.indexOf("let llmModelName", start);
+  assert.ok(start >= 0 && end > start);
+  const source = app.slice(start, end);
+  assert.match(source, /Array\.isArray\(risk\.payload\.items\)/);
+  assert.match(source, /Array\.isArray\(publication\.payload\.items\)/);
+  assert.match(source, /Array\.isArray\(manual\.payload\.items\)/);
+  assert.match(source, /Array\.isArray\(done\.payload\.items\)/);
+  assert.match(source, /Array\.isArray\(morning\.payload\.items\)/);
+});
+
 test("project profile list surfaces archive failures and corrupted records", () => {
   const start = app.indexOf("async function refreshProfileList");
   const end = app.indexOf("async function saveCurrentProfile", start);

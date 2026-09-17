@@ -1379,18 +1379,19 @@ window.loadTodayTodos = async function loadTodayTodos() {
         throw new Error(result.payload.error || "请求失败");
       }
     }
-    const riskUnavailable = !risk.response || !risk.response.ok || !risk.payload.ok;
-    const publicationUnavailable = !publication.response || !publication.response.ok || !publication.payload.ok;
-    const morningUnavailable = !morning.response || !morning.response.ok || !morning.payload.ok;
-    const riskItems = riskUnavailable ? [] : risk.payload.items || [];
-    const publicationItems = publicationUnavailable ? [] : publication.payload.items || [];
-    const manualItems = manual.payload.items || [];
-    const doneItems = done.payload.items || [];
+    const riskUnavailable = !risk.response || !risk.response.ok || !risk.payload.ok || !Array.isArray(risk.payload.items);
+    const publicationUnavailable = !publication.response || !publication.response.ok || !publication.payload.ok || !Array.isArray(publication.payload.items);
+    const morningUnavailable = !morning.response || !morning.response.ok || !morning.payload.ok || !Array.isArray(morning.payload.items);
+    const riskItems = riskUnavailable ? [] : risk.payload.items;
+    const publicationItems = publicationUnavailable ? [] : publication.payload.items;
+    if (!Array.isArray(manual.payload.items) || !Array.isArray(done.payload.items)) throw new Error("待办接口返回格式错误");
+    const manualItems = manual.payload.items;
+    const doneItems = done.payload.items;
     const publicationQueueItems = publicationItems.filter(publicationNeedsEffectBackfill);
     window.renderTodayTodos(manualItems.map((item) => ({ ...item, kind: "manual" })), {
-      riskCount: risk.payload.total ?? riskItems.length,
+      riskCount: riskUnavailable ? 0 : risk.payload.total ?? riskItems.length,
       publicationCount: publicationQueueItems.length,
-      riskTotal: risk.payload.total ?? riskItems.length,
+      riskTotal: riskUnavailable ? 0 : risk.payload.total ?? riskItems.length,
       publicationTotal: publicationQueueItems.length,
       riskUnavailable,
       publicationUnavailable,
@@ -1400,7 +1401,7 @@ window.loadTodayTodos = async function loadTodayTodos() {
       todoTotal: manual.payload.total ?? manualItems.length,
       doneItems,
       doneTotal: done.payload.total ?? doneItems.length,
-      morningRuns: morningUnavailable ? [] : morning.payload.items || [],
+      morningRuns: morningUnavailable ? [] : morning.payload.items,
       morningUnavailable
     });
   } catch (_error) {
