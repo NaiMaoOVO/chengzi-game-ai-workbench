@@ -1504,6 +1504,10 @@ function loadSelectedProfile() {
     if (status) { status.textContent = "项目档案：请先从下拉框选择一个已存档项目。"; status.className = "source-status source-mock"; }
     return;
   }
+  if (option.dataset.invalid === "1") {
+    if (status) { status.textContent = "项目档案：该档案数据损坏，无法载入，请重新保存。"; status.className = "source-status source-mock"; }
+    return;
+  }
   try {
     const profile = JSON.parse(option.dataset.payload || "{}");
     fillGameInputs(option.value);

@@ -341,6 +341,16 @@ test("project profile list surfaces archive failures and corrupted records", () 
   assert.match(source, /档案损坏/);
 });
 
+test("corrupted project profiles cannot be loaded as if they were restored", () => {
+  const start = app.indexOf("function loadSelectedProfile");
+  const end = app.indexOf('document.querySelector("#save-profile")', start);
+  assert.ok(start >= 0 && end > start);
+  const source = app.slice(start, end);
+  assert.match(source, /option\.dataset\.invalid/);
+  assert.match(source, /数据损坏/);
+  assert.match(source, /重新保存/);
+});
+
 test("briefing archive surfaces response failures and corrupted entries", () => {
   const renderStart = app.indexOf("function renderBriefArchiveItem");
   const renderEnd = app.indexOf("async function loadBriefingArchive", renderStart);
