@@ -341,6 +341,17 @@ test("project profile list surfaces archive failures and corrupted records", () 
   assert.match(source, /档案损坏/);
 });
 
+test("briefing archive surfaces response failures and corrupted entries", () => {
+  const renderStart = app.indexOf("function renderBriefArchiveItem");
+  const renderEnd = app.indexOf("async function loadBriefingArchive", renderStart);
+  const loadEnd = app.indexOf("document.querySelector(\"#generate-briefing\")", renderEnd);
+  assert.ok(renderStart >= 0 && renderEnd > renderStart && loadEnd > renderEnd);
+  assert.match(app.slice(renderStart, renderEnd), /briefing\.invalid/);
+  assert.match(app.slice(renderStart, renderEnd), /数据损坏/);
+  assert.match(app.slice(renderEnd, loadEnd), /if \(!response\.ok \|\| !payload\.ok\)/);
+  assert.match(app.slice(renderEnd, loadEnd), /历史读取失败/);
+});
+
 test("local service recovery waits for archive readiness and reloads the daily queue", () => {
   const daily = fs.readFileSync(path.join(root, "daily-workbench.js"), "utf8");
   assert.match(launcher, /function waitForArchiveService/);

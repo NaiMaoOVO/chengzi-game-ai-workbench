@@ -758,23 +758,28 @@ function renderBriefArchiveItem(briefing) {
   const entry = document.createElement("article");
   entry.className = "briefing-archive-item";
   const dateLabel = formatBusinessDateTime(briefing.created_at) || "未知时间";
-  const summary = (briefing.payload.topics || [])
+  const invalid = briefing.invalid === true;
+  const payload = briefing.payload && typeof briefing.payload === "object" && !Array.isArray(briefing.payload) ? briefing.payload : {};
+  const summary = invalid ? "存档数据损坏，请重新生成" : (payload.topics || [])
     .slice(0, 2)
     .map((topic) => escapeHtml(topic.title))
     .join("、") || "无热点条目";
   const button = document.createElement("button");
   button.className = "secondary-button";
   button.type = "button";
-  button.textContent = "查看";
-  button.addEventListener("click", () => {
-    lastBriefing = briefing.payload;
-    renderBriefing(briefing.payload);
-    const status = document.querySelector("#briefing-status");
-    if (status) {
-      status.textContent = `简报状态：已载入 ${dateLabel} 的存档（${briefing.source === "real" ? "真实数据" : "样例数据"}）。`;
-      status.className = "source-status source-real";
-    }
-  });
+  button.textContent = invalid ? "数据损坏" : "查看";
+  button.disabled = invalid;
+  if (!invalid) {
+    button.addEventListener("click", () => {
+      lastBriefing = payload;
+      renderBriefing(payload);
+      const status = document.querySelector("#briefing-status");
+      if (status) {
+        status.textContent = `简报状态：已载入 ${dateLabel} 的存档（${briefing.source === "real" ? "真实数据" : "样例数据"}）。`;
+        status.className = "source-status source-real";
+      }
+    });
+  }
   const text = document.createElement("div");
   text.innerHTML = `<strong>${escapeHtml(dateLabel)} · ${escapeHtml(briefing.game)}</strong><small>${summary}</small>`;
   entry.append(text, button);
@@ -783,19 +788,28 @@ function renderBriefArchiveItem(briefing) {
 
 async function loadBriefingArchive() {
   const container = document.querySelector("#briefing-archive-list");
+  const status = document.querySelector("#briefing-status");
   if (!container) return;
   try {
     const response = await archiveRequest(ARCHIVE_SERVICE_URL + "/snapshots?kind=briefing&limit=7", { cache: "no-store" });
-    const payload = await response.json();
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || !payload.ok) throw new Error(payload.error || "HTTP " + response.status);
     container.innerHTML = "";
-    for (const item of payload.items || []) {
+    const items = Array.isArray(payload.items) ? payload.items : [];
+    for (const item of items) {
       renderBriefArchiveItem({ ...item, payload: item.payload });
     }
-    if (!(payload.items || []).length) {
+    if (!items.length) {
       container.innerHTML = '<p class="muted-copy">暂无历史简报。生成并存档后，这里会保留最近 7 份。</p>';
     }
-  } catch (_error) {
+    const invalidCount = items.filter((item) => item.invalid === true).length;
+    if (status) {
+      status.textContent = invalidCount ? "简报状态：历史中有 " + invalidCount + " 份存档损坏，请重新生成。" : "简报状态：已加载最近 " + items.length + " 份存档。";
+      status.className = invalidCount ? "source-status source-mock" : "source-status source-real";
+    }
+  } catch (error) {
     container.innerHTML = '<p class="muted-copy">存档服务不可用（本机 8796 端口）。历史回看功能需在本地模式运行存档服务。</p>';
+    if (status) { status.textContent = "简报状态：历史读取失败（" + error.message + "）。"; status.className = "source-status source-mock"; }
   }
 }
 
