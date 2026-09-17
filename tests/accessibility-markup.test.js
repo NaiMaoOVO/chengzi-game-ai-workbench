@@ -95,6 +95,12 @@ test("background snapshot writes expose success and failure instead of swallowin
   assert.doesNotMatch(app, /存档失败不影响主流程/);
 });
 
+test("background snapshots use a stable daily idempotency key", () => {
+  assert.match(app, /function snapshotRequestId/);
+  assert.match(app, /archiveSnapshot[\s\S]{0,1200}Idempotency-Key/);
+  assert.match(app, /snapshot-\$\{kind\}-\$\{businessDate\(\)\}/);
+});
+
 test("daily workbench aggregates every project while assigning new tasks to the current project", () => {
   const daily = fs.readFileSync(path.join(root, "daily-workbench.js"), "utf8");
 

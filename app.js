@@ -572,13 +572,23 @@ function setArchiveSyncStatus(text, tone = "") {
   status.className = "archive-sync-status source-status" + (tone === "real" ? " source-real" : tone === "mock" ? " source-mock" : "");
 }
 
+function snapshotRequestId(kind, game, payload) {
+  const source = JSON.stringify({ kind, game, payload });
+  let hash = 0;
+  for (let index = 0; index < source.length; index += 1) hash = (hash * 31 + source.charCodeAt(index)) >>> 0;
+  return `snapshot-${kind}-${businessDate()}-${hash.toString(36)}`;
+}
+
 function archiveSnapshot(kind, game, payload) {
   const label = kind === "feedback" ? "反馈" : kind === "trending" ? "热点" : kind;
   const body = JSON.stringify({ kind, game, source: payload.source || "sample", payload });
   setArchiveSyncStatus(`存档：正在保存${label}数据…`);
   archiveRequest(ARCHIVE_SERVICE_URL + "/snapshots", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      "Idempotency-Key": snapshotRequestId(kind, game, payload)
+    },
     body
   }).then(async (response) => {
     const result = await response.json().catch(() => ({}));
