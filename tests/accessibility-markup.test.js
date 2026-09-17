@@ -132,6 +132,13 @@ test("published dates use the Shanghai business date", () => {
   assert.doesNotMatch(source, /date\.getFullYear\(\)/);
 });
 
+test("failed background snapshots can be retried without rerunning analysis", () => {
+  assert.match(html, /id="retry-archive-sync"[^>]*hidden/);
+  assert.match(app, /let lastArchiveSnapshot = null/);
+  assert.match(app, /retry-archive-sync/);
+  assert.match(app, /archiveSnapshot\(lastArchiveSnapshot\.kind/);
+});
+
 test("daily workbench aggregates every project while assigning new tasks to the current project", () => {
   const daily = fs.readFileSync(path.join(root, "daily-workbench.js"), "utf8");
 

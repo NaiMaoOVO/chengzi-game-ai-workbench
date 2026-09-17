@@ -1511,6 +1511,10 @@ a.trending-title:hover {
   margin: -10px 0 18px;
 }
 
+.archive-sync-retry {
+  margin: -8px 0 18px;
+}
+
 .source-real {
   color: var(--accent);
 }

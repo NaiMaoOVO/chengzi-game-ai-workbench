@@ -565,11 +565,16 @@ function gamePlatformLabel() {
   return document.querySelector("#trending-platform")?.value || "B站";
 }
 
+let lastArchiveSnapshot = null;
+
 function setArchiveSyncStatus(text, tone = "") {
   const status = document.querySelector("#archive-sync-status");
-  if (!status) return;
-  status.textContent = text;
-  status.className = "archive-sync-status source-status" + (tone === "real" ? " source-real" : tone === "mock" ? " source-mock" : "");
+  const retry = document.querySelector("#retry-archive-sync");
+  if (status) {
+    status.textContent = text;
+    status.className = "archive-sync-status source-status" + (tone === "real" ? " source-real" : tone === "mock" ? " source-mock" : "");
+  }
+  if (retry) retry.hidden = tone !== "mock";
 }
 
 function snapshotRequestId(kind, game, payload) {
@@ -581,6 +586,7 @@ function snapshotRequestId(kind, game, payload) {
 
 function archiveSnapshot(kind, game, payload) {
   const label = kind === "feedback" ? "反馈" : kind === "trending" ? "热点" : kind;
+  lastArchiveSnapshot = { kind, game, payload };
   const body = JSON.stringify({ kind, game, source: payload.source || "sample", payload });
   setArchiveSyncStatus(`存档：正在保存${label}数据…`);
   archiveRequest(ARCHIVE_SERVICE_URL + "/snapshots", {
@@ -601,6 +607,11 @@ function archiveSnapshot(kind, game, payload) {
     return null;
   });
 }
+
+document.querySelector("#retry-archive-sync")?.addEventListener("click", () => {
+  if (!lastArchiveSnapshot) return;
+  archiveSnapshot(lastArchiveSnapshot.kind, lastArchiveSnapshot.game, lastArchiveSnapshot.payload);
+});
 
 let llmServiceState = "down";
 
