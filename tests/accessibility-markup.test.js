@@ -233,6 +233,21 @@ test("creator library import confirms browser storage persistence", () => {
   assert.match(source, /存储空间不足/);
 });
 
+test("creator effect backfill reports personal-library persistence failures", () => {
+  const backfillStart = app.indexOf("function syncCreatorBackfillToLibrary");
+  const backfillEnd = app.indexOf("function creatorLibraryOption", backfillStart);
+  const recalcStart = app.indexOf("function recalcWithBackfill");
+  const recalcEnd = app.indexOf("document.querySelector(\"#caliber-trigger\")", recalcStart);
+  assert.ok(backfillStart >= 0 && backfillEnd > backfillStart);
+  assert.ok(recalcStart >= 0 && recalcEnd > recalcStart);
+  const backfillSource = app.slice(backfillStart, backfillEnd);
+  const recalcSource = app.slice(recalcStart, recalcEnd);
+  assert.match(backfillSource, /const persisted = writeCreatorLibrary\(library\)/);
+  assert.match(backfillSource, /return persisted/);
+  assert.match(recalcSource, /backfillPersistenceFailures/);
+  assert.match(recalcSource, /个人库/);
+});
+
 test("daily workbench aggregates every project while assigning new tasks to the current project", () => {
   const daily = fs.readFileSync(path.join(root, "daily-workbench.js"), "utf8");
 

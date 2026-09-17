@@ -5078,7 +5078,7 @@ function syncCreatorBackfillToLibrary(row, patch) {
   const resolved = findCreatorProfile(library, row, true);
   const key = resolved.key;
   const profile = resolved.profile;
-  if (!profile) return;
+  if (!profile) return true;
   const now = new Date().toISOString();
   const collaborations = Array.isArray(profile.collaborations) ? [...profile.collaborations] : [];
   const project = document.querySelector("#creator-game")?.value.trim() || "未命名项目";
@@ -5117,7 +5117,8 @@ function syncCreatorBackfillToLibrary(row, patch) {
     updatedAt: now,
     snapshot: creatorSnapshot(snapshotRow)
   };
-  writeCreatorLibrary(library);
+  const persisted = writeCreatorLibrary(library);
+  return persisted;
 }
 
 function creatorLibraryOption(value) {
@@ -7356,11 +7357,12 @@ function recalcWithBackfill() {
   if (!currentCreatorRows.length) analyzeCreators();
   const backfillMap = new Map(backfills.map((item) => [creatorNameKey(item.name), item]));
   let matched = 0;
+  let backfillPersistenceFailures = 0;
   const updatedRows = currentCreatorRows.map((row) => {
     const patch = backfillMap.get(creatorNameKey(row.name));
     if (!patch) return row;
     matched += 1;
-    syncCreatorBackfillToLibrary(row, patch);
+    if (!syncCreatorBackfillToLibrary(row, patch)) backfillPersistenceFailures += 1;
     return {
       ...row,
       ...(patch.avgViews ? { avgViews: patch.avgViews } : {}),
@@ -7387,8 +7389,8 @@ function recalcWithBackfill() {
   }
   analyzeCreators(updatedRows);
   if (status) {
-    status.textContent = `达人来源：已按 ${matched} 位达人实测数据更新评分和性价比排序。`;
-    status.className = "source-real";
+    status.textContent = `达人来源：已按 ${matched} 位达人实测数据更新评分和性价比排序。${backfillPersistenceFailures ? `另有 ${backfillPersistenceFailures} 位回填未写入个人库，请检查浏览器存储空间。` : ""}`;
+    status.className = backfillPersistenceFailures ? "source-status source-mock" : "source-status source-real";
   }
 }
 
