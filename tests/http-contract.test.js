@@ -430,6 +430,15 @@ test("archive: identity, malformed Host -> 400, disallowed Origin -> 403, wrong 
       body: "{oops"
     });
     assert.equal(badJson.status, 400);
+
+    const invalidShape = await httpRequest(port, "/snapshots", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: "null"
+    });
+    assert.equal(invalidShape.status, 400);
+    assert.equal(JSON.parse(invalidShape.text).error, "请求体必须是 JSON 对象");
+    assert.equal((await httpRequest(port, "/health")).status, 200, "非法 JSON 形状不应让存档服务失活");
   });
 });
 

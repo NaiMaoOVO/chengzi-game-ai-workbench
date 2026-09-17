@@ -1157,6 +1157,10 @@ const server = http.createServer((request, response) => {
       sendJson(request, response, 400, { error: "请求体不是合法 JSON" });
       return;
     }
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      sendJson(request, response, 400, { error: "请求体必须是 JSON 对象" });
+      return;
+    }
     const kind = typeof body.kind === "string" ? body.kind.trim() : "";
     if (!KIND_PATTERN.test(kind)) {
       sendJson(request, response, 400, { error: "kind 不合法（小写字母开头的短标识）" });
