@@ -732,7 +732,7 @@ const server = http.createServer((request, response) => {
         const body = JSON.parse(Buffer.concat(chunksP).toString("utf8"));
         const game = textValue(body.game, "game", 60);
         if (!game) { sendJson(request, response, 400, { error: "game 必填" }); return; }
-        if (!body.profile || typeof body.profile !== "object") { sendJson(request, response, 400, { error: "profile 必须是对象" }); return; }
+        if (!body.profile || typeof body.profile !== "object" || Array.isArray(body.profile)) { sendJson(request, response, 400, { error: "profile 必须是对象" }); return; }
         db.prepare("INSERT INTO project_profiles (owner_key, game, payload, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT(owner_key, game) DO UPDATE SET payload = excluded.payload, updated_at = excluded.updated_at")
           .run(ownerKey, game, JSON.stringify(body.profile), new Date().toISOString());
         sendJson(request, response, 200, { ok: true, game });

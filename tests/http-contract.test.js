@@ -50,6 +50,12 @@ const serviceCases = [
         assert.equal(putProfile.status, 200);
         const gotProfile = await fetch(`http://127.0.0.1:${port}/profile?game=${encodeURIComponent("冒烟游戏")}`).then((r) => r.json());
         assert.equal(gotProfile.profile.competitors[0], "竞品A");
+        const arrayProfile = await fetch(`http://127.0.0.1:${port}/profile`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ game: "数组档案", profile: [] })
+        });
+        assert.equal(arrayProfile.status, 400);
         const morningRuns = await fetch(`http://127.0.0.1:${port}/morning-runs?limit=10`).then((r) => r.json());
         assert.equal(morningRuns.ok, true);
         assert.ok(Array.isArray(morningRuns.items));
@@ -92,6 +98,7 @@ for (const [index, item] of serviceCases.entries()) {
       const cors = await fetch(`http://127.0.0.1:${port}/health`, { headers: { Origin: "null" } });
       assert.equal(cors.ok, true, `${item.script} 应接受 file:// 页面的 null Origin`);
       assert.equal(cors.headers.get("access-control-allow-origin"), "null");
+      if (item.extraCheck) await item.extraCheck(port);
     } catch (error) {
       assert.fail(`${error.message}\nstderr: ${stderrText.slice(-800)}`);
     } finally {
