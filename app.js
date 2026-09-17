@@ -1186,12 +1186,27 @@ const RISK_TICKET_STATUS_LABELS = {
 };
 
 let currentRiskTickets = [];
+const riskTicketMutationGuard = new Set();
 
 function setRiskTicketStatus(text, tone) {
   const status = document.querySelector("#risk-ticket-status");
   if (!status) return;
   status.textContent = "风险工单：" + text;
   status.className = "source-status" + (tone === "real" ? " source-real" : tone === "mock" ? " source-mock" : "");
+}
+
+function beginRiskTicketMutation(id) {
+  const mutationKey = String(id);
+  if (riskTicketMutationGuard.has(mutationKey)) {
+    setRiskTicketStatus("该工单正在处理中，请稍候。", "mock");
+    return null;
+  }
+  riskTicketMutationGuard.add(mutationKey);
+  return mutationKey;
+}
+
+function finishRiskTicketMutation(mutationKey) {
+  if (mutationKey) riskTicketMutationGuard.delete(mutationKey);
 }
 
 function riskTicketRequestId(game, event) {
@@ -1320,6 +1335,8 @@ async function loadRiskTickets() {
 
 async function updateRiskTicketStatus(id, nextStatus) {
   const item = currentRiskTickets.find((entry) => entry.id === id);
+  const mutationKey = beginRiskTicketMutation(id);
+  if (!mutationKey) return;
   setRiskTicketStatus("正在更新「" + (item && item.title ? item.title : "工单 #" + id) + "」状态…", "");
   try {
     const response = await archiveRequest(ARCHIVE_SERVICE_URL + "/risk-events/" + id, {
@@ -1333,11 +1350,15 @@ async function updateRiskTicketStatus(id, nextStatus) {
     await loadRiskTickets();
   } catch (error) {
     setRiskTicketStatus("状态更新失败（" + error.message + "）。", "mock");
+  } finally {
+    finishRiskTicketMutation(mutationKey);
   }
 }
 
 async function deleteRiskTicket(id) {
   const item = currentRiskTickets.find((entry) => entry.id === id);
+  const mutationKey = beginRiskTicketMutation(id);
+  if (!mutationKey) return;
   try {
     const response = await archiveRequest(ARCHIVE_SERVICE_URL + "/risk-events/" + id, { method: "DELETE" });
     const payload = await response.json().catch(() => ({}));
@@ -1346,6 +1367,8 @@ async function deleteRiskTicket(id) {
     await loadRiskTickets();
   } catch (error) {
     setRiskTicketStatus("删除失败（" + error.message + "）。", "mock");
+  } finally {
+    finishRiskTicketMutation(mutationKey);
   }
 }
 

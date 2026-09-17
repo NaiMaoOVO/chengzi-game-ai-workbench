@@ -397,6 +397,16 @@ test("publication and risk list refreshes ignore stale responses", () => {
   assert.match(app.slice(riskStart, riskEnd), /riskTicketListRequestGuard\.isCurrent\(/);
 });
 
+test("risk ticket mutations are single-flight per ticket", () => {
+  const updateStart = app.indexOf("async function updateRiskTicketStatus");
+  const deleteStart = app.indexOf("async function deleteRiskTicket", updateStart);
+  const deleteEnd = app.indexOf("document.querySelector(\"#query-risk-tickets\")", deleteStart);
+  assert.ok(updateStart >= 0 && deleteStart > updateStart && deleteEnd > deleteStart);
+  assert.match(app, /const riskTicketMutationGuard = new Set\(\)/);
+  assert.match(app.slice(updateStart, deleteEnd), /beginRiskTicketMutation\(id\)/);
+  assert.match(app.slice(updateStart, deleteEnd), /finishRiskTicketMutation\(mutationKey\)/);
+});
+
 test("briefing archive surfaces response failures and corrupted entries", () => {
   const renderStart = app.indexOf("function renderBriefArchiveItem");
   const renderEnd = app.indexOf("async function loadBriefingArchive", renderStart);
