@@ -82,6 +82,7 @@ let currentTrendingTopics = [];
 let selectedTrendingIndex = 0;
 const trendingRequestGuard = createGenerationGuard();
 const serviceModeGuard = createGenerationGuard();
+const todayTodosRequestGuard = createGenerationGuard();
 let currentFeedbackRows = [];
 const FEEDBACK_XHS_SOURCE = "小红书笔记";
 let feedbackImportTarget = "bili";
@@ -1349,6 +1350,7 @@ function publicationNeedsEffectBackfill(item) {
 
 window.loadTodayTodos = async function loadTodayTodos() {
   if (!window.renderTodayTodos) return;
+  const requestGeneration = todayTodosRequestGuard.next();
   window.renderTodayTodos([], { loading: true });
   try {
     const results = await Promise.allSettled([
@@ -1367,6 +1369,7 @@ window.loadTodayTodos = async function loadTodayTodos() {
       };
     };
     const [risk, publication, manual, done, morning] = await Promise.all(results.map(readResult));
+    if (!todayTodosRequestGuard.isCurrent(requestGeneration)) return;
     if ([risk, publication, manual, done, morning].some(({ response }) => response?.status === 401)) {
       window.renderTodayTodos([], { authRequired: true });
       return;
@@ -1401,7 +1404,7 @@ window.loadTodayTodos = async function loadTodayTodos() {
       morningUnavailable
     });
   } catch (_error) {
-    window.renderTodayTodos([], { error: true });
+    if (todayTodosRequestGuard.isCurrent(requestGeneration)) window.renderTodayTodos([], { error: true });
   }
 };
 

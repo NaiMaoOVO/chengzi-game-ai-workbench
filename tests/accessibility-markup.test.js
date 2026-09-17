@@ -352,6 +352,16 @@ test("briefing archive surfaces response failures and corrupted entries", () => 
   assert.match(app.slice(renderEnd, loadEnd), /历史读取失败/);
 });
 
+test("daily queue ignores stale concurrent refresh responses", () => {
+  const start = app.indexOf("window.loadTodayTodos = async function loadTodayTodos");
+  const end = app.indexOf("let llmModelName", start);
+  assert.ok(start >= 0 && end > start);
+  const source = app.slice(start, end);
+  assert.match(app, /const todayTodosRequestGuard = createGenerationGuard\(\)/);
+  assert.match(source, /todayTodosRequestGuard\.next\(\)/);
+  assert.match(source, /todayTodosRequestGuard\.isCurrent\(/);
+});
+
 test("local service recovery waits for archive readiness and reloads the daily queue", () => {
   const daily = fs.readFileSync(path.join(root, "daily-workbench.js"), "utf8");
   assert.match(launcher, /function waitForArchiveService/);
