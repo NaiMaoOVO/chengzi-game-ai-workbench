@@ -38,11 +38,16 @@ function computeStats(kind, days, game, ownerKey) {
   const byDay = new Map();
   for (const row of rows) {
     const key = dayKey(row.created_at);
-    if (!byDay.has(key)) byDay.set(key, { date: key, count: 0, realCount: 0, extra: { negative: 0, samples: 0, highRisk: 0, topics: 0 } });
+    if (!byDay.has(key)) byDay.set(key, { date: key, count: 0, realCount: 0, extra: { negative: 0, samples: 0, highRisk: 0, topics: 0, invalid: 0 } });
     const entry = byDay.get(key);
     entry.count += 1;
     if (row.source === "real") entry.realCount += 1;
-    const p = typeof row.payload === "string" ? JSON.parse(row.payload) : (row.payload || {});
+    const parsed = parseStoredObject(row.payload);
+    if (!parsed.valid) {
+      entry.extra.invalid += 1;
+      continue;
+    }
+    const p = parsed.value;
     if (kind === "feedback") {
       const s = p.sentiment || {};
       const total = (s["正向"] || 0) + (s["中性"] || 0) + (s["负向"] || 0);
@@ -345,7 +350,10 @@ function listSnapshots(url, ownerKey) {
   const rows = game
     ? db.prepare("SELECT id, kind, game, source, payload, created_at FROM snapshots WHERE owner_key = ? AND kind = ? AND game = ? ORDER BY id DESC LIMIT ?").all(ownerKey, kind, game, limit)
     : db.prepare("SELECT id, kind, game, source, payload, created_at FROM snapshots WHERE owner_key = ? AND kind = ? ORDER BY id DESC LIMIT ?").all(ownerKey, kind, limit);
-  return rows.map((row) => ({ ...row, payload: JSON.parse(row.payload) }));
+  return rows.map((row) => {
+    const parsed = parseStoredObject(row.payload);
+    return { ...row, payload: parsed.value, invalid: !parsed.valid };
+  });
 }
 
 function latestSnapshot(url, ownerKey) {
@@ -355,7 +363,9 @@ function latestSnapshot(url, ownerKey) {
   const row = game
     ? db.prepare("SELECT id, kind, game, source, payload, created_at FROM snapshots WHERE owner_key = ? AND kind = ? AND game = ? ORDER BY id DESC LIMIT 1").get(ownerKey, kind, game)
     : db.prepare("SELECT id, kind, game, source, payload, created_at FROM snapshots WHERE owner_key = ? AND kind = ? ORDER BY id DESC LIMIT 1").get(ownerKey, kind);
-  return row ? { ...row, payload: JSON.parse(row.payload) } : null;
+  if (!row) return null;
+  const parsed = parseStoredObject(row.payload);
+  return { ...row, payload: parsed.value, invalid: !parsed.valid };
 }
 
 function creatorLibraryOwner(session) { return recordOwner(session); }

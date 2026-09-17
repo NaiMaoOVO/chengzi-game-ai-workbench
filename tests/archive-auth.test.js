@@ -14,6 +14,7 @@ const databasePath = path.join(os.tmpdir(), "gameops-archive-auth-" + process.pi
 const seedDb = new DatabaseSync(databasePath);
 seedDb.exec("CREATE TABLE creator_libraries (owner_key TEXT PRIMARY KEY, payload TEXT NOT NULL, updated_at TEXT NOT NULL); INSERT INTO creator_libraries VALUES ('default', '{\"demo-key\":{\"name\":\"旧个人库\"}}', '2026-09-15T00:00:00.000Z');");
 seedDb.exec("CREATE TABLE project_profiles (owner_key TEXT NOT NULL DEFAULT 'default', game TEXT NOT NULL, payload TEXT NOT NULL, updated_at TEXT NOT NULL, PRIMARY KEY (owner_key, game)); INSERT INTO project_profiles VALUES ('default', '损坏档案', '{not-json', '2026-09-15T00:00:00.000Z');");
+seedDb.exec("CREATE TABLE snapshots (id INTEGER PRIMARY KEY AUTOINCREMENT, owner_key TEXT NOT NULL DEFAULT 'default', kind TEXT NOT NULL, game TEXT NOT NULL DEFAULT '', source TEXT NOT NULL DEFAULT 'sample', payload TEXT NOT NULL, request_id TEXT, created_at TEXT NOT NULL); INSERT INTO snapshots (owner_key, kind, game, source, payload, created_at) VALUES ('default', 'corrupt', '损坏快照', 'sample', '{not-json', '2026-09-15T00:00:00.000Z');");
 seedDb.exec("CREATE TABLE morning_runs (owner_key TEXT NOT NULL DEFAULT 'default', run_date TEXT NOT NULL, game TEXT NOT NULL, platform TEXT NOT NULL, status TEXT NOT NULL, started_at TEXT NOT NULL, finished_at TEXT, error TEXT NOT NULL DEFAULT '', PRIMARY KEY (run_date, game, platform)); INSERT INTO morning_runs (owner_key, run_date, game, platform, status, started_at) VALUES ('user:999', '2026-09-18', '他人私有游戏', 'B站', 'success', '2026-09-18T01:00:00.000Z');");
 seedDb.close();
 
@@ -116,6 +117,18 @@ test("archive auth requires login, CSRF, and keeps each account's data private",
   assert.equal(corruptedProfile.status, 200);
   assert.deepEqual(corruptedProfile.payload.profile, {});
   assert.equal(corruptedProfile.payload.invalid, true);
+
+  const corruptedSnapshots = await request("/snapshots?kind=corrupt", { headers: { Cookie: adminCookie } });
+  assert.equal(corruptedSnapshots.status, 200);
+  assert.deepEqual(corruptedSnapshots.payload.items[0].payload, {});
+  assert.equal(corruptedSnapshots.payload.items[0].invalid, true);
+  const corruptedLatest = await request("/latest?kind=corrupt", { headers: { Cookie: adminCookie } });
+  assert.equal(corruptedLatest.status, 200);
+  assert.deepEqual(corruptedLatest.payload.snapshot.payload, {});
+  assert.equal(corruptedLatest.payload.snapshot.invalid, true);
+  const corruptedStats = await request("/stats?kind=corrupt&days=30", { headers: { Cookie: adminCookie } });
+  assert.equal(corruptedStats.status, 200);
+  assert.equal(corruptedStats.payload.series[0].extra.invalid, 1);
 
   const migratedMorningSchema = new DatabaseSync(databasePath);
   const morningPrimaryKey = migratedMorningSchema.prepare("PRAGMA table_info(morning_runs)").all()
