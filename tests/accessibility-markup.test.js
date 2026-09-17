@@ -313,6 +313,16 @@ test("publication and risk ticket writes carry idempotency keys", () => {
   assert.match(app.slice(riskStart, riskEnd), /Idempotency-Key/);
 });
 
+test("daily publication backfill includes supported Bilibili and Xiaohongshu channels", () => {
+  const start = app.indexOf("function publicationNeedsEffectBackfill");
+  const end = app.indexOf("window.loadTodayTodos", start);
+  assert.ok(start >= 0 && end > start);
+  const source = app.slice(start, end);
+  assert.match(source, /item\.channel !== "B站" && item\.channel !== "小红书"/);
+  assert.match(source, /item\.channel === "小红书"[\s\S]*metrics\.likes/);
+  assert.match(source, /metrics\.view/);
+});
+
 test("local service recovery waits for archive readiness and reloads the daily queue", () => {
   const daily = fs.readFileSync(path.join(root, "daily-workbench.js"), "utf8");
   assert.match(launcher, /function waitForArchiveService/);

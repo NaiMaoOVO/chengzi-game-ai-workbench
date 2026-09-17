@@ -1327,10 +1327,10 @@ document.querySelector("#refresh-risk-tickets")?.addEventListener("click", loadR
 loadRiskTickets();
 
 function publicationNeedsEffectBackfill(item) {
-  if (!item || item.channel !== "B站") return false;
+  if (!item || item.channel !== "B站" && item.channel !== "小红书") return false;
   if (!safeExternalUrl(item.url)) return false;
   const metrics = item.metrics_json && typeof item.metrics_json === "object" ? item.metrics_json : {};
-  return metrics.view === undefined;
+  return item.channel === "小红书" ? metrics.likes === undefined : metrics.view === undefined;
 }
 
 window.loadTodayTodos = async function loadTodayTodos() {
