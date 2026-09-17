@@ -5324,7 +5324,8 @@ function importCreatorLibrary(event) {
         imported += 1;
       });
       if (!imported) throw new Error("没有识别到有效创作者");
-      writeCreatorLibrary(library);
+      const persisted = writeCreatorLibrary(library);
+      if (!persisted) throw new Error("浏览器存储空间不足，无法导入个人库");
       renderCreatorLibrary();
       renderCreatorTable(currentCreatorRows, document.querySelector("#creator-goal")?.value || "launch", document.querySelector("#creator-activity")?.value || "newLaunch");
       if (status) {

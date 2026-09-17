@@ -209,6 +209,15 @@ test("project save reports unavailable browser storage instead of throwing", () 
   assert.match(source, /保存失败/);
 });
 
+test("creator library import confirms browser storage persistence", () => {
+  const start = app.indexOf("function importCreatorLibrary");
+  const end = app.indexOf("function mergeCreatorLibraries", start);
+  assert.ok(start >= 0 && end > start);
+  const source = app.slice(start, end);
+  assert.match(source, /const persisted = writeCreatorLibrary\(library\)/);
+  assert.match(source, /存储空间不足/);
+});
+
 test("daily workbench aggregates every project while assigning new tasks to the current project", () => {
   const daily = fs.readFileSync(path.join(root, "daily-workbench.js"), "utf8");
 
