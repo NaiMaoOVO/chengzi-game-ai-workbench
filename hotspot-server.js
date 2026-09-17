@@ -7,6 +7,7 @@ const { parseRequestUrl } = require("./lib/safe-request-url");
 const { createRateLimiter, createRetryBudget } = require("./lib/http-guards");
 const { createFetchWithRetry } = require("./lib/fetch-with-retry");
 const { createCors } = require("./lib/cors");
+const { businessDate } = require("./lib/business-date");
 const PORT = Number(process.env.HOTSPOT_PORT || 8790);
 const BILIBILI_SEARCH_URL = "https://api.bilibili.com/x/web-interface/search/type";
 const BILIBILI_HTML_SEARCH_URL = "https://search.bilibili.com/video";
@@ -133,7 +134,7 @@ function rangeToSeconds(range) {
   let start;
 
   if (range === "today") {
-    start = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0);
+    start = new Date(`${businessDate(now)}T00:00:00+08:00`);
   } else {
     const hours = {
       "24h": 24,

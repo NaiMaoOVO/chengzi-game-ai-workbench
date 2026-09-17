@@ -1,7 +1,10 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const path = require("node:path");
 
 const { calculateHeatScore, rankHotspots } = require("../lib/hotspot-ranking");
+const hotspotServer = fs.readFileSync(path.join(__dirname, "..", "hotspot-server.js"), "utf8");
 
 test("low-view abnormal engagement cannot outrank a healthy popular video", () => {
   const now = Math.floor(Date.now() / 1000);
@@ -23,4 +26,10 @@ test("near-duplicate promotional titles occupy only one ranking slot", () => {
 
   assert.equal(codePosts.length, 1);
   assert.equal(ranked[0].title, "原神7.0版本深度评测与配队建议");
+});
+
+test("hotspot today range starts at the Shanghai business midnight", () => {
+  assert.match(hotspotServer, /const \{ businessDate \} = require\("\.\/lib\/business-date"\)/);
+  assert.match(hotspotServer, /new Date\(`\$\{businessDate\(now\)\}T00:00:00\+08:00`\)/);
+  assert.doesNotMatch(hotspotServer, /new Date\(now\.getFullYear\(\), now\.getMonth\(\), now\.getDate\(\)/);
 });
