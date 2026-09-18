@@ -270,6 +270,15 @@ test("creator library import confirms browser storage persistence", () => {
   assert.match(source, /存储空间不足/);
 });
 
+test("creator library sync blocks corrupt remote archives before writing", () => {
+  const start = app.indexOf("async function syncCreatorLibrary");
+  const end = app.indexOf("function explainCreatorScore", start);
+  assert.ok(start >= 0 && end > start);
+  const source = app.slice(start, end);
+  assert.match(source, /remote\.invalid/);
+  assert.match(source, /已阻止覆盖/);
+});
+
 test("creator effect backfill reports personal-library persistence failures", () => {
   const backfillStart = app.indexOf("function syncCreatorBackfillToLibrary");
   const backfillEnd = app.indexOf("function creatorLibraryOption", backfillStart);
