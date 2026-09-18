@@ -119,9 +119,19 @@
     return `daily-todo-${hash.toString(36)}`;
   }
 
+  function isCalendarDate(value) {
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+    if (!match) return false;
+    const year = Number(match[1]);
+    const month = Number(match[2]);
+    const day = Number(match[3]);
+    const date = new Date(Date.UTC(year, month - 1, day));
+    return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day;
+  }
+
   function dueState(item, referenceDate = today()) {
     const dueDate = typeof item?.due_date === "string" ? item.due_date.trim() : "";
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(dueDate)) return "unscheduled";
+    if (!isCalendarDate(dueDate)) return "unscheduled";
     if (dueDate < referenceDate) return "overdue";
     if (dueDate === referenceDate) return "today";
     return "future";
