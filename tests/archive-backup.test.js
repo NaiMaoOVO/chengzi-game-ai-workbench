@@ -77,3 +77,16 @@ test("archive backup verification accepts intact files and rejects tampering", (
   assert.match(invalid.stderr, /校验失败/);
   fs.rmSync(dir, { recursive: true, force: true });
 });
+
+test("archive backup verification rejects a checksum-valid non-SQLite file", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "gameops-backup-invalid-db-test-"));
+  const file = path.join(dir, "archive-invalid.db");
+  fs.writeFileSync(file, "not a sqlite database");
+  const digest = crypto.createHash("sha256").update(fs.readFileSync(file)).digest("hex");
+  fs.writeFileSync(file + ".sha256", digest + "  archive-invalid.db\n");
+  const verifier = path.join(root, "scripts", "verify-archive-backup.js");
+  const result = spawnSync(process.execPath, [verifier, file], { cwd: root, encoding: "utf8" });
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /SQLite|完整性|校验失败/);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
