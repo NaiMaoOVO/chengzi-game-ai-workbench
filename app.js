@@ -5485,26 +5485,43 @@ function importCreatorLibrary(event) {
   reader.readAsText(file);
 }
 
+function mergeCreatorProfiles(primary, incoming) {
+  const primaryUpdated = String(primary?.updatedAt || "");
+  const incomingUpdated = String(incoming?.updatedAt || "");
+  const base = incomingUpdated > primaryUpdated ? { ...primary, ...incoming } : { ...incoming, ...primary };
+  const records = [...(Array.isArray(primary?.collaborations) ? primary.collaborations : []), ...(Array.isArray(incoming?.collaborations) ? incoming.collaborations : [])];
+  const byId = new Map();
+  records.forEach((record) => {
+    if (!record || typeof record !== "object") return;
+    const id = String(record.id || `${record.createdAt || ""}-${record.project || ""}-${record.url || ""}`);
+    const previous = byId.get(id);
+    byId.set(id, previous ? (String(record.createdAt || "") >= String(previous.createdAt || "") ? { ...previous, ...record } : previous) : record);
+  });
+  return { ...base, collaborations: [...byId.values()] };
+}
+
+function canonicalizeCreatorLibrary(library) {
+  const canonical = {};
+  Object.entries(library || {}).forEach(([key, profile]) => {
+    if (!profile || typeof profile !== "object" || Array.isArray(profile)) return;
+    const safeKey = profile.name && profile.platform ? creatorKey(profile) : key;
+    const normalized = { ...profile, key: safeKey };
+    canonical[safeKey] = canonical[safeKey]
+      ? { ...mergeCreatorProfiles(canonical[safeKey], normalized), key: safeKey }
+      : normalized;
+  });
+  return canonical;
+}
+
 function mergeCreatorLibraries(local, remote) {
-  const merged = { ...(remote || {}) };
-  Object.entries(local || {}).forEach(([key, profile]) => {
+  const merged = canonicalizeCreatorLibrary(remote);
+  Object.entries(canonicalizeCreatorLibrary(local)).forEach(([key, profile]) => {
     const other = merged[key];
     if (!other) {
       merged[key] = profile;
       return;
     }
-    const localUpdated = String(profile?.updatedAt || "");
-    const remoteUpdated = String(other?.updatedAt || "");
-    const base = localUpdated > remoteUpdated ? { ...other, ...profile } : { ...profile, ...other };
-    const records = [...(Array.isArray(other.collaborations) ? other.collaborations : []), ...(Array.isArray(profile.collaborations) ? profile.collaborations : [])];
-    const byId = new Map();
-    records.forEach((record) => {
-      if (!record || typeof record !== "object") return;
-      const id = String(record.id || `${record.createdAt || ""}-${record.project || ""}-${record.url || ""}`);
-      const previous = byId.get(id);
-      byId.set(id, previous ? (String(record.createdAt || "") >= String(previous.createdAt || "") ? { ...previous, ...record } : previous) : record);
-    });
-    merged[key] = { ...base, key, collaborations: [...byId.values()] };
+    merged[key] = { ...mergeCreatorProfiles(other, profile), key };
   });
   return merged;
 }
