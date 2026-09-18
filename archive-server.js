@@ -479,6 +479,16 @@ function listDailyTodos(url, ownerKey) {
   return { items: rows, total };
 }
 
+function isCalendarDate(value) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!match) return false;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day;
+}
+
 function validateDailyTodo(body, current) {
   const title = textValue(body?.title, "title", 200, current?.title || "");
   if (!title) throw new Error("title 必填");
@@ -487,7 +497,7 @@ function validateDailyTodo(body, current) {
   const status = typeof body?.status === "string" && body.status.trim() ? body.status.trim() : current?.status || "open";
   if (!DAILY_TODO_STATUSES.has(status)) throw new Error("status 不合法（允许：open、done、dropped）");
   const dueDate = typeof body?.due_date === "string" && body.due_date.trim() ? body.due_date.trim() : current?.due_date || null;
-  if (dueDate && !/^\d{4}-\d{2}-\d{2}$/.test(dueDate)) throw new Error("due_date 不合法（格式：YYYY-MM-DD）");
+  if (dueDate && !isCalendarDate(dueDate)) throw new Error("due_date 不合法（格式：YYYY-MM-DD）");
   return {
     title,
     priority,
