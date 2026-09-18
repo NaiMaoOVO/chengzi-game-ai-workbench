@@ -496,7 +496,11 @@ function validateDailyTodo(body, current) {
   if (!DAILY_TODO_PRIORITIES.has(priority)) throw new Error("priority 不合法（允许：low、medium、high）");
   const status = typeof body?.status === "string" && body.status.trim() ? body.status.trim() : current?.status || "open";
   if (!DAILY_TODO_STATUSES.has(status)) throw new Error("status 不合法（允许：open、done、dropped）");
-  const dueDate = typeof body?.due_date === "string" && body.due_date.trim() ? body.due_date.trim() : current?.due_date || null;
+  let dueDate = current?.due_date || null;
+  if (Object.prototype.hasOwnProperty.call(body || {}, "due_date")) {
+    if (body.due_date === null || (typeof body.due_date === "string" && !body.due_date.trim())) dueDate = null;
+    else if (typeof body.due_date === "string") dueDate = body.due_date.trim();
+  }
   if (dueDate && !isCalendarDate(dueDate)) throw new Error("due_date 不合法（格式：YYYY-MM-DD）");
   return {
     title,
