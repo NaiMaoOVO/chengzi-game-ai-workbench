@@ -1076,8 +1076,12 @@ async function loadPublications() {
   } catch (error) {
     if (!publicationListRequestGuard.isCurrent(requestGeneration)) return;
     currentPublications = [];
-    container.innerHTML = '<p class="muted-copy">存档服务不可用（本机 8796 端口）。启动 archive-server 后点击「刷新列表」重试。</p>';
-    setPublicationStatus("读取失败（" + (error.message || "存档服务不可用") + "）。", "mock");
+    container.innerHTML = "";
+    if (/Failed to fetch|NetworkError|load failed/i.test(String(error?.message || ""))) {
+      setPublicationStatus("本机存档服务未连接；启动服务后点击「刷新台账」重试。", "mock");
+    } else {
+      setPublicationStatus("台账数据暂不可用；请刷新台账重试。", "mock");
+    }
   }
 }
 
@@ -1356,8 +1360,12 @@ async function loadRiskTickets() {
   } catch (error) {
     if (!riskTicketListRequestGuard.isCurrent(requestGeneration)) return;
     currentRiskTickets = [];
-    container.innerHTML = '<p class="muted-copy">存档服务不可用（本机 8796 端口）。启动 archive-server 后点击「刷新」重试。</p>';
-    setRiskTicketStatus("读取失败（" + (error.message || "存档服务不可用") + "）。", "mock");
+    container.innerHTML = "";
+    if (/Failed to fetch|NetworkError|load failed/i.test(String(error?.message || ""))) {
+      setRiskTicketStatus("本机存档服务未连接；启动服务后点击「查询工单」重试。", "mock");
+    } else {
+      setRiskTicketStatus("工单数据暂不可用；请查询工单重试。", "mock");
+    }
   }
 }
 

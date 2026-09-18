@@ -4485,3 +4485,172 @@ kbd {
   .daily-morning-status::before { display: none; }
   .daily-stat-card { min-height: 96px; padding: 12px; }
 }
+
+/* ---- Daily dashboard: follow-through work ---- */
+
+.daily-workbench-layout > .briefing-panel,
+.daily-follow-up-grid {
+  grid-column: 1 / -1;
+}
+
+#briefing-panel {
+  padding: 20px 22px;
+  border-color: var(--product-line);
+  background: #fff;
+}
+
+.daily-briefing-time {
+  flex: 0 0 auto;
+  padding: 5px 8px;
+  border: 1px solid #e3e8f0;
+  border-radius: 6px;
+  background: #f8fafc;
+  color: #667085;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.daily-briefing-actions,
+.daily-briefing-secondary-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.daily-briefing-actions { margin-top: 16px; }
+.daily-briefing-secondary-actions { gap: 6px; }
+.daily-briefing-actions .launcher-primary-action { min-height: 34px; }
+
+.daily-briefing-workflow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid #edf0f5;
+  color: #667085;
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.daily-briefing-workflow span { display: inline-flex; align-items: center; gap: 5px; }
+.daily-briefing-workflow b {
+  display: inline-grid;
+  width: 17px;
+  height: 17px;
+  place-items: center;
+  border-radius: 50%;
+  background: #edf3ff;
+  color: #3d67cf;
+  font-size: 10px;
+}
+
+#briefing-panel > .source-status { margin: 12px 0 0; }
+
+.daily-follow-up-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.daily-management-panel {
+  min-width: 0;
+  padding: 0;
+  border-color: var(--product-line);
+  background: #fff;
+}
+
+.daily-management-panel > summary {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 18px 18px 0;
+  cursor: pointer;
+  list-style: none;
+}
+
+.daily-management-panel > summary::-webkit-details-marker,
+.daily-management-form > summary::-webkit-details-marker { display: none; }
+
+.daily-management-panel > summary > span { min-width: 0; }
+.daily-management-panel > summary h3 { margin: 3px 0 3px; color: var(--product-text); }
+.daily-management-panel > summary p { margin: 0; color: #667085; font-size: 12px; line-height: 1.5; }
+.daily-management-kind {
+  color: #5876c8;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+}
+
+.daily-management-panel > summary > small:last-child {
+  flex: 0 0 auto;
+  margin-top: 3px;
+  padding: 4px 7px;
+  border-radius: 6px;
+  background: #eef3ff;
+  color: #4363bd;
+  font-size: 11px;
+  font-weight: 750;
+}
+
+.daily-risk-panel > summary > small:last-child { background: #fff3ee; color: #b85b38; }
+
+.daily-management-overview {
+  display: grid;
+  gap: 12px;
+  margin: 14px 18px 0;
+  padding: 13px 14px;
+  border: 1px solid #edf0f5;
+  border-radius: 8px;
+  background: #fafbfd;
+}
+
+.daily-management-overview > p {
+  margin: 0;
+  color: #475467;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.daily-management-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.daily-management-form {
+  width: 100%;
+}
+
+.daily-management-form > summary {
+  width: fit-content;
+  padding: 5px 8px;
+  border: 1px solid #dfe5ef;
+  border-radius: 6px;
+  background: #fff;
+  color: #475467;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 700;
+  list-style: none;
+}
+
+.daily-management-form[open] > summary { border-color: #cfdaff; color: #375dcc; }
+.daily-management-form .publication-form { margin-top: 10px; }
+.daily-management-panel > .source-status { margin: 10px 18px 0; }
+.daily-management-panel > .publication-list { margin: 10px 18px 18px; }
+.daily-management-panel .publication-list:empty { display: none; }
+
+@media (max-width: 760px) {
+  #briefing-panel { padding: 16px; }
+  .daily-briefing-actions { align-items: stretch; }
+  .daily-briefing-actions .launcher-primary-action { width: 100%; }
+  .daily-follow-up-grid { grid-template-columns: 1fr; }
+  .daily-management-panel > summary { padding: 16px 16px 0; }
+  .daily-management-overview { margin: 12px 16px 0; }
+  .daily-management-panel > .source-status { margin-inline: 16px; }
+  .daily-management-panel > .publication-list { margin-inline: 16px; }
+}

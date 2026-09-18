@@ -297,11 +297,18 @@
                 </div>
                 <span class="daily-briefing-time" id="daily-briefing-time">尚未生成</span>
               </div>
-              <div class="launcher-buttons">
+              <div class="daily-briefing-actions">
                 <button class="secondary-button launcher-primary-action" id="generate-briefing" type="button">生成今日简报</button>
-                <button class="secondary-button" id="archive-briefing" type="button">存档本次简报</button>
-                <button class="secondary-button" id="load-briefing-archive" type="button">查看最近存档</button>
-                <button class="secondary-button" id="copy-briefing-im" type="button">复制为飞书/企微消息</button>
+                <div class="daily-briefing-secondary-actions">
+                  <button class="secondary-button" id="archive-briefing" type="button">存档本次简报</button>
+                  <button class="secondary-button" id="load-briefing-archive" type="button">查看最近存档</button>
+                  <button class="secondary-button" id="copy-briefing-im" type="button">复制为飞书/企微消息</button>
+                </div>
+              </div>
+              <div class="daily-briefing-workflow" aria-label="简报工作流">
+                <span><b>1</b>汇总今日信号</span>
+                <span><b>2</b>确认下一步</span>
+                <span><b>3</b>存档并同步</span>
               </div>
               <p class="source-status" id="briefing-status" aria-live="polite">简报状态：尚未生成。</p>
               <article class="briefing-body" id="briefing-body" hidden></article>
@@ -314,71 +321,91 @@
               <div class="briefing-archive-list" id="briefing-archive-list"></div>
             </section>
 
-            <details class="section-block briefing-panel daily-management-panel" id="publication-panel">
-              <summary>
+            <section class="daily-follow-up-grid" aria-label="日终沉淀与处理">
+              <details class="section-block briefing-panel daily-management-panel" id="publication-panel" open>
+                <summary>
                 <span>
+                  <small class="daily-management-kind">内容回流</small>
                   <h3>发布台账</h3>
                   <p>登记发布链接，回流真实效果，验证 AI 产出。</p>
                 </span>
                 <small id="publication-count-badge">0 条</small>
-              </summary>
-              <div class="launcher-buttons publication-form">
-                <label class="publication-field" for="publication-game">游戏
-                  <input id="publication-game" placeholder="默认取当前项目" />
-                </label>
-                <label class="publication-field publication-field-grow" for="publication-title">标题
-                  <input id="publication-title" placeholder="如：2.0 前瞻爆料：新角色实机首曝" />
-                </label>
-                <label class="publication-field" for="publication-channel">渠道
-                  <select id="publication-channel">
-                    <option selected>B站</option>
-                    <option>小红书</option>
-                    <option>抖音</option>
-                  </select>
-                </label>
-                <label class="publication-field publication-field-grow" for="publication-url">链接
-                  <input id="publication-url" type="url" placeholder="https://www.bilibili.com/video/BV..." />
-                </label>
-                <label class="publication-field" for="publication-topic">关联选题
-                  <input id="publication-topic" placeholder="选填，如：版本前瞻爆料" />
-                </label>
-                <label class="publication-field" for="publication-date">发布时间
-                  <input id="publication-date" type="date" />
-                </label>
-                <button class="secondary-button launcher-primary-action" id="record-publication" type="button">记录发布</button>
-                <button class="secondary-button" id="refresh-publications" type="button">刷新列表</button>
-              </div>
-              <p class="source-status" id="publication-status" aria-live="polite">发布台账：尚未操作。记录后可对 B站链接一键回流效果数据。</p>
-              <div class="briefing-archive-list publication-list" id="publication-list"></div>
-            </details>
+                </summary>
+                <div class="daily-management-overview">
+                  <p>登记链接后，待补数据的发布内容会进入今日行动队列，回流结果可用于复盘下一轮内容策略。</p>
+                  <div class="daily-management-actions">
+                    <button class="secondary-button" id="refresh-publications" type="button">刷新台账</button>
+                    <details class="daily-management-form">
+                      <summary>登记一条发布</summary>
+                      <div class="launcher-buttons publication-form">
+                        <label class="publication-field" for="publication-game">游戏
+                          <input id="publication-game" placeholder="默认取当前项目" />
+                        </label>
+                        <label class="publication-field publication-field-grow" for="publication-title">标题
+                          <input id="publication-title" placeholder="如：2.0 前瞻爆料：新角色实机首曝" />
+                        </label>
+                        <label class="publication-field" for="publication-channel">渠道
+                          <select id="publication-channel">
+                            <option selected>B站</option>
+                            <option>小红书</option>
+                            <option>抖音</option>
+                          </select>
+                        </label>
+                        <label class="publication-field publication-field-grow" for="publication-url">链接
+                          <input id="publication-url" type="url" placeholder="https://www.bilibili.com/video/BV..." />
+                        </label>
+                        <label class="publication-field" for="publication-topic">关联选题
+                          <input id="publication-topic" placeholder="选填，如：版本前瞻爆料" />
+                        </label>
+                        <label class="publication-field" for="publication-date">发布时间
+                          <input id="publication-date" type="date" />
+                        </label>
+                        <button class="secondary-button launcher-primary-action" id="record-publication" type="button">记录发布</button>
+                      </div>
+                    </details>
+                  </div>
+                </div>
+                <p class="source-status" id="publication-status" aria-live="polite">发布台账：尚未操作。记录后可对 B站链接一键回流效果数据。</p>
+                <div class="briefing-archive-list publication-list" id="publication-list"></div>
+              </details>
 
-            <details class="section-block briefing-panel daily-management-panel daily-risk-panel" id="risk-ticket-panel">
-              <summary>
+              <details class="section-block briefing-panel daily-management-panel daily-risk-panel" id="risk-ticket-panel" open>
+                <summary>
                 <span>
+                  <small class="daily-management-kind">风险处置</small>
                   <h3>风险工单</h3>
                   <p>评论风险转工单，跟踪处理、解决或放弃。</p>
                 </span>
                 <small id="risk-ticket-count-badge">0 条</small>
-              </summary>
-              <div class="launcher-buttons publication-form">
-                <label class="publication-field" for="risk-ticket-game">游戏
-                  <input id="risk-ticket-game" placeholder="选填，按游戏过滤" />
-                </label>
-                <label class="publication-field" for="risk-ticket-status-filter">状态
-                  <select id="risk-ticket-status-filter">
-                    <option value="" selected>全部</option>
-                    <option value="open">待处理</option>
-                    <option value="processing">处理中</option>
-                    <option value="resolved">已解决</option>
-                    <option value="dropped">已放弃</option>
-                  </select>
-                </label>
-                <button class="secondary-button launcher-primary-action" id="query-risk-tickets" type="button">查询</button>
-                <button class="secondary-button" id="refresh-risk-tickets" type="button">刷新</button>
-              </div>
-              <p class="source-status" id="risk-ticket-status" aria-live="polite">风险工单：尚未查询。点击「查询」加载最近的工单列表。</p>
-              <div class="briefing-archive-list publication-list" id="risk-ticket-list"></div>
-            </details>
+                </summary>
+                <div class="daily-management-overview">
+                  <p>从评论分析转入的风险会在这里保留处理状态。先看待处理项，再决定回应、内容调整或关闭工单。</p>
+                  <div class="daily-management-actions">
+                    <button class="secondary-button launcher-primary-action" id="query-risk-tickets" type="button">查询工单</button>
+                    <details class="daily-management-form">
+                      <summary>筛选工单</summary>
+                      <div class="launcher-buttons publication-form">
+                        <label class="publication-field" for="risk-ticket-game">游戏
+                          <input id="risk-ticket-game" placeholder="选填，按游戏过滤" />
+                        </label>
+                        <label class="publication-field" for="risk-ticket-status-filter">状态
+                          <select id="risk-ticket-status-filter">
+                            <option value="" selected>全部</option>
+                            <option value="open">待处理</option>
+                            <option value="processing">处理中</option>
+                            <option value="resolved">已解决</option>
+                            <option value="dropped">已放弃</option>
+                          </select>
+                        </label>
+                        <button class="secondary-button" id="refresh-risk-tickets" type="button">刷新</button>
+                      </div>
+                    </details>
+                  </div>
+                </div>
+                <p class="source-status" id="risk-ticket-status" aria-live="polite">风险工单：尚未查询。点击「查询工单」加载最近的工单列表。</p>
+                <div class="briefing-archive-list publication-list" id="risk-ticket-list"></div>
+              </details>
+            </section>
 
           </div>
         </section>
