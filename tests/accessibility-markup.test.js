@@ -77,6 +77,22 @@ test("daily workbench makes overdue and planned dates visible", () => {
   assert.match(daily, /daily-due-badge/);
 });
 
+test("daily dashboard provides grouped navigation, a command palette and decision cues", () => {
+  assert.match(html, /class="nav-group-label">工作区</);
+  assert.match(html, /class="nav-group-label">内容洞察</);
+  assert.match(html, /id="command-trigger"/);
+  assert.match(html, /id="command-palette"[^>]*role="dialog"/);
+  assert.match(html, /data-command-action="new-todo"/);
+  assert.match(html, /id="daily-stat-morning"/);
+  assert.match(html, /id="daily-insight-summary"[^>]*aria-live="polite"/);
+  assert.match(html, /class="daily-queue-table-head"/);
+  assert.match(app, /function openCommandPalette/);
+  assert.match(app, /event\.metaKey \|\| event\.ctrlKey/);
+  assert.match(dailyWorkbench, /function renderDailyInsight/);
+  assert.match(css, /--product-bg:\s*#f7f8fa/);
+  assert.match(css, /\.command-palette/);
+});
+
 test("daily workbench refreshes visible operational status automatically", () => {
   const daily = fs.readFileSync(path.join(root, "daily-workbench.js"), "utf8");
 
