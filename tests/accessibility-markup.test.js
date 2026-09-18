@@ -290,6 +290,15 @@ test("creator library sync blocks corrupt remote archives before writing", () =>
   assert.match(source, /已阻止覆盖/);
 });
 
+test("creator library sync canonicalizes identity keys before merging", () => {
+  const start = app.indexOf("function mergeCreatorLibraries");
+  const end = app.indexOf("async function syncCreatorLibrary", start);
+  assert.ok(start >= 0 && end > start);
+  const source = app.slice(start, end);
+  assert.match(source, /creatorKey\(profile\)/);
+  assert.match(source, /canonical/);
+});
+
 test("creator effect backfill reports personal-library persistence failures", () => {
   const backfillStart = app.indexOf("function syncCreatorBackfillToLibrary");
   const backfillEnd = app.indexOf("function creatorLibraryOption", backfillStart);
