@@ -2,6 +2,7 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
+const vm = require("node:vm");
 
 const root = path.resolve(__dirname, "..");
 const html = fs.readFileSync(path.join(root, "index.html"), "utf8");
@@ -416,6 +417,29 @@ test("briefing archive surfaces response failures and corrupted entries", () => 
   assert.match(app.slice(renderStart, renderEnd), /数据损坏/);
   assert.match(app.slice(renderEnd, loadEnd), /if \(!response\.ok \|\| !payload\.ok\)/);
   assert.match(app.slice(renderEnd, loadEnd), /历史读取失败/);
+});
+
+test("briefing renderer degrades safely when archived fields have malformed shapes", () => {
+  const renderStart = app.indexOf("function renderBriefing");
+  const renderEnd = app.indexOf("async function generateDailyBriefing", renderStart);
+  const normalizerStart = app.lastIndexOf("function normalizeBriefingPayload", renderStart);
+  assert.ok(renderStart >= 0 && renderEnd > renderStart);
+  const source = app.slice(normalizerStart >= 0 ? normalizerStart : renderStart, renderEnd);
+  const body = { hidden: true, innerHTML: "" };
+  const context = {
+    document: { querySelector: (selector) => selector === "#briefing-body" ? body : null },
+    formatBusinessDateTime: () => "2026-09-18 10:00",
+    escapeHtml: (value) => String(value)
+  };
+  vm.runInNewContext(source + "\nthis.renderBriefing = renderBriefing;", context);
+  assert.doesNotThrow(() => context.renderBriefing({
+    game: "鸣潮",
+    topics: "malformed",
+    todoSuggestions: { malformed: true },
+    feedback: null,
+    weekOverWeek: { negativeRatio: "bad" }
+  }));
+  assert.match(body.innerHTML, /暂无热点数据/);
 });
 
 test("daily queue ignores stale concurrent refresh responses", () => {
