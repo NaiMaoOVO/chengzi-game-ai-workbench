@@ -104,6 +104,14 @@ test("daily dashboard keeps project context and AI insight beside the operationa
   assert.match(css, /\.daily-insight-panel[\s\S]*grid-column:\s*2/);
 });
 
+test("daily dashboard promotes the page title while keeping global service noise out of its first screen", () => {
+  assert.match(html, /<h3>每日工作台<\/h3>/);
+  assert.match(html, /class="daily-hero-lead">从数据到行动，让好游戏被更多人看到。<\/p>/);
+  assert.match(css, /\.workspace:has\(#daily-view\.active\) \.demo-chain-bar/);
+  assert.match(css, /\.workspace:has\(#daily-view\.active\) \.archive-sync-status/);
+  assert.match(css, /\.daily-hero\s*\{[\s\S]*background:\s*transparent/);
+});
+
 test("daily workbench refreshes visible operational status automatically", () => {
   const daily = fs.readFileSync(path.join(root, "daily-workbench.js"), "utf8");
 
