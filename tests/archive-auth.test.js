@@ -221,3 +221,32 @@ test("archive auth requires login, CSRF, and keeps each account's data private",
   });
   assert.equal(adminDelete.status, 200);
 });
+
+test("corrupted creator libraries remain visible and cannot be overwritten", async () => {
+  const login = await request("/auth/login", {
+    method: "POST",
+    headers: jsonHeaders(),
+    body: JSON.stringify({ username: "ops-admin", password: "admin-password-2026" })
+  });
+  assert.equal(login.status, 200);
+  const cookie = sessionCookie(login);
+  const csrf = login.payload.csrf_token;
+  const ownerKey = "user:" + login.payload.user.id;
+
+  const corruption = new DatabaseSync(databasePath);
+  corruption.prepare("UPDATE creator_libraries SET payload = ? WHERE owner_key = ?").run("{not-json", ownerKey);
+  corruption.close();
+
+  const current = await request("/creator-library", { headers: { Cookie: cookie } });
+  assert.equal(current.status, 200);
+  assert.equal(current.payload.invalid, true, "损坏的个人库需要显式标记，不能伪装为空库");
+  assert.deepEqual(current.payload.library, {});
+
+  const overwrite = await request("/creator-library", {
+    method: "PUT",
+    headers: jsonHeaders({ cookie, csrf }),
+    body: JSON.stringify({ base_updated_at: current.payload.updated_at, library: {} })
+  });
+  assert.equal(overwrite.status, 409, "远端损坏时必须阻止同步覆盖原始数据");
+  assert.equal(overwrite.payload.error, "creator_library_invalid");
+});
