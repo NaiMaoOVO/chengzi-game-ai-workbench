@@ -168,10 +168,11 @@
             <section class="section-block daily-hero" aria-label="今日概览">
               <div class="daily-hero-copy">
                 <div class="daily-kicker-row">
-                  <p class="eyebrow">Daily Workbench</p>
+                  <p class="eyebrow">运营控制台</p>
                   <span id="daily-date-label" class="daily-date-label"></span>
                 </div>
-                <h3>先处理会影响今天的事</h3>
+                <h3>每日工作台</h3>
+                <p class="daily-hero-lead">从数据到行动，让好游戏被更多人看到。</p>
                 <p class="daily-hero-subtitle" id="daily-progress-summary">正在同步今日工作状态…</p>
                 <p class="daily-project-context" id="daily-project-context" aria-live="polite">工作范围：全部项目 · 新增待办归属：正在识别项目…</p>
                 <p class="daily-connection-state" id="daily-connection-state" aria-live="polite">正在连接工作台服务…</p>
@@ -192,24 +193,36 @@
 
             <section class="daily-stat-grid" aria-label="今日工作量">
               <article class="daily-stat-card daily-stat-todo">
-                <span class="daily-stat-index">01</span>
-                <strong id="daily-stat-todo">0</strong>
-                <span>待办事项</span>
+                <span class="daily-stat-icon" aria-hidden="true"></span>
+                <div>
+                  <span class="daily-stat-index">01 · 当前队列</span>
+                  <strong id="daily-stat-todo">0</strong>
+                  <span>今日待办</span>
+                </div>
               </article>
               <article class="daily-stat-card daily-stat-risk">
-                <span class="daily-stat-index">02</span>
-                <strong id="daily-stat-risk">0</strong>
-                <span>待处理风险</span>
+                <span class="daily-stat-icon" aria-hidden="true"></span>
+                <div>
+                  <span class="daily-stat-index">02 · 需要关注</span>
+                  <strong id="daily-stat-risk">0</strong>
+                  <span>潜在风险</span>
+                </div>
               </article>
               <article class="daily-stat-card daily-stat-publish">
-                <span class="daily-stat-index">03</span>
-                <strong id="daily-stat-publish">0</strong>
-                <span>待回流内容</span>
+                <span class="daily-stat-icon" aria-hidden="true"></span>
+                <div>
+                  <span class="daily-stat-index">03 · 等待验证</span>
+                  <strong id="daily-stat-publish">0</strong>
+                  <span>待回流内容</span>
+                </div>
               </article>
               <article class="daily-stat-card daily-stat-morning">
-                <span class="daily-stat-index">04</span>
-                <strong id="daily-stat-morning">—</strong>
-                <span>晨报运行</span>
+                <span class="daily-stat-icon" aria-hidden="true"></span>
+                <div>
+                  <span class="daily-stat-index">04 · 工作日志</span>
+                  <strong id="daily-stat-morning">—</strong>
+                  <span>晨报运行</span>
+                </div>
               </article>
             </section>
 
