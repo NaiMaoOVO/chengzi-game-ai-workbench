@@ -299,6 +299,15 @@ test("creator library sync canonicalizes identity keys before merging", () => {
   assert.match(source, /canonical/);
 });
 
+test("creator library sync blocks structurally invalid records", () => {
+  const start = app.indexOf("async function syncCreatorLibrary");
+  const end = app.indexOf("function explainCreatorScore", start);
+  assert.ok(start >= 0 && end > start);
+  const source = app.slice(start, end);
+  assert.match(source, /invalidCreatorLibraryEntries/);
+  assert.match(source, /损坏记录/);
+});
+
 test("creator effect backfill reports personal-library persistence failures", () => {
   const backfillStart = app.indexOf("function syncCreatorBackfillToLibrary");
   const backfillEnd = app.indexOf("function creatorLibraryOption", backfillStart);
