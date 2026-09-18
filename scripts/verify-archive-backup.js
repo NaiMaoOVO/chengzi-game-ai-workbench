@@ -11,7 +11,9 @@ if (!target || !/^archive-.*\.db$/.test(path.basename(target))) {
 
 try {
   const checksumFile = target + ".sha256";
-  const expected = fs.readFileSync(checksumFile, "utf8").trim().split(/\s+/)[0];
+  const checksumParts = fs.readFileSync(checksumFile, "utf8").trim().split(/\s+/);
+  const expected = checksumParts[0];
+  if (checksumParts[1] !== path.basename(target)) throw new Error("校验文件名与备份文件不匹配");
   if (!/^[a-f0-9]{64}$/.test(expected)) throw new Error("校验文件格式无效");
   const actual = crypto.createHash("sha256").update(fs.readFileSync(target)).digest("hex");
   if (actual !== expected) throw new Error("SHA-256 不匹配");
