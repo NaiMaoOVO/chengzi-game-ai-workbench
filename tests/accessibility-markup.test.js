@@ -291,7 +291,7 @@ test("creator library sync blocks corrupt remote archives before writing", () =>
 });
 
 test("creator library sync canonicalizes identity keys before merging", () => {
-  const start = app.indexOf("function mergeCreatorLibraries");
+  const start = app.indexOf("function canonicalizeCreatorLibrary");
   const end = app.indexOf("async function syncCreatorLibrary", start);
   assert.ok(start >= 0 && end > start);
   const source = app.slice(start, end);
