@@ -109,3 +109,27 @@ test("archive backup verification rejects a checksum-valid non-SQLite file", () 
   assert.match(result.stderr, /SQLite|完整性|校验失败/);
   fs.rmSync(dir, { recursive: true, force: true });
 });
+
+test("archive backup verification binds the checksum to the target filename", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "gameops-backup-name-test-"));
+  const databasePath = path.join(dir, "archive.db");
+  const backupDir = path.join(dir, "backups");
+  const db = new DatabaseSync(databasePath);
+  db.exec("CREATE TABLE check_rows (value TEXT NOT NULL); INSERT INTO check_rows VALUES ('kept');");
+  db.close();
+  const backup = spawnSync(process.execPath, [path.join(root, "scripts", "backup-archive.js")], {
+    cwd: root,
+    env: { ...process.env, ARCHIVE_DB_PATH: databasePath, ARCHIVE_BACKUP_DIR: backupDir },
+    encoding: "utf8"
+  });
+  assert.equal(backup.status, 0, backup.stderr || backup.stdout);
+  const file = fs.readdirSync(backupDir).find((name) => /^archive-.*\.db$/.test(name));
+  const target = path.join(backupDir, file);
+  const digest = crypto.createHash("sha256").update(fs.readFileSync(target)).digest("hex");
+  fs.writeFileSync(target + ".sha256", digest + "  another-archive.db\n");
+  const verifier = path.join(root, "scripts", "verify-archive-backup.js");
+  const result = spawnSync(process.execPath, [verifier, target], { cwd: root, encoding: "utf8" });
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /文件名|校验失败/);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
