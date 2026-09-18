@@ -4235,3 +4235,106 @@ kbd {
   .daily-queue-state { margin-top: 6px; }
   .daily-queue-item .publication-actions { justify-content: flex-start; margin-top: 9px; flex-wrap: wrap; }
 }
+
+/* ---- Daily dashboard reference layout: project context above decisions ---- */
+
+.daily-workbench-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(300px, 0.34fr);
+  gap: 12px;
+  max-width: 1380px;
+}
+
+.daily-hero {
+  grid-column: 1 / -1;
+  grid-template-columns: minmax(260px, 0.8fr) minmax(420px, 1.2fr);
+  min-height: 118px;
+  padding: 16px 18px;
+}
+
+.daily-project-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-width: 0;
+  padding: 16px 18px;
+  border-radius: 8px;
+  background: #26354d;
+  color: #fff;
+}
+
+.daily-project-banner p {
+  margin: 0 0 5px;
+  color: #bfcae0;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.daily-project-banner strong,
+.daily-project-banner span {
+  display: block;
+}
+
+.daily-project-banner strong { font-size: 18px; letter-spacing: -0.02em; }
+.daily-project-banner > div:first-child > span { margin-top: 4px; color: #d9e1ee; font-size: 12px; }
+
+.daily-project-banner-actions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 8px;
+}
+
+.daily-project-banner .secondary-button {
+  min-height: 30px;
+  padding: 5px 8px;
+  border-color: rgba(255, 255, 255, 0.26);
+  background: transparent;
+  color: #fff;
+  font-size: 11px;
+}
+
+.daily-project-banner .secondary-button:hover { background: rgba(255, 255, 255, 0.12); }
+
+.daily-stat-grid {
+  grid-column: 1 / -1;
+  max-width: none;
+}
+
+.daily-stat-card {
+  min-height: 98px;
+  padding: 13px 14px;
+}
+
+.daily-timeline-panel { grid-column: 1; }
+
+.daily-insight-panel {
+  grid-column: 2;
+  grid-row: 3;
+  align-self: start;
+  min-height: 100%;
+}
+
+.daily-workbench-layout > .briefing-panel,
+.daily-workbench-layout > .daily-management-panel {
+  grid-column: 1 / -1;
+}
+
+@media (max-width: 1080px) {
+  .daily-workbench-layout { grid-template-columns: 1fr; }
+  .daily-hero { grid-template-columns: 1fr; }
+  .daily-project-banner { min-height: 96px; }
+  .daily-timeline-panel,
+  .daily-insight-panel,
+  .daily-workbench-layout > .briefing-panel,
+  .daily-workbench-layout > .daily-management-panel {
+    grid-column: auto;
+    grid-row: auto;
+  }
+}
+
+@media (max-width: 760px) {
+  .daily-project-banner { align-items: flex-start; flex-direction: column; }
+  .daily-project-banner-actions { width: 100%; }
+  .daily-project-banner .secondary-button { flex: 1; }
+}

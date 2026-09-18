@@ -105,8 +105,14 @@
   function refreshProjectContext() {
     const element = document.querySelector("#daily-project-context");
     const game = currentGame();
+    const versionGame = document.querySelector("#version-game")?.value.trim();
+    const versionTheme = document.querySelector("#version-theme")?.value.trim();
     if (element) element.textContent = allProjectsScope + " · 新增待办归属：" + game;
     setText("#sidebar-project-name", game === "未设置" ? "全部项目" : game);
+    setText("#daily-project-banner-game", game === "未设置" ? "未设置项目" : game);
+    setText("#daily-project-banner-theme", versionGame === game && versionTheme
+      ? versionTheme
+      : "尚未为当前项目配置版本主题");
   }
 
   window.refreshDailyProjectContext = refreshProjectContext;
@@ -526,6 +532,15 @@
     }).format(new Date());
     refreshProjectContext();
     document.querySelector("#trending-game")?.addEventListener("input", refreshProjectContext);
+    document.querySelector("#version-game")?.addEventListener("input", refreshProjectContext);
+    document.querySelector("#version-theme")?.addEventListener("input", refreshProjectContext);
+    document.querySelector("#daily-project-version-action")?.addEventListener("click", () => {
+      if (typeof navigateToView === "function") navigateToView("version");
+    });
+    document.querySelector("#daily-project-profile-action")?.addEventListener("click", () => {
+      if (typeof navigateToView === "function") navigateToView("overview");
+      window.setTimeout(() => document.querySelector("#profile-select")?.focus(), 0);
+    });
     document.querySelector("#daily-todo-form")?.addEventListener("submit", (event) => {
       event.preventDefault();
       addTodo();

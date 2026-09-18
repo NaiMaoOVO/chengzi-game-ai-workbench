@@ -177,28 +177,40 @@
                 <p class="daily-connection-state" id="daily-connection-state" aria-live="polite">正在连接工作台服务…</p>
                 <p class="daily-morning-status" id="daily-morning-status" aria-live="polite">晨报：正在检查最近运行状态…</p>
               </div>
-              <div class="daily-stat-grid" aria-label="今日工作量">
-                <article class="daily-stat-card daily-stat-todo">
-                  <span class="daily-stat-index">01</span>
-                  <strong id="daily-stat-todo">0</strong>
-                  <span>待办事项</span>
-                </article>
-                <article class="daily-stat-card daily-stat-risk">
-                  <span class="daily-stat-index">02</span>
-                  <strong id="daily-stat-risk">0</strong>
-                  <span>待处理风险</span>
-                </article>
-                <article class="daily-stat-card daily-stat-publish">
-                  <span class="daily-stat-index">03</span>
-                  <strong id="daily-stat-publish">0</strong>
-                  <span>待回流内容</span>
-                </article>
-                <article class="daily-stat-card daily-stat-morning">
-                  <span class="daily-stat-index">04</span>
-                  <strong id="daily-stat-morning">—</strong>
-                  <span>晨报运行</span>
-                </article>
-              </div>
+              <aside class="daily-project-banner" aria-label="当前项目版本与活动">
+                <div>
+                  <p>当前项目</p>
+                  <strong id="daily-project-banner-game">正在识别项目…</strong>
+                  <span id="daily-project-banner-theme">版本与活动信息待配置</span>
+                </div>
+                <div class="daily-project-banner-actions">
+                  <button class="secondary-button" id="daily-project-version-action" type="button">版本包装</button>
+                  <button class="secondary-button" id="daily-project-profile-action" type="button">项目档案</button>
+                </div>
+              </aside>
+            </section>
+
+            <section class="daily-stat-grid" aria-label="今日工作量">
+              <article class="daily-stat-card daily-stat-todo">
+                <span class="daily-stat-index">01</span>
+                <strong id="daily-stat-todo">0</strong>
+                <span>待办事项</span>
+              </article>
+              <article class="daily-stat-card daily-stat-risk">
+                <span class="daily-stat-index">02</span>
+                <strong id="daily-stat-risk">0</strong>
+                <span>待处理风险</span>
+              </article>
+              <article class="daily-stat-card daily-stat-publish">
+                <span class="daily-stat-index">03</span>
+                <strong id="daily-stat-publish">0</strong>
+                <span>待回流内容</span>
+              </article>
+              <article class="daily-stat-card daily-stat-morning">
+                <span class="daily-stat-index">04</span>
+                <strong id="daily-stat-morning">—</strong>
+                <span>晨报运行</span>
+              </article>
             </section>
 
             <section class="section-block daily-timeline-panel" aria-label="今日优先处理">
