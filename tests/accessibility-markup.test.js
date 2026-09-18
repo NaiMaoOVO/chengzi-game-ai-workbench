@@ -93,6 +93,17 @@ test("daily dashboard provides grouped navigation, a command palette and decisio
   assert.match(css, /\.command-palette/);
 });
 
+test("daily dashboard keeps project context and AI insight beside the operational queue", () => {
+  assert.match(html, /id="daily-project-banner-game"/);
+  assert.match(html, /id="daily-project-banner-theme"/);
+  assert.match(html, /id="daily-project-version-action"/);
+  assert.match(dailyWorkbench, /daily-project-banner-game/);
+  assert.match(dailyWorkbench, /daily-project-banner-theme/);
+  assert.match(css, /\.daily-project-banner/);
+  assert.match(css, /\.daily-workbench-layout[\s\S]*grid-template-columns:/);
+  assert.match(css, /\.daily-insight-panel[\s\S]*grid-column:\s*2/);
+});
+
 test("daily workbench refreshes visible operational status automatically", () => {
   const daily = fs.readFileSync(path.join(root, "daily-workbench.js"), "utf8");
 
