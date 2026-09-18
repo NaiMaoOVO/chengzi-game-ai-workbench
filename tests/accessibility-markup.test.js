@@ -103,6 +103,15 @@ test("background snapshots use a stable daily idempotency key", () => {
   assert.match(app, /snapshot-\$\{kind\}-\$\{businessDate\(\)\}/);
 });
 
+test("manual briefing archives use an idempotency key on retry", () => {
+  const start = app.indexOf("async function archiveCurrentBriefing");
+  const end = app.indexOf("function renderBriefArchiveItem", start);
+  assert.ok(start >= 0 && end > start);
+  const source = app.slice(start, end);
+  assert.match(source, /Idempotency-Key/);
+  assert.match(source, /snapshotRequestId\("briefing"/);
+});
+
 test("trend week boundaries use the Shanghai business date", () => {
   const start = app.indexOf("function splitWeeks");
   const end = app.indexOf("function negativeRatio", start);
