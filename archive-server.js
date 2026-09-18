@@ -372,13 +372,9 @@ function creatorLibraryOwner(session) { return recordOwner(session); }
 
 function readCreatorLibraryRow(ownerKey) {
   const row = getCreatorLibraryStatement.get(ownerKey);
-  if (!row) return { library: {}, updated_at: null };
-  try {
-    const library = JSON.parse(row.payload);
-    return { library: library && typeof library === "object" && !Array.isArray(library) ? library : {}, updated_at: row.updated_at };
-  } catch (_error) {
-    return { library: {}, updated_at: row.updated_at };
-  }
+  if (!row) return { library: {}, updated_at: null, invalid: false };
+  const parsed = parseStoredObject(row.payload);
+  return { library: parsed.value, updated_at: row.updated_at, invalid: !parsed.valid };
 }
 
 /* ---- 发布台账（P-2）：记录内容发布与效果数据回流 ---- */
@@ -649,6 +645,10 @@ const server = http.createServer((request, response) => {
           const serialized = JSON.stringify(body.library);
           if (Buffer.byteLength(serialized, "utf8") > MAX_BODY_BYTES) throw new Error("个人库内容过大");
           const current = readCreatorLibraryRow(ownerKey);
+          if (current.invalid) {
+            sendJson(request, response, 409, { ok: false, error: "creator_library_invalid", library: current.library, updated_at: current.updated_at, invalid: true });
+            return;
+          }
           const base = body.base_updated_at === null || body.base_updated_at === undefined ? null : String(body.base_updated_at);
           if (current.updated_at && base !== current.updated_at) {
             sendJson(request, response, 409, { ok: false, error: "creator_library_conflict", library: current.library, updated_at: current.updated_at });

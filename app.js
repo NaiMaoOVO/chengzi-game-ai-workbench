@@ -5519,6 +5519,7 @@ async function syncCreatorLibrary() {
     const remoteResponse = await archiveRequest(ARCHIVE_SERVICE_URL + "/creator-library", { cache: "no-store" });
     const remote = await remoteResponse.json().catch(() => ({}));
     if (!remoteResponse.ok || !remote.ok) throw new Error(remoteResponse.status === 401 ? "请先登录存档服务" : remote.error || `HTTP ${remoteResponse.status}`);
+    if (remote.invalid) throw new Error("远端个人库数据损坏，已阻止覆盖；请恢复备份或确认后重新保存");
     let merged = mergeCreatorLibraries(readCreatorLibrary(), remote.library || {});
     const put = async (baseUpdatedAt, library) => {
       const response = await archiveRequest(ARCHIVE_SERVICE_URL + "/creator-library", {
