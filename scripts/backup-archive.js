@@ -23,6 +23,7 @@ if (!fs.existsSync(databasePath)) {
 }
 
 fs.mkdirSync(backupDir, { recursive: true, mode: 0o700 });
+fs.chmodSync(backupDir, 0o700);
 const stamp = new Date().toISOString().replace(/[-:.TZ]/g, "");
 const destination = path.join(backupDir, "archive-" + stamp + ".db");
 const escapedDestination = "'" + destination.replace(/'/g, "''") + "'";
