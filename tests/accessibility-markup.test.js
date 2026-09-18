@@ -305,6 +305,15 @@ test("creator effect backfill reports personal-library persistence failures", ()
   assert.match(recalcSource, /个人库/);
 });
 
+test("creator effect backfill does not guess among duplicate names", () => {
+  const recalcStart = app.indexOf("function recalcWithBackfill");
+  const recalcEnd = app.indexOf("document.querySelector(\"#caliber-trigger\")", recalcStart);
+  assert.ok(recalcStart >= 0 && recalcEnd > recalcStart);
+  const source = app.slice(recalcStart, recalcEnd);
+  assert.match(source, /ambiguous/);
+  assert.match(source, /重名|多个匹配/);
+});
+
 test("daily workbench aggregates every project while assigning new tasks to the current project", () => {
   const daily = fs.readFileSync(path.join(root, "daily-workbench.js"), "utf8");
 
