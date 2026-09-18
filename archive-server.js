@@ -500,6 +500,7 @@ function validateDailyTodo(body, current) {
   if (Object.prototype.hasOwnProperty.call(body || {}, "due_date")) {
     if (body.due_date === null || (typeof body.due_date === "string" && !body.due_date.trim())) dueDate = null;
     else if (typeof body.due_date === "string") dueDate = body.due_date.trim();
+    else throw new Error("due_date 不合法（格式：YYYY-MM-DD）");
   }
   if (dueDate && !isCalendarDate(dueDate)) throw new Error("due_date 不合法（格式：YYYY-MM-DD）");
   return {
