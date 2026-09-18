@@ -755,7 +755,10 @@ async function archiveCurrentBriefing() {
   try {
     const response = await archiveRequest(ARCHIVE_SERVICE_URL + "/snapshots", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        "Idempotency-Key": snapshotRequestId("briefing", lastBriefing.game, lastBriefing)
+      },
       body: JSON.stringify({
         kind: "briefing",
         game: lastBriefing.game,
