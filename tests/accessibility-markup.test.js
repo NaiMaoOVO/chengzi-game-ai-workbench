@@ -463,8 +463,12 @@ test("publication and risk list failures update their status bars", () => {
   const riskStart = app.indexOf("async function loadRiskTickets");
   const riskEnd = app.indexOf("async function updateRiskTicketStatus", riskStart);
   assert.ok(publicationStart >= 0 && publicationEnd > publicationStart && riskStart >= 0 && riskEnd > riskStart);
-  assert.match(app.slice(publicationStart, publicationEnd), /setPublicationStatus\("读取失败/);
-  assert.match(app.slice(riskStart, riskEnd), /setRiskTicketStatus\("读取失败/);
+  const publicationSource = app.slice(publicationStart, publicationEnd);
+  const riskSource = app.slice(riskStart, riskEnd);
+  assert.match(publicationSource, /setPublicationStatus\("本机存档服务未连接/);
+  assert.match(riskSource, /setRiskTicketStatus\("本机存档服务未连接/);
+  assert.doesNotMatch(publicationSource, /setPublicationStatus\("读取失败/);
+  assert.doesNotMatch(riskSource, /setRiskTicketStatus\("读取失败/);
 });
 
 test("publication and risk lists reject malformed item payloads", () => {
