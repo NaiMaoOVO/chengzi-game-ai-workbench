@@ -42,6 +42,9 @@
     if (!element) return;
     element.textContent = text;
     element.dataset.tone = tone || "";
+    const serviceLabel = tone === "success" ? "数据服务 · 已连接" : tone === "danger" ? "数据服务 · 未连接" : tone === "warning" ? "数据服务 · 需处理" : "数据服务 · 同步中";
+    setText("#sidebar-service-state", serviceLabel);
+    setText("#topbar-service-state", serviceLabel.replace("数据服务 · ", ""));
   }
 
   function formatMorningTime(value) {
@@ -62,11 +65,13 @@
     if (loading) {
       element.textContent = "晨报：正在检查最近运行状态…";
       element.dataset.tone = "loading";
+      setText("#daily-stat-morning", "—");
       return;
     }
     if (unavailable) {
       element.textContent = "晨报：登录或连接服务后可查看运行状态";
       element.dataset.tone = "warning";
+      setText("#daily-stat-morning", "—");
       return;
     }
     const latestByGame = new Map();
@@ -77,6 +82,7 @@
     if (!latestByGame.size) {
       element.textContent = "晨报：尚未配置自动抓取";
       element.dataset.tone = "warning";
+      setText("#daily-stat-morning", "待配置");
       return;
     }
     const summaries = [...latestByGame.entries()].map(([key, item]) => {
@@ -86,6 +92,7 @@
     });
     element.textContent = "晨报：" + summaries.join("；");
     element.dataset.tone = summaries.some((summary) => summary.includes("失败")) ? "danger" : "success";
+    setText("#daily-stat-morning", latestByGame.size);
   }
 
   function currentGame() {
@@ -97,7 +104,9 @@
 
   function refreshProjectContext() {
     const element = document.querySelector("#daily-project-context");
-    if (element) element.textContent = allProjectsScope + " · 新增待办归属：" + currentGame();
+    const game = currentGame();
+    if (element) element.textContent = allProjectsScope + " · 新增待办归属：" + game;
+    setText("#sidebar-project-name", game === "未设置" ? "全部项目" : game);
   }
 
   window.refreshDailyProjectContext = refreshProjectContext;
@@ -191,8 +200,13 @@
       game.textContent = item.game;
       meta.append(game);
     }
-    text.append(meta);
-    row.append(text);
+    const source = document.createElement("span");
+    source.className = "daily-queue-cell daily-queue-source";
+    source.textContent = "个人待办";
+    const state = document.createElement("div");
+    state.className = "daily-queue-cell daily-queue-state";
+    state.append(meta);
+    row.append(text, source, state);
 
     const actions = document.createElement("div");
     actions.className = "publication-actions";
@@ -237,8 +251,13 @@
       detail.textContent = item.detail;
       meta.append(detail);
     }
-    text.append(meta);
-    row.append(text);
+    const source = document.createElement("span");
+    source.className = "daily-queue-cell daily-queue-source";
+    source.textContent = item.kind === "risk" ? "风险工单" : "发布回流";
+    const state = document.createElement("div");
+    state.className = "daily-queue-cell daily-queue-state";
+    state.append(meta);
+    row.append(text, source, state);
 
     const actions = document.createElement("div");
     actions.className = "publication-actions";
@@ -325,11 +344,60 @@
     });
   }
 
+  function renderDailyInsight(manualItems = [], state = {}) {
+    const summary = document.querySelector("#daily-insight-summary");
+    const list = document.querySelector("#daily-insight-recommendations");
+    const action = document.querySelector("#daily-insight-action");
+    if (!summary || !list || !action) return;
+    list.innerHTML = "";
+    action.hidden = false;
+    const recommendations = [];
+    let actionLabel = "添加今日待办";
+    let actionHandler = () => titleEl()?.focus();
+
+    if (state.loading) {
+      summary.textContent = "正在整理风险、回流与待办信号…";
+      action.hidden = true;
+      return;
+    }
+    if (state.error || state.authRequired) {
+      summary.textContent = "暂时无法读取完整运营信号；先恢复服务连接，再决定下一步。";
+      recommendations.push("检查服务连接状态，恢复后再确认风险与发布回流。");
+      actionLabel = "查看服务状态";
+      actionHandler = openLocalServiceRecovery;
+    } else {
+      const riskCount = state.riskUnavailable ? 0 : Number(state.riskCount) || 0;
+      const publicationCount = state.publicationUnavailable ? 0 : Number(state.publicationCount) || 0;
+      const todoCount = Number(state.todoCount) || manualItems.length;
+      if (riskCount) {
+        recommendations.push(`优先处理 ${riskCount} 条风险工单，确认是否需要转为对外回应或内容调整。`);
+        actionLabel = "查看风险工单";
+        actionHandler = () => openManagementPanel("#risk-ticket-panel");
+      }
+      if (publicationCount) recommendations.push(`回流 ${publicationCount} 条已发布内容，补齐真实效果后再评估下一轮动作。`);
+      if (todoCount) recommendations.push(`把 ${todoCount} 条个人待办按截止日期和优先级推进，避免关键事项沉到底部。`);
+      if (!recommendations.length) recommendations.push("队列已清空。补充一件最重要的事，或在热点追踪中寻找新的运营信号。");
+      summary.textContent = riskCount
+        ? `发现 ${riskCount} 个需要优先判断的风险信号。`
+        : publicationCount
+          ? `当前没有风险升级项，${publicationCount} 条内容等待效果回流。`
+          : "当前没有需要升级的异常信号。";
+    }
+    recommendations.slice(0, 3).forEach((text) => {
+      const item = document.createElement("li");
+      item.textContent = text;
+      list.append(item);
+    });
+    action.textContent = actionLabel;
+    action.onclick = actionHandler;
+  }
+
   window.renderTodayTodos = function renderTodayTodos(manualItems, state = {}) {
     const container = listEl();
     if (!container) return;
     container.innerHTML = "";
     setStats(state);
+    renderDailyInsight(manualItems, state);
 
     if (state.loading) {
       container.innerHTML = '<p class="muted-copy">正在汇总今日待办……</p>';

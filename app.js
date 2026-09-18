@@ -6577,6 +6577,46 @@ function navigateToView(viewName) {
   }
 }
 
+function openCommandPalette() {
+  const palette = document.querySelector("#command-palette");
+  const overlay = document.querySelector("#command-palette-overlay");
+  const input = document.querySelector("#command-palette-input");
+  if (!palette || !overlay || !input) return;
+  palette.hidden = false;
+  overlay.hidden = false;
+  input.value = "";
+  filterCommandPalette();
+  window.setTimeout(() => input.focus(), 0);
+}
+
+function closeCommandPalette() {
+  const palette = document.querySelector("#command-palette");
+  const overlay = document.querySelector("#command-palette-overlay");
+  if (palette) palette.hidden = true;
+  if (overlay) overlay.hidden = true;
+  document.querySelector("#command-trigger")?.focus();
+}
+
+function filterCommandPalette() {
+  const input = document.querySelector("#command-palette-input");
+  const query = input?.value.trim().toLocaleLowerCase() || "";
+  document.querySelectorAll("#command-palette [data-command-view], #command-palette [data-command-action]").forEach((button) => {
+    button.hidden = Boolean(query) && !button.textContent.toLocaleLowerCase().includes(query);
+  });
+}
+
+function runCommandAction(action) {
+  if (action === "new-todo") {
+    navigateToView("daily");
+    window.setTimeout(() => document.querySelector("#daily-todo-title")?.focus(), 0);
+  }
+  if (action === "refresh-daily") {
+    navigateToView("daily");
+    window.loadTodayTodos?.();
+  }
+  closeCommandPalette();
+}
+
 function collectListText(selector) {
   return Array.from(document.querySelectorAll(`${selector} li`)).map((item) => `- ${item.textContent}`).join("\n");
 }
@@ -6746,6 +6786,27 @@ document.querySelectorAll(".nav-button").forEach((button) => {
   button.addEventListener("click", () => {
     navigateToView(button.dataset.view);
   });
+});
+
+document.querySelector(".sidebar-project-link")?.addEventListener("click", () => navigateToView("overview"));
+document.querySelector("#command-trigger")?.addEventListener("click", openCommandPalette);
+document.querySelector("#command-palette-overlay")?.addEventListener("click", closeCommandPalette);
+document.querySelector("#command-palette-input")?.addEventListener("input", filterCommandPalette);
+document.querySelectorAll("#command-palette [data-command-view]").forEach((button) => {
+  button.addEventListener("click", () => {
+    navigateToView(button.dataset.commandView);
+    closeCommandPalette();
+  });
+});
+document.querySelectorAll("#command-palette [data-command-action]").forEach((button) => {
+  button.addEventListener("click", () => runCommandAction(button.dataset.commandAction));
+});
+document.addEventListener("keydown", (event) => {
+  if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+    event.preventDefault();
+    openCommandPalette();
+  }
+  if (event.key === "Escape" && !document.querySelector("#command-palette")?.hidden) closeCommandPalette();
 });
 
 document.querySelectorAll(".segment-button").forEach((button) => {
@@ -7630,6 +7691,12 @@ renderReviewGrade();
 /* ---- 初始化 ---- */
 
 renderServiceModeControls();
+document.querySelector("#topbar-date").textContent = new Intl.DateTimeFormat("zh-CN", {
+  timeZone: "Asia/Shanghai",
+  month: "long",
+  day: "numeric",
+  weekday: "short"
+}).format(new Date());
 purgeSensitiveProjectStateStorage();
 const archiveSessionReady = refreshArchiveSession();
 checkOcrHealth();

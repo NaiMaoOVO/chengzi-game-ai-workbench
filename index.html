@@ -17,44 +17,54 @@
           </div>
         </div>
 
+        <button class="sidebar-project-link" type="button" data-view="overview" aria-label="进入项目档案管理">
+          <span>当前项目</span>
+          <strong id="sidebar-project-name">全部项目</strong>
+          <small>管理档案</small>
+        </button>
+
         <nav class="nav-list">
-          <button class="nav-button active" data-view="daily">每日工作台</button>
-          <button class="nav-button" data-view="overview">项目总览</button>
-          <button class="nav-button" data-view="content">竞品内容拆解</button>
-          <button class="nav-button" data-view="feedback">玩家评论分析</button>
-          <button class="nav-button" data-view="review">活动复盘生成</button>
-          <button class="nav-button" data-view="trending">热点追踪</button>
-          <button class="nav-button" data-view="version">版本包装助手</button>
-          <button class="nav-button" data-view="segment">玩家分层策略</button>
-          <button class="nav-button" data-view="creator">KOL/KOC 筛选</button>
+          <div class="nav-group">
+            <p class="nav-group-label">工作区</p>
+            <button class="nav-button active" data-view="daily"><span aria-hidden="true">◎</span>每日工作台</button>
+            <button class="nav-button" data-view="overview"><span aria-hidden="true">□</span>项目总览</button>
+          </div>
+          <div class="nav-group">
+            <p class="nav-group-label">内容洞察</p>
+            <button class="nav-button" data-view="content"><span aria-hidden="true">⌁</span>竞品内容拆解</button>
+            <button class="nav-button" data-view="feedback"><span aria-hidden="true">◌</span>玩家评论分析</button>
+            <button class="nav-button" data-view="trending"><span aria-hidden="true">↗</span>热点追踪</button>
+          </div>
+          <div class="nav-group">
+            <p class="nav-group-label">内容生产</p>
+            <button class="nav-button" data-view="review"><span aria-hidden="true">↺</span>活动复盘生成</button>
+            <button class="nav-button" data-view="version"><span aria-hidden="true">✦</span>版本包装助手</button>
+          </div>
+          <div class="nav-group">
+            <p class="nav-group-label">增长运营</p>
+            <button class="nav-button" data-view="segment"><span aria-hidden="true">◫</span>玩家分层策略</button>
+            <button class="nav-button" data-view="creator"><span aria-hidden="true">◇</span>KOL/KOC 筛选</button>
+          </div>
         </nav>
 
-        <section class="sidebar-panel">
-          <p class="panel-label">个人运营闭环</p>
-          <ol class="flow-list">
-            <li>追踪平台热点趋势</li>
-            <li>看竞品内容方向</li>
-            <li>提炼玩家情绪与需求</li>
-            <li>产出内容/活动方案</li>
-            <li>复盘数据并给出下一轮动作</li>
-          </ol>
-        </section>
-
         <div class="sidebar-bottom-nav">
+          <p class="sidebar-service-state" id="sidebar-service-state" aria-live="polite">数据服务 · 检查中</p>
           <button class="nav-button nav-button-subtle" data-view="resume">备用素材</button>
         </div>
       </aside>
 
       <section class="workspace">
         <header class="topbar">
-          <div>
-            <p class="eyebrow">Daily Workbench</p>
+          <div class="topbar-page-context">
+            <p class="eyebrow">运营控制台</p>
             <h2 id="view-title">每日工作台</h2>
           </div>
-          <div class="status-strip" aria-label="当前能力标签">
-            <span>内容策略</span>
-            <span>玩家洞察</span>
-            <span>复盘归因</span>
+          <button class="command-trigger" id="command-trigger" type="button" aria-haspopup="dialog" aria-controls="command-palette">
+            <span>搜索功能、数据或直接向 AI 提问…</span><kbd>⌘ K</kbd>
+          </button>
+          <div class="topbar-utility" aria-label="工作台状态">
+            <span id="topbar-date"></span>
+            <span id="topbar-service-state">数据检查中</span>
           </div>
           <div class="archive-auth-panel" id="archive-auth-panel" hidden>
             <span class="archive-auth-status" id="archive-auth-status" aria-live="polite"></span>
@@ -161,7 +171,7 @@
                   <p class="eyebrow">Daily Workbench</p>
                   <span id="daily-date-label" class="daily-date-label"></span>
                 </div>
-                <h3>今天先处理这些事</h3>
+                <h3>先处理会影响今天的事</h3>
                 <p class="daily-hero-subtitle" id="daily-progress-summary">正在同步今日工作状态…</p>
                 <p class="daily-project-context" id="daily-project-context" aria-live="polite">工作范围：全部项目 · 新增待办归属：正在识别项目…</p>
                 <p class="daily-connection-state" id="daily-connection-state" aria-live="polite">正在连接工作台服务…</p>
@@ -183,14 +193,19 @@
                   <strong id="daily-stat-publish">0</strong>
                   <span>待回流内容</span>
                 </article>
+                <article class="daily-stat-card daily-stat-morning">
+                  <span class="daily-stat-index">04</span>
+                  <strong id="daily-stat-morning">—</strong>
+                  <span>晨报运行</span>
+                </article>
               </div>
             </section>
 
-            <section class="section-block daily-timeline-panel" aria-label="今日时间线">
+            <section class="section-block daily-timeline-panel" aria-label="今日优先处理">
               <div class="daily-panel-head">
                 <div>
-                  <h3>行动队列</h3>
-                  <p class="muted-copy">风险优先，其次是待回流和手动待办。</p>
+                  <h3>今日优先处理</h3>
+                  <p class="muted-copy">风险在前；回流与关键待办随后。完成项会保留在折叠区。</p>
                 </div>
                 <button class="secondary-button" id="refresh-daily-todos" type="button">刷新</button>
               </div>
@@ -224,6 +239,9 @@
                 <button class="daily-filter" type="button" data-daily-filter="today" aria-pressed="false">今日到期</button>
               </div>
               <p class="source-status" id="daily-todo-status" aria-live="polite">每日工作台：等待读取本地待办。</p>
+              <div class="daily-queue-table-head" aria-hidden="true">
+                <span>事项</span><span>来源</span><span>优先级 / 状态</span><span>操作</span>
+              </div>
               <div class="daily-timeline" id="daily-todo-list">
                 <p class="muted-copy">正在汇总今日待办……</p>
               </div>
@@ -231,6 +249,19 @@
                 <summary></summary>
                 <div class="daily-timeline daily-timeline-done" id="daily-done-container"></div>
               </details>
+            </section>
+
+            <section class="section-block daily-insight-panel" aria-label="AI 洞察">
+              <div class="daily-insight-head">
+                <div>
+                  <p class="eyebrow">AI Insight <span>Beta</span></p>
+                  <h3>需要你判断的信号</h3>
+                </div>
+                <span class="daily-insight-status">自动归纳</span>
+              </div>
+              <p class="daily-insight-summary" id="daily-insight-summary" aria-live="polite">正在整理风险、回流与待办信号…</p>
+              <ol class="daily-insight-list" id="daily-insight-recommendations"></ol>
+              <button class="secondary-button" id="daily-insight-action" type="button" hidden>查看下一步</button>
             </section>
 
             <section class="section-block briefing-panel" id="briefing-panel" aria-label="今日运营简报">
@@ -1182,6 +1213,24 @@
         </section>
       </section>
     </main>
+  <div class="command-palette-overlay" id="command-palette-overlay" hidden></div>
+  <section class="command-palette" id="command-palette" role="dialog" aria-modal="true" aria-labelledby="command-palette-title" hidden>
+    <div class="command-palette-search">
+      <label class="sr-only" for="command-palette-input">搜索工作台操作</label>
+      <input id="command-palette-input" type="search" placeholder="搜索功能或操作…" autocomplete="off" />
+      <kbd>ESC</kbd>
+    </div>
+    <div class="command-palette-list" aria-label="可用操作">
+      <p id="command-palette-title" class="command-palette-label">快速前往</p>
+      <button type="button" data-command-view="daily">每日工作台 <small>查看今天的队列</small></button>
+      <button type="button" data-command-view="trending">热点追踪 <small>发现值得关注的话题</small></button>
+      <button type="button" data-command-view="feedback">玩家评论分析 <small>处理玩家反馈</small></button>
+      <button type="button" data-command-view="creator">KOL/KOC 筛选 <small>查看创作者决策库</small></button>
+      <p class="command-palette-label">高频操作</p>
+      <button type="button" data-command-action="new-todo">新建今日待办 <small>聚焦一件关键事项</small></button>
+      <button type="button" data-command-action="refresh-daily">刷新今日队列 <small>重新汇总风险与回流</small></button>
+    </div>
+  </section>
   <div class="caliber-overlay" id="caliber-overlay"></div>
 <div class="caliber-panel" id="caliber-panel" role="dialog" aria-modal="true" aria-labelledby="caliber-title">
   <h3><span id="caliber-title">数据口径说明</span><button class="caliber-close" id="caliber-close" type="button" aria-label="关闭口径说明">✕</button></h3>
