@@ -112,6 +112,17 @@ test("daily dashboard promotes the page title while keeping global service noise
   assert.match(css, /\.daily-hero\s*\{[\s\S]*background:\s*transparent/);
 });
 
+test("daily follow-up work keeps briefing, publication and risk actionable when no records exist", () => {
+  assert.match(html, /class="daily-follow-up-grid"/);
+  assert.match(html, /id="publication-panel" open/);
+  assert.match(html, /id="risk-ticket-panel" open/);
+  assert.match(html, /class="daily-management-overview"/);
+  assert.match(html, /<summary>登记一条发布<\/summary>/);
+  assert.match(html, /<summary>筛选工单<\/summary>/);
+  assert.match(css, /\.daily-follow-up-grid\s*\{[\s\S]*grid-template-columns/);
+  assert.match(css, /\.daily-management-overview/);
+});
+
 test("daily workbench refreshes visible operational status automatically", () => {
   const daily = fs.readFileSync(path.join(root, "daily-workbench.js"), "utf8");
 
