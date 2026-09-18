@@ -70,6 +70,8 @@ test("daily workbench makes overdue and planned dates visible", () => {
   const daily = fs.readFileSync(path.join(root, "daily-workbench.js"), "utf8");
 
   assert.match(daily, /function dueState/);
+  assert.match(daily, /function isCalendarDate/);
+  assert.match(daily, /!isCalendarDate\(dueDate\)/);
   assert.match(daily, /逾期/);
   assert.match(daily, /今日/);
   assert.match(daily, /daily-due-badge/);
