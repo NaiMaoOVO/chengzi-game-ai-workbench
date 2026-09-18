@@ -659,7 +659,32 @@ function buildBriefingTodos(topics, riskText) {
   return todos;
 }
 
+function normalizeBriefingPayload(value) {
+  const briefing = value && typeof value === "object" && !Array.isArray(value) ? value : {};
+  const topics = Array.isArray(briefing.topics)
+    ? briefing.topics.filter((topic) => topic && typeof topic === "object" && !Array.isArray(topic))
+    : [];
+  const todoSuggestions = Array.isArray(briefing.todoSuggestions)
+    ? briefing.todoSuggestions.filter((item) => typeof item === "string" && item.trim())
+    : [];
+  const feedback = briefing.feedback && typeof briefing.feedback === "object" && !Array.isArray(briefing.feedback)
+    ? briefing.feedback
+    : {};
+  const negativeRatio = Number(briefing.weekOverWeek?.negativeRatio);
+  const changePoints = Number(briefing.weekOverWeek?.changePoints);
+  return {
+    ...briefing,
+    topics,
+    todoSuggestions,
+    feedback,
+    weekOverWeek: Number.isFinite(negativeRatio) && Number.isFinite(changePoints)
+      ? { negativeRatio, changePoints }
+      : null
+  };
+}
+
 function renderBriefing(briefing) {
+  briefing = normalizeBriefingPayload(briefing);
   const body = document.querySelector("#briefing-body");
   if (!body) return;
   body.hidden = false;
@@ -762,7 +787,7 @@ function renderBriefArchiveItem(briefing) {
   entry.className = "briefing-archive-item";
   const dateLabel = formatBusinessDateTime(briefing.created_at) || "未知时间";
   const invalid = briefing.invalid === true;
-  const payload = briefing.payload && typeof briefing.payload === "object" && !Array.isArray(briefing.payload) ? briefing.payload : {};
+  const payload = normalizeBriefingPayload(briefing.payload);
   const summary = invalid ? "存档数据损坏，请重新生成" : (payload.topics || [])
     .slice(0, 2)
     .map((topic) => escapeHtml(topic.title))
