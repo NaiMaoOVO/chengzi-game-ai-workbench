@@ -133,6 +133,10 @@ test("daily todo validation rejects invalid fields and missing records", async (
   assert.equal(badDate.status, 400);
   assert.match(JSON.parse(badDate.text).error, /due_date/);
 
+  const impossibleDate = await postDailyTodo({ game: "鸣潮", title: "测试", due_date: "2026-02-30" });
+  assert.equal(impossibleDate.status, 400);
+  assert.match(JSON.parse(impossibleDate.text).error, /due_date/);
+
   const tooLongTitle = await postDailyTodo({ game: "鸣潮", title: "x".repeat(201) });
   assert.equal(tooLongTitle.status, 400);
   assert.match(JSON.parse(tooLongTitle.text).error, /title/);
