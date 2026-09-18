@@ -5513,6 +5513,16 @@ function canonicalizeCreatorLibrary(library) {
   return canonical;
 }
 
+function invalidCreatorLibraryEntries(library) {
+  return Object.entries(library || {}).filter(([, profile]) => !profile
+    || typeof profile !== "object"
+    || Array.isArray(profile)
+    || typeof profile.name !== "string"
+    || !profile.name.trim()
+    || typeof profile.platform !== "string"
+    || !profile.platform.trim());
+}
+
 function mergeCreatorLibraries(local, remote) {
   const merged = canonicalizeCreatorLibrary(remote);
   Object.entries(canonicalizeCreatorLibrary(local)).forEach(([key, profile]) => {
@@ -5540,7 +5550,11 @@ async function syncCreatorLibrary() {
     const remote = await remoteResponse.json().catch(() => ({}));
     if (!remoteResponse.ok || !remote.ok) throw new Error(remoteResponse.status === 401 ? "请先登录存档服务" : remote.error || `HTTP ${remoteResponse.status}`);
     if (remote.invalid) throw new Error("远端个人库数据损坏，已阻止覆盖；请恢复备份或确认后重新保存");
-    let merged = mergeCreatorLibraries(readCreatorLibrary(), remote.library || {});
+    const localLibrary = readCreatorLibrary();
+    const remoteLibrary = remote.library || {};
+    const invalidCount = invalidCreatorLibraryEntries(localLibrary).length + invalidCreatorLibraryEntries(remoteLibrary).length;
+    if (invalidCount) throw new Error(`个人库发现 ${invalidCount} 条损坏记录，已阻止覆盖；请恢复备份或导出后修复`);
+    let merged = mergeCreatorLibraries(localLibrary, remoteLibrary);
     const put = async (baseUpdatedAt, library) => {
       const response = await archiveRequest(ARCHIVE_SERVICE_URL + "/creator-library", {
         method: "PUT",
