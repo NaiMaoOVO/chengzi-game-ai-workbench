@@ -7491,12 +7491,29 @@ function recalcWithBackfill() {
   }
 
   if (!currentCreatorRows.length) analyzeCreators();
-  const backfillMap = new Map(backfills.map((item) => [creatorNameKey(item.name), item]));
+  const backfillMap = new Map();
+  backfills.forEach((item) => {
+    const key = creatorNameKey(item.name);
+    const entries = backfillMap.get(key) || [];
+    entries.push(item);
+    backfillMap.set(key, entries);
+  });
+  const currentNameCounts = new Map();
+  currentCreatorRows.forEach((row) => {
+    const key = creatorNameKey(row.name);
+    currentNameCounts.set(key, (currentNameCounts.get(key) || 0) + 1);
+  });
   let matched = 0;
+  let ambiguous = 0;
   let backfillPersistenceFailures = 0;
   const updatedRows = currentCreatorRows.map((row) => {
-    const patch = backfillMap.get(creatorNameKey(row.name));
-    if (!patch) return row;
+    const nameKey = creatorNameKey(row.name);
+    const candidates = backfillMap.get(nameKey) || [];
+    if (candidates.length !== 1 || currentNameCounts.get(nameKey) !== 1) {
+      if (candidates.length || currentNameCounts.get(nameKey) > 1) ambiguous += 1;
+      return row;
+    }
+    const patch = candidates[0];
     matched += 1;
     if (!syncCreatorBackfillToLibrary(row, patch)) backfillPersistenceFailures += 1;
     return {
@@ -7513,7 +7530,9 @@ function recalcWithBackfill() {
 
   if (!matched) {
     if (status) {
-      status.textContent = "达人来源：回填格式正确，但没有匹配到已导入的达人姓名。";
+      status.textContent = ambiguous
+        ? `达人来源：发现 ${ambiguous} 个重名或多条回填，已跳过以避免写入错误档案。请补充账号 ID 或拆分名单后再回填。`
+        : "达人来源：回填格式正确，但没有匹配到已导入的达人姓名。";
       status.className = "source-status source-mock";
     }
     return;
@@ -7525,8 +7544,8 @@ function recalcWithBackfill() {
   }
   analyzeCreators(updatedRows);
   if (status) {
-    status.textContent = `达人来源：已按 ${matched} 位达人实测数据更新评分和性价比排序。${backfillPersistenceFailures ? `另有 ${backfillPersistenceFailures} 位回填未写入个人库，请检查浏览器存储空间。` : ""}`;
-    status.className = backfillPersistenceFailures ? "source-status source-mock" : "source-status source-real";
+    status.textContent = `达人来源：已按 ${matched} 位达人实测数据更新评分和性价比排序。${ambiguous ? `另有 ${ambiguous} 个重名或多条回填已跳过。` : ""}${backfillPersistenceFailures ? `另有 ${backfillPersistenceFailures} 位回填未写入个人库，请检查浏览器存储空间。` : ""}`;
+    status.className = backfillPersistenceFailures || ambiguous ? "source-status source-mock" : "source-status source-real";
   }
 }
 
