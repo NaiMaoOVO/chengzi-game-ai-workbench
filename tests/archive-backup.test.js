@@ -55,6 +55,25 @@ test("archive backup writes a checksum and prunes older copies by retention", ()
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
+test("archive backup hardens an existing backup directory", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "gameops-backup-mode-test-"));
+  const databasePath = path.join(dir, "archive.db");
+  const backupDir = path.join(dir, "backups");
+  const db = new DatabaseSync(databasePath);
+  db.exec("CREATE TABLE check_rows (value TEXT NOT NULL); INSERT INTO check_rows VALUES ('kept');");
+  db.close();
+  fs.mkdirSync(backupDir, { mode: 0o755 });
+  fs.chmodSync(backupDir, 0o755);
+  const result = spawnSync(process.execPath, [path.join(root, "scripts", "backup-archive.js")], {
+    cwd: root,
+    env: { ...process.env, ARCHIVE_DB_PATH: databasePath, ARCHIVE_BACKUP_DIR: backupDir },
+    encoding: "utf8"
+  });
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.equal(fs.statSync(backupDir).mode & 0o777, 0o700);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
 test("archive backup verification accepts intact files and rejects tampering", () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "gameops-backup-verify-test-"));
   const databasePath = path.join(dir, "archive.db");
