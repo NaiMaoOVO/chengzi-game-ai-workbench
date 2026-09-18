@@ -115,6 +115,14 @@ test("daily todos support create, list, complete, and reopen", async () => {
   });
   assert.equal(JSON.parse(reopened.text).daily_todo.completed_at, null);
 
+  const clearedDueDate = await httpRequest("/daily-todos/" + createPayload.daily_todo.id, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ due_date: null })
+  });
+  assert.equal(clearedDueDate.status, 200);
+  assert.equal(JSON.parse(clearedDueDate.text).daily_todo.due_date, null);
+
   const listed = JSON.parse((await httpRequest("/daily-todos?game=" + encodeURIComponent("鸣潮") + "&status=open")).text);
   assert.equal(listed.ok, true);
   assert.equal(listed.items.some((item) => item.id === createPayload.daily_todo.id), true);
