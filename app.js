@@ -6658,6 +6658,28 @@ function closeCommandPalette() {
   document.querySelector("#command-trigger")?.focus();
 }
 
+function getCommandPaletteFocusableElements(palette) {
+  return Array.from(palette?.querySelectorAll("button:not([disabled]), input:not([disabled]), [href]") || [])
+    .filter((element) => !element.hidden && element.tabIndex >= 0);
+}
+
+function handleCommandPaletteKeydown(event) {
+  const palette = document.querySelector("#command-palette");
+  if (!palette || palette.hidden || event.key !== "Tab") return;
+  const focusables = getCommandPaletteFocusableElements(palette);
+  if (!focusables.length) return;
+  const first = focusables[0];
+  const last = focusables[focusables.length - 1];
+  const current = document.activeElement;
+  if (event.shiftKey && (current === first || !palette.contains(current))) {
+    event.preventDefault();
+    last.focus();
+  } else if (!event.shiftKey && (current === last || !palette.contains(current))) {
+    event.preventDefault();
+    first.focus();
+  }
+}
+
 function filterCommandPalette() {
   const input = document.querySelector("#command-palette-input");
   const query = input?.value.trim().toLocaleLowerCase() || "";
@@ -6862,6 +6884,7 @@ document.querySelectorAll("#command-palette [data-command-view]").forEach((butto
 document.querySelectorAll("#command-palette [data-command-action]").forEach((button) => {
   button.addEventListener("click", () => runCommandAction(button.dataset.commandAction));
 });
+document.addEventListener("keydown", handleCommandPaletteKeydown);
 document.addEventListener("keydown", (event) => {
   if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
     event.preventDefault();

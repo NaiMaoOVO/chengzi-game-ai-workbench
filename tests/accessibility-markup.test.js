@@ -105,6 +105,9 @@ test("daily dashboard provides grouped navigation, a command palette and decisio
   assert.match(html, /id="daily-insight-summary"[^>]*aria-live="polite"/);
   assert.match(html, /class="daily-queue-table-head"/);
   assert.match(app, /function openCommandPalette/);
+  assert.match(app, /function getCommandPaletteFocusableElements/);
+  assert.match(app, /function handleCommandPaletteKeydown/);
+  assert.match(app, /document\.addEventListener\("keydown", handleCommandPaletteKeydown\)/);
   assert.match(app, /event\.metaKey \|\| event\.ctrlKey/);
   assert.match(dailyWorkbench, /function renderDailyInsight/);
   assert.match(css, /--product-bg:\s*#f7f8fa/);
