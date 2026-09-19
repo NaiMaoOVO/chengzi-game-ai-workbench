@@ -18,7 +18,10 @@ const views = {
   },
   overview: {
     title: "项目总览",
-    element: document.querySelector("#overview-view")
+    elements: [
+      document.querySelector("#overview-view"),
+      document.querySelector("#overview-details-view")
+    ]
   },
   content: {
     title: "竞品内容拆解",
@@ -6609,8 +6612,14 @@ function loadProjectState() {
   }
 }
 
+function getViewElements(viewName) {
+  const view = views[viewName];
+  if (!view) return [];
+  return (view.elements || [view.element]).filter(Boolean);
+}
+
 function navigateToView(viewName) {
-  if (!views[viewName]?.element) return;
+  if (!getViewElements(viewName).length) return;
   document.querySelectorAll(".nav-button").forEach((item) => {
     const active = item.dataset.view === viewName;
     item.classList.toggle("active", active);
@@ -6618,7 +6627,7 @@ function navigateToView(viewName) {
     else item.removeAttribute("aria-current");
   });
   document.querySelectorAll(".view").forEach((item) => item.classList.remove("active"));
-  views[viewName].element.classList.add("active");
+  getViewElements(viewName).forEach((element) => element.classList.add("active"));
   document.querySelector("#view-title").textContent = views[viewName].title;
   updateChainBar(viewName);
   if (window.history.replaceState) {

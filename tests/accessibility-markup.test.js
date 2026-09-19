@@ -143,6 +143,15 @@ test("non-daily operational tools share the product workspace visual system", ()
   assert.match(css, /\.view:not\(#daily-view\) \.metric/);
 });
 
+test("project overview keeps its controls and operating map in one route without duplicate ids", () => {
+  const overviewIds = [...html.matchAll(/id="overview-view"/g)];
+  assert.equal(overviewIds.length, 1);
+  assert.match(html, /id="overview-details-view"/);
+  assert.match(app, /elements:\s*\[\s*document\.querySelector\("#overview-view"\),\s*document\.querySelector\("#overview-details-view"\)\s*\]/);
+  assert.match(app, /function getViewElements\(viewName\)/);
+  assert.match(app, /getViewElements\(viewName\)\.forEach\(\(element\) => element\.classList\.add\("active"\)\)/);
+});
+
 test("daily dashboard promotes the page title while keeping global service noise out of its first screen", () => {
   assert.match(html, /<h3>每日工作台<\/h3>/);
   assert.match(html, /class="daily-hero-lead">从数据到行动，让好游戏被更多人看到。<\/p>/);
