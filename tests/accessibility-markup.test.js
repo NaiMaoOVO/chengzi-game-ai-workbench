@@ -157,6 +157,16 @@ test("project overview keeps its controls and operating map in one route without
   assert.match(app, /getViewElements\(viewName\)\.forEach\(\(element\) => element\.classList\.add\("active"\)\)/);
 });
 
+test("trending cards separate analysis selection from external source navigation", () => {
+  assert.match(app, /class="trending-select/);
+  assert.match(app, /class="trending-external-link/);
+  assert.match(app, /event\.target\.closest\("\.trending-external-link"\)/);
+  assert.match(app, /addEventListener\("keydown", \(event\) => \{\n  if \(event\.target\.closest\("\.trending-external-link"\)\) return;/);
+  assert.match(app, /nextItem\.querySelector\("\.trending-select"\)\?\.focus\(\)/);
+  assert.doesNotMatch(app, /class="trending-item[^\n]+role="button"/);
+  assert.match(css, /\.trending-select:focus-visible/);
+});
+
 test("daily dashboard promotes the page title while keeping global service noise out of its first screen", () => {
   assert.match(html, /<h3>每日工作台<\/h3>/);
   assert.match(html, /class="daily-hero-lead">从数据到行动，让好游戏被更多人看到。<\/p>/);

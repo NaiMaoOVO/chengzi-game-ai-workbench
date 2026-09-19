@@ -4818,6 +4818,43 @@ kbd {
 .daily-insight-status[data-tone="warning"] { color: #a15c07; }
 .daily-insight-status[data-tone="idle"] { color: #98a2b3; }
 
+.trending-item {
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+.trending-select {
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr);
+  gap: 14px;
+  align-items: center;
+  width: 100%;
+  min-height: 62px;
+  padding: 11px 13px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+.trending-select:focus-visible {
+  outline: 2px solid #4f6ef7;
+  outline-offset: -3px;
+}
+
+.trending-external-link {
+  align-self: center;
+  margin-right: 13px;
+  color: #3656cf;
+  font-size: 12px;
+  font-weight: 760;
+  white-space: nowrap;
+}
+
 @media (max-width: 920px) {
   .view:not(#daily-view) .input-panel { position: static; }
 }

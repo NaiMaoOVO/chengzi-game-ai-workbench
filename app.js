@@ -4100,22 +4100,25 @@ function renderTrendingList(gameName, platform, options = {}) {
       const publishedAt = formatPublishedDate(t.publishedAt);
       const published = publishedAt ? `<span class="trending-author">发布 ${escapeHtml(publishedAt)}</span>` : "";
       return `
-        <li class="trending-item ${index === selectedTrendingIndex ? "active" : ""}" data-trending-index="${index}" role="button" tabindex="${index === selectedTrendingIndex ? 0 : -1}" aria-selected="${index === selectedTrendingIndex}">
-          <span class="trending-rank ${t.rank <= 3 ? "trending-rank-hot" : ""}">${t.rank}</span>
-          <div class="trending-body">
-            <div class="trending-title-row">
-              ${url ? `<a class="trending-title" href="${escapeHtml(url)}" target="_blank" rel="noreferrer">${title}</a>` : `<span class="trending-title">${title}</span>`}
+        <li class="trending-item ${index === selectedTrendingIndex ? "active" : ""}" data-trending-index="${index}">
+          <button class="trending-select" type="button" tabindex="${index === selectedTrendingIndex ? 0 : -1}" aria-pressed="${index === selectedTrendingIndex}">
+            <span class="trending-rank ${t.rank <= 3 ? "trending-rank-hot" : ""}">${t.rank}</span>
+            <div class="trending-body">
+              <div class="trending-title-row">
+                <span class="trending-title">${title}</span>
               ${suffix}
+              </div>
+              <div class="trending-meta">
+                <span class="trending-tag">${escapeHtml(t.tag)}</span>
+                <span class="risk-badge ${t.risk?.cls || "risk-low"}">${escapeHtml(t.risk?.level || "正常")}</span>
+                <span class="trending-heat">${t.source === "real" ? "热度" : "🔥"} ${escapeHtml(t.heat)}</span>
+                ${author}
+                ${published}
+                <span class="trending-trend ${t.trend.cls}">${escapeHtml(t.trend.icon)} ${escapeHtml(t.trend.label)}</span>
+              </div>
             </div>
-            <div class="trending-meta">
-              <span class="trending-tag">${escapeHtml(t.tag)}</span>
-              <span class="risk-badge ${t.risk?.cls || "risk-low"}">${escapeHtml(t.risk?.level || "正常")}</span>
-              <span class="trending-heat">${t.source === "real" ? "热度" : "🔥"} ${escapeHtml(t.heat)}</span>
-              ${author}
-              ${published}
-              <span class="trending-trend ${t.trend.cls}">${escapeHtml(t.trend.icon)} ${escapeHtml(t.trend.label)}</span>
-            </div>
-          </div>
+          </button>
+          ${url ? `<a class="trending-external-link" href="${escapeHtml(url)}" target="_blank" rel="noreferrer">原帖</a>` : ""}
         </li>
       `;
     })
@@ -7203,6 +7206,7 @@ document.querySelector("#trending-detail")?.addEventListener("click", (event) =>
 });
 
 document.querySelector("#trending-list")?.addEventListener("click", (event) => {
+  if (event.target.closest(".trending-external-link")) return;
   const item = event.target.closest(".trending-item");
   if (!item) return;
 
@@ -7216,6 +7220,7 @@ document.querySelector("#trending-list")?.addEventListener("click", (event) => {
 
 // 热点榜单键盘可达性：Enter/Space 打开选中项详情，↑/↓ 在列表项间移动焦点（roving tabindex）。
 document.querySelector("#trending-list")?.addEventListener("keydown", (event) => {
+  if (event.target.closest(".trending-external-link")) return;
   if (!["Enter", " ", "ArrowDown", "ArrowUp"].includes(event.key)) return;
   const items = Array.from(document.querySelectorAll(".trending-item"));
   if (!items.length) return;
@@ -7230,9 +7235,13 @@ document.querySelector("#trending-list")?.addEventListener("keydown", (event) =>
     items.forEach((node) => {
       const isActive = node === nextItem;
       node.classList.toggle("active", isActive);
-      node.tabIndex = isActive ? 0 : -1;
+      const control = node.querySelector(".trending-select");
+      if (control) {
+        control.tabIndex = isActive ? 0 : -1;
+        control.setAttribute("aria-pressed", String(isActive));
+      }
     });
-    nextItem.focus();
+    nextItem.querySelector(".trending-select")?.focus();
     renderTrendingDetail(game, platform, currentTrendingTopics[selectedTrendingIndex]);
   };
 
