@@ -77,6 +77,20 @@ test("daily workbench makes overdue and planned dates visible", () => {
   assert.match(daily, /daily-due-badge/);
 });
 
+test("daily todo mutations explain how to recover from a disconnected local service", () => {
+  const daily = fs.readFileSync(path.join(root, "daily-workbench.js"), "utf8");
+  const addStart = daily.indexOf("async function addTodo");
+  const updateStart = daily.indexOf("async function updateTodo");
+  const initStart = daily.indexOf("window.initDailyWorkbench", updateStart);
+  assert.ok(addStart >= 0 && updateStart > addStart && initStart > updateStart);
+  const mutationSource = daily.slice(addStart, initStart);
+
+  assert.match(daily, /function isDailyServiceUnavailable/);
+  assert.match(mutationSource, /本机服务未连接；启动服务后重试/);
+  assert.doesNotMatch(mutationSource, /添加失败（" \+ error\.message/);
+  assert.doesNotMatch(mutationSource, /更新失败（" \+ error\.message/);
+});
+
 test("daily dashboard provides grouped navigation, a command palette and decision cues", () => {
   assert.match(html, /class="nav-group-label">工作区</);
   assert.match(html, /class="nav-group-label">内容洞察</);
