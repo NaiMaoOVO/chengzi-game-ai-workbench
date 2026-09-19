@@ -472,6 +472,16 @@
     return payload;
   }
 
+  function isDailyServiceUnavailable(error) {
+    return /Failed to fetch|NetworkError|load failed/i.test(String(error?.message || ""));
+  }
+
+  function dailyTodoMutationError(error) {
+    return isDailyServiceUnavailable(error)
+      ? "待办未保存：本机服务未连接；启动服务后重试。"
+      : "待办未保存：请稍后重试。";
+  }
+
   async function addTodo() {
     const title = titleEl()?.value.trim();
     if (!title) {
@@ -501,7 +511,7 @@
       titleEl().value = "";
       await window.loadTodayTodos?.();
     } catch (error) {
-      setStatus("添加失败（" + error.message + "）。", "mock");
+      setStatus(dailyTodoMutationError(error), "mock");
     } finally {
       if (submitButton) submitButton.disabled = false;
     }
@@ -516,7 +526,7 @@
       });
       await window.loadTodayTodos?.();
     } catch (error) {
-      setStatus("更新失败（" + error.message + "）。", "mock");
+      setStatus(dailyTodoMutationError(error), "mock");
     }
   }
 

@@ -82,11 +82,14 @@ test("daily todo mutations explain how to recover from a disconnected local serv
   const addStart = daily.indexOf("async function addTodo");
   const updateStart = daily.indexOf("async function updateTodo");
   const initStart = daily.indexOf("window.initDailyWorkbench", updateStart);
-  assert.ok(addStart >= 0 && updateStart > addStart && initStart > updateStart);
+  const helperStart = daily.indexOf("function isDailyServiceUnavailable");
+  assert.ok(helperStart >= 0 && addStart > helperStart && updateStart > addStart && initStart > updateStart);
+  const helperSource = daily.slice(helperStart, addStart);
   const mutationSource = daily.slice(addStart, initStart);
 
   assert.match(daily, /function isDailyServiceUnavailable/);
-  assert.match(mutationSource, /本机服务未连接；启动服务后重试/);
+  assert.match(helperSource, /本机服务未连接；启动服务后重试/);
+  assert.match(mutationSource, /dailyTodoMutationError\(error\)/);
   assert.doesNotMatch(mutationSource, /添加失败（" \+ error\.message/);
   assert.doesNotMatch(mutationSource, /更新失败（" \+ error\.message/);
 });
