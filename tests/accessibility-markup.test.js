@@ -539,6 +539,32 @@ test("briefing renderer degrades safely when archived fields have malformed shap
   assert.match(body.innerHTML, /暂无热点数据/);
 });
 
+test("daily briefing enables archive and copy only after a briefing is rendered", () => {
+  assert.match(html, /id="archive-briefing" type="button" disabled/);
+  assert.match(html, /id="copy-briefing-im" type="button" disabled/);
+  const normalizerStart = app.lastIndexOf("function normalizeBriefingPayload");
+  const renderEnd = app.indexOf("async function generateDailyBriefing", normalizerStart);
+  assert.ok(normalizerStart >= 0 && renderEnd > normalizerStart);
+  const body = { hidden: true, innerHTML: "" };
+  const archiveButton = { disabled: true };
+  const copyButton = { disabled: true };
+  const context = {
+    document: {
+      querySelector: (selector) => ({
+        "#briefing-body": body,
+        "#archive-briefing": archiveButton,
+        "#copy-briefing-im": copyButton
+      })[selector] || null
+    },
+    formatBusinessDateTime: () => "2026-09-19 10:00",
+    escapeHtml: (value) => String(value)
+  };
+  vm.runInNewContext(app.slice(normalizerStart, renderEnd) + "\nthis.renderBriefing = renderBriefing;", context);
+  context.renderBriefing({ game: "鸣潮", topics: [], todoSuggestions: [], feedback: {} });
+  assert.equal(archiveButton.disabled, false);
+  assert.equal(copyButton.disabled, false);
+});
+
 test("daily queue ignores stale concurrent refresh responses", () => {
   const start = app.indexOf("window.loadTodayTodos = async function loadTodayTodos");
   const end = app.indexOf("let llmModelName", start);
