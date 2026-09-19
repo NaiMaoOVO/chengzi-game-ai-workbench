@@ -522,6 +522,21 @@ test("risk ticket mutations are single-flight per ticket", () => {
   assert.match(app.slice(updateStart, deleteEnd), /finishRiskTicketMutation\(mutationKey\)/);
 });
 
+test("publication and risk deletions require a clear irreversible-action confirmation", () => {
+  const publicationStart = app.indexOf("async function deletePublicationRecord");
+  const publicationEnd = app.indexOf('document.querySelector("#record-publication")', publicationStart);
+  const riskStart = app.indexOf("async function deleteRiskTicket");
+  const riskEnd = app.indexOf('document.querySelector("#query-risk-tickets")', riskStart);
+  assert.ok(publicationStart >= 0 && publicationEnd > publicationStart && riskStart >= 0 && riskEnd > riskStart);
+  const publicationSource = app.slice(publicationStart, publicationEnd);
+  const riskSource = app.slice(riskStart, riskEnd);
+
+  assert.match(app, /function confirmRecordDeletion/);
+  assert.match(publicationSource, /if \(!confirmRecordDeletion\("发布记录", item, id\)\) return/);
+  assert.match(riskSource, /if \(!confirmRecordDeletion\("风险工单", item, id\)\) return/);
+  assert.match(app, /此操作无法恢复/);
+});
+
 test("briefing archive surfaces response failures and corrupted entries", () => {
   const renderStart = app.indexOf("function renderBriefArchiveItem");
   const renderEnd = app.indexOf("async function loadBriefingArchive", renderStart);
