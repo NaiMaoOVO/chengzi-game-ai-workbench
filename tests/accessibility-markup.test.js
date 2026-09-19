@@ -464,6 +464,21 @@ test("project profile list surfaces archive failures and corrupted records", () 
   assert.match(source, /档案损坏/);
 });
 
+test("project profile reads and saves give a service recovery path without transport details", () => {
+  const listStart = app.indexOf("async function refreshProfileList");
+  const saveStart = app.indexOf("async function saveCurrentProfile");
+  const loadStart = app.indexOf("function loadSelectedProfile", saveStart);
+  assert.ok(listStart >= 0 && saveStart > listStart && loadStart > saveStart);
+  const listSource = app.slice(listStart, saveStart);
+  const saveSource = app.slice(saveStart, loadStart);
+
+  assert.match(app, /function archiveReadFailure/);
+  assert.match(listSource, /archiveReadFailure\("读取项目档案", error\)/);
+  assert.match(saveSource, /archiveMutationFailure\("保存项目档案", error\)/);
+  assert.doesNotMatch(listSource, /读取失败（" \+ error\.message/);
+  assert.doesNotMatch(saveSource, /保存失败（" \+ error\.message/);
+});
+
 test("corrupted project profiles cannot be loaded as if they were restored", () => {
   const start = app.indexOf("function loadSelectedProfile");
   const end = app.indexOf('document.querySelector("#save-profile")', start);
