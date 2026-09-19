@@ -540,6 +540,22 @@ test("project profile reads and saves give a service recovery path without trans
   assert.doesNotMatch(saveSource, /保存失败（" \+ error\.message/);
 });
 
+test("archive authentication and profile restoration do not expose raw service errors", () => {
+  const authStart = app.indexOf('document.querySelector("#archive-login-form")?.addEventListener');
+  const authEnd = app.indexOf("function renderRuntimeModeBadge", authStart);
+  const profileStart = app.indexOf("function loadSelectedProfile");
+  const profileEnd = app.indexOf('document.querySelector("#save-profile")', profileStart);
+  const authSource = app.slice(authStart, authEnd);
+  const profileSource = app.slice(profileStart, profileEnd);
+
+  assert.ok(authStart >= 0 && authEnd > authStart && profileStart >= 0 && profileEnd > profileStart);
+  assert.match(authSource, /archiveMutationFailure\("登录", error\)/);
+  assert.match(authSource, /archiveMutationFailure\("退出", error\)/);
+  assert.doesNotMatch(authSource, /error\.message/);
+  assert.match(profileSource, /archiveReadFailure\("载入项目档案", error\)/);
+  assert.doesNotMatch(profileSource, /error\.message/);
+});
+
 test("corrupted project profiles cannot be loaded as if they were restored", () => {
   const start = app.indexOf("function loadSelectedProfile");
   const end = app.indexOf('document.querySelector("#save-profile")', start);

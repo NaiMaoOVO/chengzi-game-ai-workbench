@@ -445,7 +445,7 @@ document.querySelector("#archive-login-form")?.addEventListener("submit", async 
     loadRiskTickets();
     refreshProfileList();
   } catch (error) {
-    if (status) status.textContent = "登录失败：" + error.message;
+    if (status) status.textContent = archiveMutationFailure("登录", error);
   }
 });
 document.querySelector("#archive-logout")?.addEventListener("click", async () => {
@@ -453,7 +453,7 @@ document.querySelector("#archive-logout")?.addEventListener("click", async () =>
     await logoutArchiveUser();
   } catch (error) {
     const status = document.querySelector("#archive-auth-status");
-    if (status) status.textContent = "退出失败：" + error.message;
+    if (status) status.textContent = archiveMutationFailure("退出", error);
   }
 });
 
@@ -1647,7 +1647,7 @@ function loadSelectedProfile() {
     analyzeTrending();
     if (status) { status.textContent = "项目档案：已载入「" + option.value + "」，已恢复内容、版本和达人条件。"; status.className = "source-status source-real"; }
   } catch (error) {
-    if (status) { status.textContent = "项目档案：载入失败（" + error.message + "）。"; status.className = "source-status source-mock"; }
+    if (status) { status.textContent = "项目档案：" + archiveReadFailure("载入项目档案", error); status.className = "source-status source-mock"; }
   }
 }
 
