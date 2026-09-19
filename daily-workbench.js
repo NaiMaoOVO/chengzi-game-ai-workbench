@@ -501,7 +501,10 @@
       return;
     }
     const generation = ++dailyAiInsightGeneration;
-    if (button) button.disabled = true;
+    if (button) {
+      button.disabled = true;
+      button.setAttribute("aria-disabled", "true");
+    }
     setDailyAiInsightStatus("AI 正在归纳", "loading");
     const response = await requestLlmTask("daily-insight", context, 45000);
     if (generation !== dailyAiInsightGeneration) return;

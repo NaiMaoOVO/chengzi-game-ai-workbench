@@ -130,6 +130,7 @@ test("daily AI insight only submits the current action queue to a dedicated serv
   assert.match(dailyWorkbench, /riskItems/);
   assert.match(dailyWorkbench, /publicationItems/);
   assert.match(dailyWorkbench, /textContent/);
+  assert.match(dailyWorkbench, /button\.setAttribute\("aria-disabled", "true"\)/);
   assert.match(llmServer, /"daily-insight"\s*:/);
   assert.match(llmServer, /待办、风险工单和待回流内容/);
 });
