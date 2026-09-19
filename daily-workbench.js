@@ -104,6 +104,10 @@
       || "未设置";
   }
 
+  function isDailyWorkbenchActive() {
+    return document.querySelector("#daily-view")?.classList.contains("active");
+  }
+
   function refreshProjectContext() {
     const element = document.querySelector("#daily-project-context");
     const game = currentGame();
@@ -694,7 +698,7 @@
     updateFilterControls();
     if (!refreshTimer) {
       refreshTimer = window.setInterval(() => {
-        if (document.visibilityState === "visible") window.loadTodayTodos?.();
+        if (document.visibilityState === "visible" && isDailyWorkbenchActive()) window.loadTodayTodos?.();
       }, 300000);
     }
     if (typeof archiveAuthRequired !== "undefined" && archiveAuthRequired && !archiveSessionUser) {

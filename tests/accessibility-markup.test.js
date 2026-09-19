@@ -197,6 +197,18 @@ test("daily workbench refreshes visible operational status automatically", () =>
   assert.match(daily, /visibilityState/);
 });
 
+test("daily queue polls only while its view is active and refreshes on return", () => {
+  const daily = fs.readFileSync(path.join(root, "daily-workbench.js"), "utf8");
+  const navigationStart = app.indexOf("function navigateToView");
+  const navigationEnd = app.indexOf("function openCommandPalette", navigationStart);
+  const navigation = app.slice(navigationStart, navigationEnd);
+
+  assert.match(daily, /function isDailyWorkbenchActive\(\)/);
+  assert.match(daily, /document\.visibilityState === "visible" && isDailyWorkbenchActive\(\)/);
+  assert.match(navigation, /viewName === "daily" && !targetWasActive/);
+  assert.match(navigation, /window\.loadTodayTodos\?\.\(\)/);
+});
+
 test("daily queue degrades gracefully when the optional morning status endpoint fails", () => {
   const daily = fs.readFileSync(path.join(root, "daily-workbench.js"), "utf8");
   assert.match(app, /Promise\.allSettled/);

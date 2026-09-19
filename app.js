@@ -6623,6 +6623,7 @@ function getViewElements(viewName) {
 
 function navigateToView(viewName) {
   if (!getViewElements(viewName).length) return;
+  const targetWasActive = getViewElements(viewName).some((element) => element.classList.contains("active"));
   document.querySelectorAll(".nav-button").forEach((item) => {
     const active = item.dataset.view === viewName;
     item.classList.toggle("active", active);
@@ -6631,6 +6632,7 @@ function navigateToView(viewName) {
   });
   document.querySelectorAll(".view").forEach((item) => item.classList.remove("active"));
   getViewElements(viewName).forEach((element) => element.classList.add("active"));
+  if (viewName === "daily" && !targetWasActive) window.loadTodayTodos?.();
   document.querySelector("#view-title").textContent = views[viewName].title;
   updateChainBar(viewName);
   if (window.history.replaceState) {
@@ -6694,8 +6696,9 @@ function runCommandAction(action) {
     window.setTimeout(() => document.querySelector("#daily-todo-title")?.focus(), 0);
   }
   if (action === "refresh-daily") {
+    const wasDailyActive = document.querySelector("#daily-view")?.classList.contains("active");
     navigateToView("daily");
-    window.loadTodayTodos?.();
+    if (wasDailyActive) window.loadTodayTodos?.();
   }
   closeCommandPalette();
 }
