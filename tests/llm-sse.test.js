@@ -100,6 +100,11 @@ function createFakeOpenAiUpstream(port, behavior = {}) {
         body = JSON.parse(Buffer.concat(chunks).toString("utf8"));
       } catch (_error) { /* keep empty */ }
       state.requests.push(body);
+      if (behavior.upstreamError) {
+        res.writeHead(502, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: { message: behavior.upstreamError } }));
+        return;
+      }
       if (body.response_format && jsonModeFailuresRemaining > 0) {
         jsonModeFailuresRemaining -= 1;
         res.writeHead(400, { "Content-Type": "application/json" });
@@ -286,6 +291,30 @@ test("llm daily insight falls back from unsupported JSON mode while retaining ta
       assert.equal(upstream.requests[1].response_format, undefined);
       assert.equal(upstream.requests[1].temperature, 0.2);
       assert.equal(upstream.requests[1].max_tokens, 1000);
+    });
+  } finally {
+    await upstream.close();
+  }
+});
+
+test("llm hides upstream implementation errors from non-stream browser responses", async () => {
+  const llmPort = 19539;
+  const upstreamPort = 19639;
+  const upstreamDetail = "proxy at http://internal-gateway:9000 rejected tenant secret";
+  const upstream = await createFakeOpenAiUpstream(upstreamPort, { upstreamError: upstreamDetail });
+  try {
+    await withLlmService({
+      LLM_PORT: String(llmPort),
+      LLM_API_KEY: "daily-insight-test-key",
+      LLM_BASE_URL: "http://127.0.0.1:" + upstreamPort + "/v1",
+      LLM_MODEL: "test-model",
+      LLM_RATE_LIMIT_MAX: "100"
+    }, async () => {
+      const res = await postStream(llmPort, DAILY_INSIGHT_BODY, { Origin: "null" });
+      assert.equal(res.status, 502, res.text);
+      const payload = JSON.parse(res.text);
+      assert.equal(payload.error, "AI 服务暂不可用，请稍后重试");
+      assert.doesNotMatch(res.text, /internal-gateway|tenant secret/);
     });
   } finally {
     await upstream.close();

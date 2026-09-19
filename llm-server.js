@@ -358,9 +358,10 @@ async function handleStreamGenerate(request, response, taskName, task, prompt) {
     sendEvent("done", { task: taskName, result: result, model: LLM_MODEL, cached: false });
     response.end();
   } catch (error) {
+    console.error("LLM 网关：流式请求失败", String(error?.message || error).slice(0, 240));
     sendEvent("error", {
-      error: String(error?.message || error).slice(0, 240),
-      hint: "请检查 LLM_API_KEY 是否有效、账户余额与 LLM_BASE_URL 网络"
+      error: "AI 服务暂不可用，请稍后重试",
+      hint: "请检查 AI 服务配置和网络后重试"
     });
     response.end();
   } finally {
@@ -483,9 +484,10 @@ const server = http.createServer((request, response) => {
       });
       sendJson(request, response, 200, { task: body.task, result, model: LLM_MODEL, cached: false });
     } catch (error) {
+      console.error("LLM 网关：请求失败", String(error?.message || error).slice(0, 240));
       sendJson(request, response, 502, {
-        error: error.message,
-        hint: "请检查 LLM_API_KEY 是否有效、账户余额与 LLM_BASE_URL 网络"
+        error: "AI 服务暂不可用，请稍后重试",
+        hint: "请检查 AI 服务配置和网络后重试"
       });
     } finally {
       if (!sharedInFlight) activeJobs -= 1;
