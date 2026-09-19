@@ -683,6 +683,15 @@ function normalizeBriefingPayload(value) {
   };
 }
 
+function setBriefingActionsAvailable(available) {
+  ["#archive-briefing", "#copy-briefing-im"].forEach((selector) => {
+    const button = document.querySelector(selector);
+    if (!button) return;
+    button.disabled = !available;
+    if (typeof button.setAttribute === "function") button.setAttribute("aria-disabled", String(!available));
+  });
+}
+
 function renderBriefing(briefing) {
   briefing = normalizeBriefingPayload(briefing);
   const body = document.querySelector("#briefing-body");
@@ -705,6 +714,7 @@ function renderBriefing(briefing) {
     <h5>待办建议</h5>
     <ul>${todoLines}</ul>
   `;
+  setBriefingActionsAvailable(true);
 }
 async function generateDailyBriefing() {
   const status = document.querySelector("#briefing-status");
@@ -779,7 +789,7 @@ async function archiveCurrentBriefing() {
       status.className = "source-status source-mock";
     }
   } finally {
-    if (archiveButton) archiveButton.disabled = false;
+    setBriefingActionsAvailable(Boolean(lastBriefing));
   }
 }
 
@@ -847,6 +857,7 @@ async function loadBriefingArchive() {
 document.querySelector("#generate-briefing")?.addEventListener("click", generateDailyBriefing);
 document.querySelector("#archive-briefing")?.addEventListener("click", archiveCurrentBriefing);
 document.querySelector("#load-briefing-archive")?.addEventListener("click", loadBriefingArchive);
+setBriefingActionsAvailable(false);
 
 async function copyTextToClipboard(text) {
   if (navigator.clipboard?.writeText) {
