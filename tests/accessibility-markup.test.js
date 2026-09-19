@@ -10,6 +10,7 @@ const app = fs.readFileSync(path.join(root, "app.js"), "utf8");
 const dailyWorkbench = fs.readFileSync(path.join(root, "daily-workbench.js"), "utf8");
 const css = fs.readFileSync(path.join(root, "styles.css"), "utf8");
 const launcher = fs.readFileSync(path.join(root, "launcher.js"), "utf8");
+const llmServer = fs.readFileSync(path.join(root, "llm-server.js"), "utf8");
 
 test("screenshot drop zone has button semantics and keyboard activation", () => {
   assert.match(html, /id="stream-drop-zone"[^>]*role="button"[^>]*aria-label=/);
@@ -119,6 +120,27 @@ test("daily dashboard keeps project context and AI insight beside the operationa
   assert.match(css, /\.daily-project-banner/);
   assert.match(css, /\.daily-workbench-layout[\s\S]*grid-template-columns:/);
   assert.match(css, /\.daily-insight-panel[\s\S]*grid-column:\s*2/);
+});
+
+test("daily AI insight only submits the current action queue to a dedicated server task", () => {
+  assert.match(html, /id="generate-daily-ai-insight"/);
+  assert.match(html, /id="daily-ai-insight-result"[^>]*aria-live="polite"/);
+  assert.match(dailyWorkbench, /function generateDailyAiInsight/);
+  assert.match(dailyWorkbench, /requestLlmTask\("daily-insight"/);
+  assert.match(dailyWorkbench, /riskItems/);
+  assert.match(dailyWorkbench, /publicationItems/);
+  assert.match(dailyWorkbench, /textContent/);
+  assert.match(llmServer, /"daily-insight"\s*:/);
+  assert.match(llmServer, /待办、风险工单和待回流内容/);
+});
+
+test("non-daily operational tools share the product workspace visual system", () => {
+  assert.match(css, /Cross-workspace visual system/);
+  assert.match(css, /\.view:not\(#daily-view\) \.tool-layout/);
+  assert.match(css, /\.view:not\(#daily-view\) \.input-panel/);
+  assert.match(css, /\.view:not\(#daily-view\) \.output-panel/);
+  assert.match(css, /\.view:not\(#daily-view\) \.section-block/);
+  assert.match(css, /\.view:not\(#daily-view\) \.metric/);
 });
 
 test("daily dashboard promotes the page title while keeping global service noise out of its first screen", () => {
