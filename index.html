@@ -282,11 +282,15 @@
                   <p class="eyebrow">AI Insight <span>Beta</span></p>
                   <h3>需要你判断的信号</h3>
                 </div>
-                <span class="daily-insight-status">自动归纳</span>
+                <span class="daily-insight-status" id="daily-insight-status">自动归纳</span>
               </div>
               <p class="daily-insight-summary" id="daily-insight-summary" aria-live="polite">正在整理风险、回流与待办信号…</p>
               <ol class="daily-insight-list" id="daily-insight-recommendations"></ol>
-              <button class="secondary-button" id="daily-insight-action" type="button" hidden>查看下一步</button>
+              <article class="daily-ai-insight-result" id="daily-ai-insight-result" aria-live="polite" hidden></article>
+              <div class="daily-insight-actions">
+                <button class="secondary-button" id="generate-daily-ai-insight" type="button" title="仅基于当前待办、风险和待回流内容生成">生成 AI 洞察</button>
+                <button class="secondary-button" id="daily-insight-action" type="button" hidden>查看下一步</button>
+              </div>
             </section>
 
             <section class="section-block briefing-panel" id="briefing-panel" aria-label="今日运营简报">

@@ -12,6 +12,8 @@
   const allProjectsScope = "工作范围：全部项目";
   let activeFilter = "all";
   let refreshTimer = null;
+  let latestDailyInsightContext = { manualItems: [], state: {} };
+  let dailyAiInsightGeneration = 0;
 
   function setStatus(text, tone) {
     const element = statusEl();
@@ -355,6 +357,8 @@
     const list = document.querySelector("#daily-insight-recommendations");
     const action = document.querySelector("#daily-insight-action");
     if (!summary || !list || !action) return;
+    latestDailyInsightContext = { manualItems: Array.isArray(manualItems) ? manualItems : [], state };
+    resetDailyAiInsight();
     list.innerHTML = "";
     action.hidden = false;
     const recommendations = [];
@@ -396,6 +400,126 @@
     });
     action.textContent = actionLabel;
     action.onclick = actionHandler;
+  }
+
+  function dailyInsightSignalItems(items, fields, limit = 5) {
+    return (Array.isArray(items) ? items : []).slice(0, limit).map((item) => {
+      const entry = item && typeof item === "object" ? item : {};
+      const result = {};
+      fields.forEach((field) => {
+        const value = String(entry[field] || "").trim();
+        if (value) result[field] = value.slice(0, 160);
+      });
+      return result;
+    }).filter((item) => Object.keys(item).length);
+  }
+
+  function buildDailyAiInsightContext() {
+    const { manualItems, state } = latestDailyInsightContext;
+    return {
+      game: currentGame(),
+      todos: dailyInsightSignalItems(manualItems, ["title", "priority", "due_date", "game"]),
+      risks: dailyInsightSignalItems(state.riskItems, ["title", "level", "source", "game"]),
+      publications: dailyInsightSignalItems(state.publicationItems, ["title", "channel", "related_topic", "game"])
+    };
+  }
+
+  function hasDailyAiSignals(context) {
+    return context.todos.length + context.risks.length + context.publications.length > 0;
+  }
+
+  function setDailyAiInsightStatus(text, tone) {
+    const status = document.querySelector("#daily-insight-status");
+    if (!status) return;
+    status.textContent = text;
+    status.dataset.tone = tone || "";
+  }
+
+  function resetDailyAiInsight() {
+    const button = document.querySelector("#generate-daily-ai-insight");
+    const result = document.querySelector("#daily-ai-insight-result");
+    const context = buildDailyAiInsightContext();
+    dailyAiInsightGeneration += 1;
+    if (result) {
+      result.hidden = true;
+      result.replaceChildren();
+    }
+    if (!button) return;
+    const available = hasDailyAiSignals(context);
+    button.disabled = !available;
+    button.setAttribute("aria-disabled", String(!available));
+    button.title = available
+      ? "仅基于当前待办、风险和待回流内容生成"
+      : "当前没有可供 AI 判断的真实工作信号";
+    setDailyAiInsightStatus(available ? "规则归纳" : "等待信号", available ? "ready" : "idle");
+  }
+
+  function dailyAiFailureText(response) {
+    if (response?.reason === "no_key") return "尚未配置 AI 服务，已保留规则归纳结果。";
+    if (response?.reason === "timeout") return "AI 响应超时，已保留规则归纳结果。";
+    return "AI 洞察暂不可用，已保留规则归纳结果。";
+  }
+
+  function renderDailyAiInsightResult(value) {
+    const result = document.querySelector("#daily-ai-insight-result");
+    if (!result) return;
+    const payload = value && typeof value === "object" && !Array.isArray(value) ? value : {};
+    const summary = typeof payload.summary === "string" ? payload.summary.trim().slice(0, 500) : "";
+    const priorities = Array.isArray(payload.priority_actions) ? payload.priority_actions : [];
+    const watchouts = Array.isArray(payload.watchouts) ? payload.watchouts : [];
+    result.replaceChildren();
+    const heading = document.createElement("strong");
+    heading.textContent = "AI 决策洞察";
+    const copy = document.createElement("p");
+    copy.textContent = summary || "AI 未返回可用摘要，请以规则归纳结果为准。";
+    result.append(heading, copy);
+    [["优先动作", priorities], ["观察项", watchouts]].forEach(([label, items]) => {
+      const values = items.filter((item) => typeof item === "string" && item.trim()).slice(0, 3);
+      if (!values.length) return;
+      const title = document.createElement("small");
+      title.textContent = label;
+      const list = document.createElement("ul");
+      values.forEach((item) => {
+        const row = document.createElement("li");
+        row.textContent = item.trim().slice(0, 240);
+        list.append(row);
+      });
+      result.append(title, list);
+    });
+    result.hidden = false;
+  }
+
+  async function generateDailyAiInsight() {
+    const button = document.querySelector("#generate-daily-ai-insight");
+    const context = buildDailyAiInsightContext();
+    if (!hasDailyAiSignals(context)) {
+      setDailyAiInsightStatus("等待信号", "idle");
+      return;
+    }
+    if (typeof requestLlmTask !== "function") {
+      setDailyAiInsightStatus("AI 服务未连接", "warning");
+      return;
+    }
+    const generation = ++dailyAiInsightGeneration;
+    if (button) button.disabled = true;
+    setDailyAiInsightStatus("AI 正在归纳", "loading");
+    const response = await requestLlmTask("daily-insight", context, 45000);
+    if (generation !== dailyAiInsightGeneration) return;
+    if (button) {
+      button.disabled = false;
+      button.setAttribute("aria-disabled", "false");
+    }
+    if (!response.ok) {
+      setDailyAiInsightStatus("规则归纳", "warning");
+      const result = document.querySelector("#daily-ai-insight-result");
+      if (result) {
+        result.textContent = dailyAiFailureText(response);
+        result.hidden = false;
+      }
+      return;
+    }
+    renderDailyAiInsightResult(response.result);
+    setDailyAiInsightStatus(response.cached ? "AI 缓存结果" : "AI 已归纳", "ready");
   }
 
   window.renderTodayTodos = function renderTodayTodos(manualItems, state = {}) {
@@ -556,6 +680,7 @@
       addTodo();
     });
     document.querySelector("#refresh-daily-todos")?.addEventListener("click", () => window.loadTodayTodos?.());
+    document.querySelector("#generate-daily-ai-insight")?.addEventListener("click", generateDailyAiInsight);
     document.querySelectorAll("[data-daily-filter]").forEach((element) => {
       element.addEventListener("click", () => {
         activeFilter = element.dataset.dailyFilter || "all";

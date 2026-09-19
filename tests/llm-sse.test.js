@@ -20,6 +20,15 @@ const VERSION_COPY_BODY = {
   task: "version-copy",
   data: { game: "测试游戏", theme: "夏日版本", points: ["新角色上线", "福利活动"], style: "官方公告风", audience: "核心玩家" }
 };
+const DAILY_INSIGHT_BODY = {
+  task: "daily-insight",
+  data: {
+    game: "测试游戏",
+    todos: [{ title: "整理玩家反馈", priority: "high", due_date: "2026-09-19" }],
+    risks: [{ title: "PV 评论负向上升", level: "高", source: "评论分析" }],
+    publications: [{ title: "版本预热视频", channel: "B站", related_topic: "版本前瞻" }]
+  }
+};
 
 async function waitForHealth(port, timeoutMs = 10000) {
   const startedAt = Date.now();
@@ -215,6 +224,34 @@ test("llm without stream field keeps the legacy JSON response shape and does not
 
       assert.equal(upstream.requests.length, 1);
       assert.equal(upstream.requests[0].stream, undefined, "旧路径不得向上游发起流式请求");
+    });
+  } finally {
+    await upstream.close();
+  }
+});
+
+test("llm daily insight accepts only the current operational queue as a dedicated task", async () => {
+  const llmPort = 19537;
+  const upstreamPort = 19637;
+  const upstream = await createFakeOpenAiUpstream(upstreamPort);
+  try {
+    await withLlmService({
+      LLM_PORT: String(llmPort),
+      LLM_API_KEY: "daily-insight-test-key",
+      LLM_BASE_URL: "http://127.0.0.1:" + upstreamPort + "/v1",
+      LLM_MODEL: "test-model",
+      LLM_RATE_LIMIT_MAX: "100"
+    }, async () => {
+      const res = await postStream(llmPort, DAILY_INSIGHT_BODY, { Origin: "null" });
+      assert.equal(res.status, 200, res.text);
+      const payload = JSON.parse(res.text);
+      assert.equal(payload.task, "daily-insight");
+      assert.equal(upstream.requests.length, 1);
+      const prompt = upstream.requests[0].messages[1].content;
+      assert.match(prompt, /整理玩家反馈/);
+      assert.match(prompt, /PV 评论负向上升/);
+      assert.match(prompt, /版本预热视频/);
+      assert.doesNotMatch(prompt, /玩家评论原文/);
     });
   } finally {
     await upstream.close();
