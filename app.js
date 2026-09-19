@@ -754,6 +754,12 @@ function isArchiveServiceUnavailable(error) {
   return /Failed to fetch|NetworkError|load failed/i.test(String(error?.message || ""));
 }
 
+function archiveMutationFailure(action, error) {
+  return isArchiveServiceUnavailable(error)
+    ? action + "失败：本机存档服务未连接；启动服务后重试。"
+    : action + "失败：请稍后重试。";
+}
+
 async function archiveCurrentBriefing() {
   const status = document.querySelector("#briefing-status");
   if (!lastBriefing) {
@@ -1138,7 +1144,7 @@ async function recordPublication() {
     setPublicationStatus("已记录发布：" + payload.publication.title, "real");
     await loadPublications();
   } catch (error) {
-    setPublicationStatus("记录失败（" + error.message + "）。请确认本机存档服务已启动。", "mock");
+    setPublicationStatus(archiveMutationFailure("记录发布", error), "mock");
   } finally {
     if (recordButton) recordButton.disabled = false;
   }
@@ -1204,7 +1210,7 @@ async function refreshPublicationEffect(id) {
     replacePublicationRow(item);
     setPublicationStatus(confirmText, "real");
   } catch (error) {
-    setPublicationStatus("效果更新失败（" + error.message + "）。", "mock");
+    setPublicationStatus(archiveMutationFailure("更新发布效果", error), "mock");
   }
 }
 
@@ -1223,7 +1229,7 @@ async function deletePublicationRecord(id) {
     setPublicationStatus("已删除「" + (item && item.title ? item.title : "记录 #" + id) + "」。", "real");
     await loadPublications();
   } catch (error) {
-    setPublicationStatus("删除失败（" + error.message + "）。", "mock");
+    setPublicationStatus(archiveMutationFailure("删除发布记录", error), "mock");
   }
 }
 
@@ -1413,7 +1419,7 @@ async function updateRiskTicketStatus(id, nextStatus) {
     setRiskTicketStatus("「" + payload.risk_event.title + "」已更新为「" + RISK_TICKET_STATUS_LABELS[payload.risk_event.status] + "」。", "real");
     await loadRiskTickets();
   } catch (error) {
-    setRiskTicketStatus("状态更新失败（" + error.message + "）。", "mock");
+    setRiskTicketStatus(archiveMutationFailure("更新工单状态", error), "mock");
   } finally {
     finishRiskTicketMutation(mutationKey);
   }
@@ -1431,7 +1437,7 @@ async function deleteRiskTicket(id) {
     setRiskTicketStatus("已删除「" + (item && item.title ? item.title : "工单 #" + id) + "」。", "real");
     await loadRiskTickets();
   } catch (error) {
-    setRiskTicketStatus("删除失败（" + error.message + "）。", "mock");
+    setRiskTicketStatus(archiveMutationFailure("删除风险工单", error), "mock");
   } finally {
     finishRiskTicketMutation(mutationKey);
   }

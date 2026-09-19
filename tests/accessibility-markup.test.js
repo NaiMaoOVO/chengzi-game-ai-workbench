@@ -539,7 +539,7 @@ test("publication and risk deletions require a clear irreversible-action confirm
 
 test("daily publication and risk mutations keep transport failures actionable", () => {
   const publicationStart = app.indexOf("async function recordPublication");
-  const publicationEnd = app.indexOf('document.querySelector("#record-publication")', publicationStart);
+  const publicationEnd = app.indexOf("const publicationGameInput", publicationStart);
   const riskStart = app.indexOf("async function updateRiskTicketStatus");
   const riskEnd = app.indexOf('document.querySelector("#query-risk-tickets")', riskStart);
   assert.ok(publicationStart >= 0 && publicationEnd > publicationStart && riskStart >= 0 && riskEnd > riskStart);
