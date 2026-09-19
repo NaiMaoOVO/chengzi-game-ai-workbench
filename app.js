@@ -750,6 +750,10 @@ async function generateDailyBriefing() {
   }
 }
 
+function isArchiveServiceUnavailable(error) {
+  return /Failed to fetch|NetworkError|load failed/i.test(String(error?.message || ""));
+}
+
 async function archiveCurrentBriefing() {
   const status = document.querySelector("#briefing-status");
   if (!lastBriefing) {
@@ -785,7 +789,9 @@ async function archiveCurrentBriefing() {
     await loadBriefingArchive();
   } catch (error) {
     if (status) {
-      status.textContent = `简报状态：存档失败（${error.message}）。请确认本机存档服务已启动。`;
+      status.textContent = isArchiveServiceUnavailable(error)
+        ? "简报状态：本机存档服务未连接；启动服务后再存档。"
+        : "简报状态：暂时无法存档；请稍后重试。";
       status.className = "source-status source-mock";
     }
   } finally {
@@ -849,8 +855,13 @@ async function loadBriefingArchive() {
       status.className = invalidCount ? "source-status source-mock" : "source-status source-real";
     }
   } catch (error) {
-    container.innerHTML = '<p class="muted-copy">存档服务不可用（本机 8796 端口）。历史回看功能需在本地模式运行存档服务。</p>';
-    if (status) { status.textContent = "简报状态：历史读取失败（" + error.message + "）。"; status.className = "source-status source-mock"; }
+    container.innerHTML = "";
+    if (status) {
+      status.textContent = isArchiveServiceUnavailable(error)
+        ? "简报状态：本机存档服务未连接；启动服务后再查看历史。"
+        : "简报状态：历史简报暂不可用；请稍后重试。";
+      status.className = "source-status source-mock";
+    }
   }
 }
 
@@ -1088,7 +1099,7 @@ async function loadPublications() {
     if (!publicationListRequestGuard.isCurrent(requestGeneration)) return;
     currentPublications = [];
     container.innerHTML = "";
-    if (/Failed to fetch|NetworkError|load failed/i.test(String(error?.message || ""))) {
+    if (isArchiveServiceUnavailable(error)) {
       setPublicationStatus("本机存档服务未连接；启动服务后点击「刷新台账」重试。", "mock");
     } else {
       setPublicationStatus("台账数据暂不可用；请刷新台账重试。", "mock");
@@ -1372,7 +1383,7 @@ async function loadRiskTickets() {
     if (!riskTicketListRequestGuard.isCurrent(requestGeneration)) return;
     currentRiskTickets = [];
     container.innerHTML = "";
-    if (/Failed to fetch|NetworkError|load failed/i.test(String(error?.message || ""))) {
+    if (isArchiveServiceUnavailable(error)) {
       setRiskTicketStatus("本机存档服务未连接；启动服务后点击「查询工单」重试。", "mock");
     } else {
       setRiskTicketStatus("工单数据暂不可用；请查询工单重试。", "mock");

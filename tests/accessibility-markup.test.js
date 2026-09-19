@@ -513,7 +513,7 @@ test("briefing archive surfaces response failures and corrupted entries", () => 
   assert.match(app.slice(renderStart, renderEnd), /briefing\.invalid/);
   assert.match(app.slice(renderStart, renderEnd), /数据损坏/);
   assert.match(app.slice(renderEnd, loadEnd), /if \(!response\.ok \|\| !payload\.ok\)/);
-  assert.match(app.slice(renderEnd, loadEnd), /历史读取失败/);
+  assert.match(app.slice(renderEnd, loadEnd), /历史简报暂不可用/);
 });
 
 test("briefing renderer degrades safely when archived fields have malformed shapes", () => {
