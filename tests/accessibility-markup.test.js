@@ -565,6 +565,20 @@ test("daily briefing enables archive and copy only after a briefing is rendered"
   assert.equal(copyButton.disabled, false);
 });
 
+test("daily briefing archive failures describe a recovery action without exposing transport errors", () => {
+  const archiveStart = app.indexOf("async function archiveCurrentBriefing");
+  const archiveEnd = app.indexOf("function renderBriefArchiveItem", archiveStart);
+  const historyStart = app.indexOf("async function loadBriefingArchive");
+  const historyEnd = app.indexOf('document.querySelector("#generate-briefing")', historyStart);
+  assert.ok(archiveStart >= 0 && archiveEnd > archiveStart && historyStart >= 0 && historyEnd > historyStart);
+  const archiveSource = app.slice(archiveStart, archiveEnd);
+  const historySource = app.slice(historyStart, historyEnd);
+  assert.match(archiveSource, /简报状态：本机存档服务未连接/);
+  assert.match(historySource, /简报状态：本机存档服务未连接/);
+  assert.doesNotMatch(archiveSource, /存档失败（\$\{error\.message\}/);
+  assert.doesNotMatch(historySource, /历史读取失败（" \+ error\.message/);
+});
+
 test("daily queue ignores stale concurrent refresh responses", () => {
   const start = app.indexOf("window.loadTodayTodos = async function loadTodayTodos");
   const end = app.indexOf("let llmModelName", start);
