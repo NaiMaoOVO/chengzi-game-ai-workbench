@@ -90,6 +90,7 @@ function parseSseEvents(text) {
 
 function createFakeOpenAiUpstream(port, behavior = {}) {
   const state = { requests: [] };
+  let jsonModeFailuresRemaining = behavior.rejectJsonModeOnce ? 1 : 0;
   const server = http.createServer((req, res) => {
     const chunks = [];
     req.on("data", (chunk) => chunks.push(chunk));
@@ -99,6 +100,12 @@ function createFakeOpenAiUpstream(port, behavior = {}) {
         body = JSON.parse(Buffer.concat(chunks).toString("utf8"));
       } catch (_error) { /* keep empty */ }
       state.requests.push(body);
+      if (body.response_format && jsonModeFailuresRemaining > 0) {
+        jsonModeFailuresRemaining -= 1;
+        res.writeHead(400, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: { message: "response_format unsupported" } }));
+        return;
+      }
       if (body.stream !== true) {
         // 非流式请求按 OpenAI 兼容协议返回一次性 JSON 补全
         res.writeHead(200, { "Content-Type": "application/json" });
@@ -252,6 +259,33 @@ test("llm daily insight accepts only the current operational queue as a dedicate
       assert.match(prompt, /PV 评论负向上升/);
       assert.match(prompt, /版本预热视频/);
       assert.doesNotMatch(prompt, /玩家评论原文/);
+    });
+  } finally {
+    await upstream.close();
+  }
+});
+
+test("llm daily insight falls back from unsupported JSON mode while retaining task limits", async () => {
+  const llmPort = 19538;
+  const upstreamPort = 19638;
+  const upstream = await createFakeOpenAiUpstream(upstreamPort, { rejectJsonModeOnce: true });
+  try {
+    await withLlmService({
+      LLM_PORT: String(llmPort),
+      LLM_API_KEY: "daily-insight-test-key",
+      LLM_BASE_URL: "http://127.0.0.1:" + upstreamPort + "/v1",
+      LLM_MODEL: "test-model",
+      LLM_RATE_LIMIT_MAX: "100"
+    }, async () => {
+      const res = await postStream(llmPort, DAILY_INSIGHT_BODY, { Origin: "null" });
+      assert.equal(res.status, 200, res.text);
+      assert.equal(upstream.requests.length, 2);
+      assert.deepEqual(upstream.requests[0].response_format, { type: "json_object" });
+      assert.equal(upstream.requests[0].temperature, 0.2);
+      assert.equal(upstream.requests[0].max_tokens, 1000);
+      assert.equal(upstream.requests[1].response_format, undefined);
+      assert.equal(upstream.requests[1].temperature, 0.2);
+      assert.equal(upstream.requests[1].max_tokens, 1000);
     });
   } finally {
     await upstream.close();

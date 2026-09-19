@@ -142,7 +142,7 @@ function extractJsonObject(text) {
   }
 }
 
-function callUpstream(prompt, options = {}) {
+function callUpstream(prompt, task = {}, options = {}) {
   return new Promise((resolve, reject) => {
     const payload = {
       model: LLM_MODEL,
@@ -150,8 +150,8 @@ function callUpstream(prompt, options = {}) {
         { role: "system", content: prompt.system },
         { role: "user", content: prompt.user }
       ],
-      temperature: options.temperature,
-      max_tokens: options.maxTokens
+      temperature: task.temperature,
+      max_tokens: task.maxTokens
     };
     if (LLM_JSON_MODE !== "off" && options.jsonMode !== false) {
       payload.response_format = { type: "json_object" };
@@ -471,7 +471,7 @@ const server = http.createServer((request, response) => {
     try {
       const result = await responseCache.getOrCreate(key, async () => {
         try {
-          return await callUpstream(prompt, {});
+          return await callUpstream(prompt, task);
         } catch (firstError) {
           const canRetryWithoutJsonMode =
             LLM_JSON_MODE === "auto" &&
