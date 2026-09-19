@@ -141,6 +141,10 @@ test("non-daily operational tools share the product workspace visual system", ()
   assert.match(css, /\.view:not\(#daily-view\) \.output-panel/);
   assert.match(css, /\.view:not\(#daily-view\) \.section-block/);
   assert.match(css, /\.view:not\(#daily-view\) \.metric/);
+  assert.match(css, /\.view:not\(#daily-view\) \.overview-layout/);
+  assert.match(css, /\.view:not\(#daily-view\) \.overview-hero::after/);
+  assert.match(css, /\.view:not\(#daily-view\) \.service-status-card/);
+  assert.match(css, /\.view:not\(#daily-view\) \.route-card/);
 });
 
 test("project overview keeps its controls and operating map in one route without duplicate ids", () => {

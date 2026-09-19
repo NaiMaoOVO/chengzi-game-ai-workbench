@@ -4662,6 +4662,36 @@ kbd {
   gap: 12px;
 }
 
+.view:not(#daily-view) .overview-layout {
+  max-width: 1320px;
+  gap: 12px;
+}
+
+.view:not(#daily-view) .overview-hero {
+  min-height: 0;
+  padding: 18px;
+  border-color: var(--product-line);
+  background: #fff;
+  box-shadow: none;
+}
+
+.view:not(#daily-view) .overview-hero::after {
+  display: none;
+}
+
+.view:not(#daily-view) .service-status-panel {
+  gap: 12px;
+}
+
+.view:not(#daily-view) .service-status-card,
+.view:not(#daily-view) .overview-step,
+.view:not(#daily-view) .case-card,
+.view:not(#daily-view) .route-card {
+  border-color: var(--product-line);
+  background: #fff;
+  box-shadow: none;
+}
+
 .view:not(#daily-view) .input-panel {
   top: 74px;
   gap: 14px;
