@@ -1208,8 +1208,14 @@ async function refreshPublicationEffect(id) {
   }
 }
 
+function confirmRecordDeletion(kind, item, id) {
+  const label = item && item.title ? "「" + item.title + "」" : " #" + id;
+  return window.confirm("确定删除" + kind + label + "吗？此操作无法恢复。");
+}
+
 async function deletePublicationRecord(id) {
   const item = currentPublications.find((entry) => entry.id === id);
+  if (!confirmRecordDeletion("发布记录", item, id)) return;
   try {
     const response = await archiveRequest(ARCHIVE_SERVICE_URL + "/publications/" + id, { method: "DELETE" });
     const payload = await response.json().catch(() => ({}));
@@ -1415,6 +1421,7 @@ async function updateRiskTicketStatus(id, nextStatus) {
 
 async function deleteRiskTicket(id) {
   const item = currentRiskTickets.find((entry) => entry.id === id);
+  if (!confirmRecordDeletion("风险工单", item, id)) return;
   const mutationKey = beginRiskTicketMutation(id);
   if (!mutationKey) return;
   try {
