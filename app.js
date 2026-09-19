@@ -760,6 +760,12 @@ function archiveMutationFailure(action, error) {
     : action + "失败：请稍后重试。";
 }
 
+function archiveReadFailure(action, error) {
+  return isArchiveServiceUnavailable(error)
+    ? action + "不可用：本机存档服务未连接；启动服务后重试。"
+    : action + "暂不可用：请稍后重试。";
+}
+
 async function archiveCurrentBriefing() {
   const status = document.querySelector("#briefing-status");
   if (!lastBriefing) {
@@ -1577,7 +1583,7 @@ async function refreshProfileList() {
     }
     if (status) { status.textContent = data.invalid_count ? "项目档案：有 " + data.invalid_count + " 个档案数据损坏，请重新保存。" : "项目档案：已加载 " + (data.profiles || []).length + " 个档案。"; status.className = data.invalid_count ? "source-status source-mock" : "source-status source-real"; }
   } catch (error) {
-    if (status) { status.textContent = "项目档案：读取失败（" + error.message + "）。"; status.className = "source-status source-mock"; }
+    if (status) { status.textContent = "项目档案：" + archiveReadFailure("读取项目档案", error); status.className = "source-status source-mock"; }
   }
 }
 
@@ -1599,7 +1605,7 @@ async function saveCurrentProfile() {
     if (status) { status.textContent = "项目档案：已保存「" + game + "」。"; status.className = "source-status source-real"; }
     await refreshProfileList();
   } catch (error) {
-    if (status) { status.textContent = "项目档案：保存失败（" + error.message + "）。"; status.className = "source-status source-mock"; }
+    if (status) { status.textContent = "项目档案：" + archiveMutationFailure("保存项目档案", error); status.className = "source-status source-mock"; }
   }
 }
 
