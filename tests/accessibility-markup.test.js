@@ -537,6 +537,23 @@ test("publication and risk deletions require a clear irreversible-action confirm
   assert.match(app, /此操作无法恢复/);
 });
 
+test("daily publication and risk mutations keep transport failures actionable", () => {
+  const publicationStart = app.indexOf("async function recordPublication");
+  const publicationEnd = app.indexOf('document.querySelector("#record-publication")', publicationStart);
+  const riskStart = app.indexOf("async function updateRiskTicketStatus");
+  const riskEnd = app.indexOf('document.querySelector("#query-risk-tickets")', riskStart);
+  assert.ok(publicationStart >= 0 && publicationEnd > publicationStart && riskStart >= 0 && riskEnd > riskStart);
+  const publicationSource = app.slice(publicationStart, publicationEnd);
+  const riskSource = app.slice(riskStart, riskEnd);
+
+  assert.match(app, /function archiveMutationFailure/);
+  assert.match(app, /本机存档服务未连接；启动服务后重试/);
+  assert.match(publicationSource, /archiveMutationFailure\(/);
+  assert.match(riskSource, /archiveMutationFailure\(/);
+  assert.doesNotMatch(publicationSource, /失败（" \+ error\.message/);
+  assert.doesNotMatch(riskSource, /失败（" \+ error\.message/);
+});
+
 test("briefing archive surfaces response failures and corrupted entries", () => {
   const renderStart = app.indexOf("function renderBriefArchiveItem");
   const renderEnd = app.indexOf("async function loadBriefingArchive", renderStart);
