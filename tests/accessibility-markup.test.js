@@ -138,6 +138,14 @@ test("daily AI insight only submits the current action queue to a dedicated serv
   assert.match(llmServer, /待办、风险工单和待回流内容/);
 });
 
+test("daily insight recovery action matches authentication and service mode", () => {
+  assert.match(dailyWorkbench, /if \(state\.authRequired\)/);
+  assert.match(dailyWorkbench, /actionLabel = "去登录"/);
+  assert.match(dailyWorkbench, /#archive-login-username/);
+  assert.match(dailyWorkbench, /const local = !isOnlineServiceMode\(\)/);
+  assert.match(dailyWorkbench, /actionLabel = local \? "查看本机服务" : "重新连接"/);
+});
+
 test("non-daily operational tools share the product workspace visual system", () => {
   assert.match(css, /Cross-workspace visual system/);
   assert.match(css, /\.view:not\(#daily-view\) \.tool-layout/);

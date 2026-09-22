@@ -374,11 +374,17 @@
       action.hidden = true;
       return;
     }
-    if (state.error || state.authRequired) {
+    if (state.authRequired) {
+      summary.textContent = "请登录后再查看当前账号的风险与发布回流。";
+      recommendations.push("登录后即可恢复待办、风险工单和发布回流的同步。");
+      actionLabel = "去登录";
+      actionHandler = () => document.querySelector("#archive-login-username")?.focus();
+    } else if (state.error) {
+      const local = !isOnlineServiceMode();
       summary.textContent = "暂时无法读取完整运营信号；先恢复服务连接，再决定下一步。";
       recommendations.push("检查服务连接状态，恢复后再确认风险与发布回流。");
-      actionLabel = "查看服务状态";
-      actionHandler = openLocalServiceRecovery;
+      actionLabel = local ? "查看本机服务" : "重新连接";
+      actionHandler = () => local ? openLocalServiceRecovery() : window.loadTodayTodos?.();
     } else {
       const riskCount = state.riskUnavailable ? 0 : Number(state.riskCount) || 0;
       const publicationCount = state.publicationUnavailable ? 0 : Number(state.publicationCount) || 0;
