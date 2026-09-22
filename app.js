@@ -924,6 +924,10 @@ async function copyTextToClipboard(text) {
   return copied;
 }
 
+function clipboardRecoveryMessage() {
+  return "复制失败：浏览器未授权剪贴板或当前页面不支持复制，请手动复制。";
+}
+
 function buildBriefingImText(briefing) {
   const generatedAt = briefing.generatedAt ? new Date(briefing.generatedAt) : null;
   const dateLabel = generatedAt && !Number.isNaN(generatedAt.getTime()) ? formatPublicationDate(generatedAt) : "未知日期";
@@ -959,8 +963,8 @@ async function copyBriefingForIm() {
     const copied = await copyTextToClipboard(buildBriefingImText(lastBriefing));
     if (!copied) throw new Error("浏览器剪贴板不可用");
     if (status) { status.textContent = "简报状态：已按飞书/企微消息格式复制到剪贴板，可直接粘贴发送。"; status.className = "source-status source-real"; }
-  } catch (error) {
-    if (status) { status.textContent = "简报状态：复制失败（" + error.message + "）。"; status.className = "source-status source-mock"; }
+  } catch (_error) {
+    if (status) { status.textContent = "简报状态：" + clipboardRecoveryMessage(); status.className = "source-status source-mock"; }
   }
 }
 
@@ -4467,8 +4471,8 @@ async function copySelectedTopicPlan() {
     const copied = await copyTextToClipboard(plan);
     if (!copied) throw new Error("浏览器剪贴板不可用");
     showSourceStatus("已复制当前热点选题方案。", "source-real");
-  } catch (error) {
-    showSourceStatus("复制失败（" + error.message + "）。", "source-mock");
+  } catch (_error) {
+    showSourceStatus(clipboardRecoveryMessage(), "source-mock");
   }
 }
 
@@ -4881,8 +4885,8 @@ async function copyVersionPackage() {
     const copied = await copyTextToClipboard(buildVersionPackageText());
     if (!copied) throw new Error("浏览器剪贴板不可用");
     if (status) { status.textContent = "总览状态：版本包装方案已复制到剪贴板。"; status.className = "source-status source-real"; }
-  } catch (error) {
-    if (status) { status.textContent = "总览状态：复制失败（" + error.message + "）。"; status.className = "source-status source-mock"; }
+  } catch (_error) {
+    if (status) { status.textContent = "总览状态：" + clipboardRecoveryMessage(); status.className = "source-status source-mock"; }
   }
 }
 
@@ -5176,8 +5180,8 @@ async function copySegmentPlan() {
     const copied = await copyTextToClipboard(buildSegmentPlanText());
     if (!copied) throw new Error("浏览器剪贴板不可用");
     if (status) { status.textContent = "总览状态：分层策略方案已复制到剪贴板。"; status.className = "source-status source-real"; }
-  } catch (error) {
-    if (status) { status.textContent = "总览状态：复制失败（" + error.message + "）。"; status.className = "source-status source-mock"; }
+  } catch (_error) {
+    if (status) { status.textContent = "总览状态：" + clipboardRecoveryMessage(); status.className = "source-status source-mock"; }
   }
 }
 

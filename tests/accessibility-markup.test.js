@@ -108,6 +108,21 @@ test("B站评论导入 keeps transport errors actionable without exposing fetch 
   assert.doesNotMatch(importSource, /兜底 · \$\{error\.message/);
 });
 
+test("copy actions provide a manual recovery path without exposing clipboard internals", () => {
+  const helperStart = app.indexOf("function clipboardRecoveryMessage");
+  const helperEnd = app.indexOf("function buildBriefingImText", helperStart);
+  const briefingStart = app.indexOf("async function copyBriefingForIm");
+  const briefingEnd = app.indexOf('document.querySelector("#copy-briefing-im")', briefingStart);
+  const topicStart = app.indexOf("async function copySelectedTopicPlan");
+  const topicEnd = app.indexOf("function exportTrendingCsv", topicStart);
+  assert.ok(helperStart >= 0 && helperEnd > helperStart && briefingStart >= 0 && briefingEnd > briefingStart && topicStart >= 0 && topicEnd > topicStart);
+  assert.match(app.slice(helperStart, helperEnd), /请手动复制/);
+  [app.slice(briefingStart, briefingEnd), app.slice(topicStart, topicEnd)].forEach((source) => {
+    assert.match(source, /clipboardRecoveryMessage/);
+    assert.doesNotMatch(source, /error\.message/);
+  });
+});
+
 test("daily follow-up actions keep archive transport failures actionable", () => {
   const riskStart = app.indexOf("async function convertFeedbackRiskToTicket");
   const riskEnd = app.indexOf("function renderFeedbackRiskEvents", riskStart);
