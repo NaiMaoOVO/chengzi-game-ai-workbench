@@ -222,6 +222,18 @@
     return row.tier !== CREATOR_TIER.RISK && row.tier !== CREATOR_TIER.PENDING && row.quote > 0;
   }
 
+  function compareCreatorPriority(a, b, goal, activity = "newLaunch") {
+    const tierOrder = {
+      [CREATOR_TIER.A]: 0,
+      [CREATOR_TIER.B]: 1,
+      [CREATOR_TIER.C]: 2,
+      [CREATOR_TIER.PENDING]: 3,
+      [CREATOR_TIER.RISK]: 4
+    };
+    const tierDifference = (tierOrder[a?.tier] ?? 5) - (tierOrder[b?.tier] ?? 5);
+    return tierDifference || scoreByGoal(b, goal, activity) - scoreByGoal(a, goal, activity);
+  }
+
   function chooseCreatorsByBudget(candidates, budget, scoreKey, limit = 8, maxPerPlatform = 2) {
     const selected = [];
     const platformCounts = new Map();
@@ -249,6 +261,7 @@
     scoreCreator,
     scoreByGoal,
     isEligibleCreator,
+    compareCreatorPriority,
     chooseCreatorsByBudget
   };
 });

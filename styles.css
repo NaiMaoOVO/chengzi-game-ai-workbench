@@ -4829,6 +4829,35 @@ kbd {
 .daily-insight-status[data-tone="warning"] { color: #a15c07; }
 .daily-insight-status[data-tone="idle"] { color: #98a2b3; }
 
+/* Creator decisions: admission status is visible before score. */
+
+.creator-table-row {
+  border-left: 3px solid #d6dce7;
+  transition: background-color 140ms ease, border-color 140ms ease;
+}
+.creator-table-row.creator-decision-priority { border-left-color: #4f6ef7; }
+.creator-table-row.creator-decision-standard { border-left-color: #21a179; }
+.creator-table-row.creator-decision-test { border-left-color: #d99a20; }
+.creator-table-row.creator-decision-pending { border-left-color: #e59a23; }
+.creator-table-row.creator-decision-risk { border-left-color: #dc5965; }
+.creator-table-row:hover { background: #fafbff; }
+.creator-decision {
+  display: inline-flex !important;
+  width: fit-content;
+  padding: 3px 6px;
+  border: 1px solid #dfe5ef;
+  border-radius: 5px;
+  background: #f8fafc;
+  color: #4b5b75 !important;
+  font-size: 10px !important;
+  font-weight: 760 !important;
+}
+.creator-decision.creator-decision-priority { border-color: #d6e0ff; background: #f1f5ff; color: #4261cf !important; }
+.creator-decision.creator-decision-standard { border-color: #ccecdf; background: #f1fbf6; color: #16845a !important; }
+.creator-decision.creator-decision-test,
+.creator-decision.creator-decision-pending { border-color: #f3dfb9; background: #fff9ed; color: #a36406 !important; }
+.creator-decision.creator-decision-risk { border-color: #f2ccd0; background: #fff4f5; color: #be3f4d !important; }
+
 /* Daily dashboard: evidence-backed AI and platform signals */
 
 .daily-insight-signal-grid {

@@ -533,6 +533,9 @@ test("eligible creator decisions can become idempotent daily follow-up tasks", (
   assert.match(app, /function addCreatorFollowUp/);
   assert.match(app, /Idempotency-Key/);
   assert.match(app, /\/daily-todos/);
+  assert.match(app, /compareCreatorPriority\(a, b, goal, activity\)/);
+  assert.match(app, /creator-decision-priority/);
+  assert.match(css, /\.creator-decision\.creator-decision-priority/);
 });
 
 test("publication and risk ticket writes carry idempotency keys", () => {

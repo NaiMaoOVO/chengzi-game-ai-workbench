@@ -1,6 +1,6 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { CREATOR_TIER, chooseCreatorsByBudget, creatorKey, getCreatorHistoryScore, scoreByGoal, scoreCreator } = require("../creator-ranking");
+const { CREATOR_TIER, chooseCreatorsByBudget, compareCreatorPriority, creatorKey, getCreatorHistoryScore, scoreByGoal, scoreCreator } = require("../creator-ranking");
 
 test("creator library keys keep same-name creators on different platforms separate", () => {
   assert.notEqual(
@@ -87,6 +87,18 @@ test("a creator without a verified quote is held for data completion instead of 
   assert.equal(row.tier, CREATOR_TIER.PENDING);
   assert.equal(row.scores.value, 0);
   assert.ok(row.dataGaps.includes("预估报价"));
+});
+
+test("creator admission tier is ordered before its target score", () => {
+  const rows = [
+    { name: "待补数据", tier: CREATOR_TIER.PENDING, scores: { launch: 99, review: 99, guide: 99, value: 0, overall: 99 } },
+    { name: "可推进", tier: CREATOR_TIER.B, scores: { launch: 62, review: 62, guide: 62, value: 62, overall: 62 } },
+    { name: "风险名单", tier: CREATOR_TIER.RISK, scores: { launch: 100, review: 100, guide: 100, value: 100, overall: 100 } }
+  ];
+  assert.deepEqual(
+    rows.sort((a, b) => compareCreatorPriority(a, b, "launch", "newLaunch")).map((row) => row.name),
+    ["可推进", "待补数据", "风险名单"]
+  );
 });
 
 test("value-first ranking keeps the selected activity scenario in the decision", () => {

@@ -5207,6 +5207,7 @@ const {
   scoreCreator,
   scoreByGoal,
   isEligibleCreator,
+  compareCreatorPriority,
   chooseCreatorsByBudget
 } = window.CreatorRanking;
 
@@ -5837,14 +5838,19 @@ function renderCreatorTable(rows, goal, activity) {
   const container = document.querySelector("#creator-table");
   if (!container) return;
   const library = readCreatorLibrary();
+  const decisionClass = (row) => row.tier === CREATOR_TIER.A ? "creator-decision-priority"
+    : row.tier === CREATOR_TIER.B ? "creator-decision-standard"
+      : row.tier === CREATOR_TIER.C ? "creator-decision-test"
+        : row.tier === CREATOR_TIER.PENDING ? "creator-decision-pending"
+          : "creator-decision-risk";
   container.innerHTML = rows.length
     ? `
       <div class="creator-table-head">
         <span>达人</span><span>类型</span><span>推荐场景</span><span>目标分</span><span>性价比</span><span>报价</span>
       </div>
       ${rows.map((row) => `
-        <div class="creator-table-row">
-          <strong>${escapeHtml(row.name)}${row.dataSource === "backfill" ? '<em class="creator-data-badge">实测</em>' : ""}<small>${escapeHtml(row.platform)} · ${formatWan(row.followers)}粉 · 均播${formatWan(row.avgViews)}</small><small class="creator-decision ${row.tier === CREATOR_TIER.PENDING ? "creator-decision-pending" : ""}">${escapeHtml(row.tier === CREATOR_TIER.PENDING ? `待补：${row.dataGaps.join("、")}` : row.reasons.slice(0, 2).join(" · ") || row.risks.slice(0, 1).join("、") || "等待进一步核验")}</small><span class="creator-row-actions"><button type="button" data-library-row-key="${escapeHtml(creatorKey(row))}">${findCreatorProfile(library, row).profile ? "已在个人库" : "加入个人库"}</button>${isEligibleCreator(row) ? `<button type="button" data-creator-task-key="${escapeHtml(creatorKey(row))}">加入今日待办</button>` : ""}</span></strong>
+        <div class="creator-table-row ${decisionClass(row)}">
+          <strong>${escapeHtml(row.name)}${row.dataSource === "backfill" ? '<em class="creator-data-badge">实测</em>' : ""}<small>${escapeHtml(row.platform)} · ${formatWan(row.followers)}粉 · 均播${formatWan(row.avgViews)}</small><small class="creator-decision ${decisionClass(row)}">${escapeHtml(row.tier)} · ${escapeHtml(row.tier === CREATOR_TIER.PENDING ? `待补：${row.dataGaps.join("、")}` : row.reasons.slice(0, 2).join(" · ") || row.risks.slice(0, 1).join("、") || "等待进一步核验")}</small><span class="creator-row-actions"><button type="button" data-library-row-key="${escapeHtml(creatorKey(row))}">${findCreatorProfile(library, row).profile ? "已在个人库" : "加入个人库"}</button>${isEligibleCreator(row) ? `<button type="button" data-creator-task-key="${escapeHtml(creatorKey(row))}">加入今日待办</button>` : ""}</span></strong>
           <span>${escapeHtml(row.type)}</span>
           <span>${escapeHtml(getCreatorFit(row))}</span>
           <span class="score-pill">${scoreByGoal(row, goal, activity)}</span>
@@ -6225,7 +6231,7 @@ function analyzeCreators(rowsOverride = null) {
         historyScore: history && history.count >= 2 ? history.score : null
       };
     })
-    .sort((a, b) => scoreByGoal(b, goal, activity) - scoreByGoal(a, goal, activity));
+    .sort((a, b) => compareCreatorPriority(a, b, goal, activity));
 
   const available = currentCreatorRows.filter(isEligibleCreator);
   renderMetrics(document.querySelector("#creator-metrics"), [
