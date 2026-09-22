@@ -4152,7 +4152,7 @@ function renderTrendingList(gameName, platform, options = {}) {
   const selectedTags = Array.from(document.querySelectorAll("#trending-tags input:checked")).map((el) => el.value);
   const validTags = selectedTags.length > 0 ? selectedTags : ["攻略", "资讯"];
   const topics = options.items?.length
-    ? options.items.map((item, index) => (options.source === "real" || item.source === "real" ? normalizeRealHotspot(item, index) : item))
+    ? options.items.map((item, index) => (item?.source === "real" || options.source === "real" && !item?.source ? normalizeRealHotspot(item, index) : item))
     : generateHotTopics(gameName, platform, validTags);
   const sourceStatus = document.querySelector("#trending-source-status");
   const methodStatus = document.querySelector("#trending-method");
@@ -6648,7 +6648,7 @@ function restoreProjectState(state) {
       document.querySelector("#trending-game")?.value.trim() || "鸣潮",
       document.querySelector("#trending-platform")?.value || "B站",
       {
-        source: currentTrendingTopics.some((item) => item.source === "real") ? "real" : "mock",
+        source: currentTrendingTopics.every((item) => item.source === "real") ? "real" : "mock",
         sourceLabel: "已载入上次保存榜单",
         note: "本地保存结果",
         reason: "本地保存结果",

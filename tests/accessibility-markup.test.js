@@ -205,6 +205,8 @@ test("trending cards separate analysis selection from external source navigation
   assert.match(app, /nextItem\.querySelector\("\.trending-select"\)\?\.focus\(\)/);
   assert.doesNotMatch(app, /class="trending-item[^\n]+role="button"/);
   assert.match(css, /\.trending-select:focus-visible/);
+  assert.match(app, /item\?\.source === "real" \|\| options\.source === "real" && !item\?\.source/);
+  assert.match(app, /currentTrendingTopics\.every\(\(item\) => item\.source === "real"\)/);
 });
 
 test("daily dashboard promotes the page title while keeping global service noise out of its first screen", () => {
