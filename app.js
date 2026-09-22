@@ -2951,7 +2951,7 @@ async function convertFeedbackRiskToTicket(event, button) {
   } catch (error) {
     button.disabled = false;
     button.textContent = "→ 转工单";
-    setFeedbackRiskTicketStatus("转工单失败（" + error.message + "）。请确认本机存档服务已启动。", "mock");
+    setFeedbackRiskTicketStatus(archiveMutationFailure("转工单", error), "mock");
   }
 }
 
@@ -4449,7 +4449,7 @@ async function addSelectedTopicToDailyTodo(button) {
     showSourceStatus(payload.idempotent ? "热点待办已在今日行动队列中。" : "已将当前热点加入今日行动队列。", "source-real");
     await window.loadTodayTodos?.();
   } catch (error) {
-    showSourceStatus("热点待办添加失败（" + (error.message || "存档服务不可用") + "）。", "source-mock");
+    showSourceStatus(archiveMutationFailure("热点待办添加", error), "source-mock");
   } finally {
     if (button) button.disabled = false;
   }
@@ -5924,7 +5924,7 @@ async function addCreatorFollowUp(row, button) {
     await window.loadTodayTodos?.();
   } catch (error) {
     if (status) {
-      status.textContent = `达人待办：添加失败，${error.message || "存档服务不可用"}。`;
+      status.textContent = archiveMutationFailure("达人待办添加", error);
       status.className = "source-status source-mock";
     }
   } finally {

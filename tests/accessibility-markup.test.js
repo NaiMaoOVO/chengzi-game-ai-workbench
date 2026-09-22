@@ -108,6 +108,20 @@ test("B站评论导入 keeps transport errors actionable without exposing fetch 
   assert.doesNotMatch(importSource, /兜底 · \$\{error\.message/);
 });
 
+test("daily follow-up actions keep archive transport failures actionable", () => {
+  const riskStart = app.indexOf("async function convertFeedbackRiskToTicket");
+  const riskEnd = app.indexOf("function renderFeedbackRiskEvents", riskStart);
+  const topicStart = app.indexOf("async function addSelectedTopicToDailyTodo");
+  const topicEnd = app.indexOf("async function copySelectedTopicPlan", topicStart);
+  const creatorStart = app.indexOf("async function addCreatorFollowUp");
+  const creatorEnd = app.indexOf("function renderCreatorTiers", creatorStart);
+  assert.ok(riskStart >= 0 && riskEnd > riskStart && topicStart >= 0 && topicEnd > topicStart && creatorStart >= 0 && creatorEnd > creatorStart);
+  [app.slice(riskStart, riskEnd), app.slice(topicStart, topicEnd), app.slice(creatorStart, creatorEnd)].forEach((source) => {
+    assert.match(source, /archiveMutationFailure/);
+    assert.doesNotMatch(source, /error\.message/);
+  });
+});
+
 test("daily dashboard provides grouped navigation, a command palette and decision cues", () => {
   assert.match(html, /class="nav-group-label">工作区</);
   assert.match(html, /class="nav-group-label">内容洞察</);
