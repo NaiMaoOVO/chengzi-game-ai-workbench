@@ -550,6 +550,8 @@ test("creator effect backfill reports personal-library persistence failures", ()
   const recalcSource = app.slice(recalcStart, recalcEnd);
   assert.match(backfillSource, /const persisted = writeCreatorLibrary\(library\)/);
   assert.match(backfillSource, /return persisted/);
+  assert.match(backfillSource, /const hasActualCost/);
+  assert.doesNotMatch(backfillSource, /quote: patch\.actualCost/);
   assert.match(recalcSource, /backfillPersistenceFailures/);
   assert.match(recalcSource, /个人库/);
 });

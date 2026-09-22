@@ -5349,6 +5349,8 @@ function syncCreatorBackfillToLibrary(row, patch) {
   const duplicate = [...collaborations].reverse().find((item) => item.source === "backfill"
     && item.project === project
     && (patch.contentUrl ? item.url === patch.contentUrl : !item.url));
+  const actualCost = Number(patch.actualCost);
+  const hasActualCost = Number.isFinite(actualCost) && actualCost >= 0;
   const record = {
     id: duplicate?.id || `${now}-${collaborations.length + 1}`,
     source: "backfill",
@@ -5358,7 +5360,7 @@ function syncCreatorBackfillToLibrary(row, patch) {
     actualViews: patch.avgViews || null,
     actualEngagementRate: patch.engagementRate || null,
     actualConversionRate: patch.conversionRate || null,
-    actualCost: patch.actualCost || null,
+    actualCost: hasActualCost ? actualCost : null,
     baselineViews: profile.snapshot?.avgViews || row.avgViews || null,
     baselineQuote: profile.snapshot?.quote || row.quote || null,
     baselineConversionRate: profile.snapshot?.conversionRate || row.conversionRate || null,
@@ -5371,7 +5373,6 @@ function syncCreatorBackfillToLibrary(row, patch) {
     ...row,
     ...(patch.avgViews ? { avgViews: patch.avgViews } : {}),
     ...(patch.engagementRate ? { engagementRate: patch.engagementRate } : {}),
-    ...(patch.actualCost ? { quote: patch.actualCost } : {}),
     ...(patch.conversionRate ? { conversionRate: patch.conversionRate } : {})
   };
   library[key] = {
