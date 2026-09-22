@@ -4858,6 +4858,16 @@ kbd {
 .creator-decision.creator-decision-pending { border-color: #f3dfb9; background: #fff9ed; color: #a36406 !important; }
 .creator-decision.creator-decision-risk { border-color: #f2ccd0; background: #fff4f5; color: #be3f4d !important; }
 
+.creator-library-history {
+  padding: 9px 10px;
+  border: 1px solid #e7ebf2;
+  border-radius: 7px;
+  background: #fafbfd;
+  color: #58677e;
+  font-size: 11px;
+  line-height: 1.6;
+}
+
 /* Daily dashboard: evidence-backed AI and platform signals */
 
 .daily-insight-signal-grid {

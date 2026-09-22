@@ -5413,13 +5413,22 @@ function renderCreatorLibrary() {
     const history = Array.isArray(profile.collaborations) ? profile.collaborations : [];
     const historyScore = getCreatorHistoryScore(history);
     const historyCopy = history.slice(-2).reverse().map((item) => {
+      const views = Number(item.actualViews);
+      const actualCost = Number(item.actualCost);
+      const hasActualCost = item.actualCost !== null && item.actualCost !== undefined && item.actualCost !== "" && Number.isFinite(actualCost) && actualCost >= 0;
+      const actualCpm = views > 0 && hasActualCost ? actualCost / views * 1000 : null;
       const metrics = [
-        item.actualViews ? `播放 ${formatWan(item.actualViews)}` : "",
-        item.actualConversionRate ? `转化 ${Number(item.actualConversionRate).toFixed(1)}%` : "",
-        item.quotedCost ? `报价 ${formatCurrency(item.quotedCost)}` : "",
-        item.actualCost ? `实际 ${formatCurrency(item.actualCost)}` : ""
+        views > 0 ? `播放 ${formatWan(views)}` : "",
+        Number(item.actualClicks) > 0 ? `点击 ${formatWan(item.actualClicks)}` : "",
+        Number(item.actualConversions) > 0 ? `转化 ${formatWan(item.actualConversions)}` : "",
+        Number(item.actualConversionRate) > 0 ? `转化率 ${Number(item.actualConversionRate).toFixed(1)}%` : "",
+        actualCpm !== null ? `实际 CPM ${formatCurrency(actualCpm)}` : "",
+        item.quotedCost ? `报价 ${formatCurrency(item.quotedCost)}` : ""
       ].filter(Boolean).join("，") || "已记录合作";
-      return `${item.project || "未命名项目"}：${metrics}${item.result ? `，${item.result}` : ""}`;
+      const delivery = item.onTime === "yes" ? "按时交付" : item.onTime === "no" ? "延期交付" : "交付时间未记录";
+      const renewal = item.recommendation === "again" ? "建议复投" : item.recommendation === "avoid" ? "不建议复投" : "复投待观察";
+      const date = formatPublicationDate(item.createdAt) || "日期未记录";
+      return `${date} · ${item.project || "未命名项目"}：${metrics}；${delivery}，${renewal}${item.result ? `；${item.result}` : ""}`;
     }).join("；");
     return `
       <article class="creator-library-card" data-creator-library-key="${escapeHtml(profile.key)}">
@@ -5446,7 +5455,7 @@ function renderCreatorLibrary() {
           <label>再次合作<select data-library-recommendation><option value="observe">待观察</option><option value="again">推荐再次合作</option><option value="avoid">不建议合作</option></select></label>
           <label>合作结果<textarea data-library-result rows="2" placeholder="如：按时发布，评论质量高；实际播放 8.2 万"></textarea></label>
         </div>
-        ${historyCopy ? `<p class="creator-library-history">历史合作：${escapeHtml(historyCopy)}</p>` : ""}
+        ${historyCopy ? `<p class="creator-library-history">最近合作（${history.length} 次）：${escapeHtml(historyCopy)}</p>` : ""}
         <div class="creator-library-actions">
           <button class="secondary-button" type="button" data-library-save>保存档案</button>
           <button class="text-button" type="button" data-library-remove>移出个人库</button>

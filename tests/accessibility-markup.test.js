@@ -381,6 +381,11 @@ test("creator library dates use the shared date formatter", () => {
   const end = app.indexOf("function saveCreatorLibraryCard", start);
   assert.ok(start >= 0 && end > start);
   const source = app.slice(start, end);
+  assert.match(source, /实际 CPM/);
+  assert.match(source, /hasActualCost/);
+  assert.match(source, /按时交付/);
+  assert.match(source, /建议复投/);
+  assert.ok(css.includes(".creator-library-history"));
   assert.match(source, /formatPublicationDate\(profile\.updatedAt\)/);
   assert.doesNotMatch(source, /updatedAt \|\| \"\"\)\.slice\(0, 10\)/);
 });
