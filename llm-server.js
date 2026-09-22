@@ -104,14 +104,17 @@ const TASKS = {
       const todos = normalize(data.todos, ["title", "priority", "due_date"]);
       const risks = normalize(data.risks, ["title", "level", "source"]);
       const publications = normalize(data.publications, ["title", "channel", "related_topic"]);
-      if (!todos.length && !risks.length && !publications.length) throw new Error("当前没有可供分析的工作信号");
+      const hotspots = normalize(data.hotspots, ["title", "tag", "risk"]);
+      const hotspotSource = data.hotspotSource === "real" ? "真实热点" : data.hotspotSource === "sample" ? "样例兜底热点（仅离线演示）" : "未标注来源的热点";
+      if (!todos.length && !risks.length && !publications.length && !hotspots.length) throw new Error("当前没有可供分析的工作信号");
       const blocks = [
         ["待办", todos],
         ["风险工单", risks],
-        ["待回流内容", publications]
+        ["待回流内容", publications],
+        [`热点信号（${hotspotSource}）`, hotspots]
       ].filter(([, items]) => items.length).map(([label, items]) => label + "：\n" + items.map((item, index) => `${index + 1}. ${item}`).join("\n")).join("\n\n");
       return {
-        system: "你是资深游戏内容运营负责人。只能根据提供的待办、风险工单和待回流内容判断优先级；不得虚构外部数据、热点、版本、玩家反馈或执行结果。只输出 JSON，不要输出其他内容。",
+        system: "你是资深游戏内容运营负责人。只能根据提供的待办、风险工单、待回流内容和热点信号判断优先级；不得虚构外部数据、热点、版本、玩家反馈或执行结果。若热点明确标为样例兜底，只能称为离线样例或演示信号，禁止表述为真实平台数据。只输出 JSON，不要输出其他内容。",
         user: `请为《${game}》生成今日决策洞察。\n\n${blocks}\n\n输出 JSON，字段定义：\n{"summary":"一句到两句的当前判断，只依据输入信号","priority_actions":["最多3条按优先级排序的下一步动作，每条指出对应输入信号"],"watchouts":["最多2条需要观察或补数的事项；没有则返回空数组"]}`
       };
     }

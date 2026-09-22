@@ -26,7 +26,9 @@ const DAILY_INSIGHT_BODY = {
     game: "测试游戏",
     todos: [{ title: "整理玩家反馈", priority: "high", due_date: "2026-09-19" }],
     risks: [{ title: "PV 评论负向上升", level: "高", source: "评论分析" }],
-    publications: [{ title: "版本预热视频", channel: "B站", related_topic: "版本前瞻" }]
+    publications: [{ title: "版本预热视频", channel: "B站", related_topic: "版本前瞻" }],
+    hotspots: [{ title: "新角色强度讨论", tag: "攻略", risk: "中" }],
+    hotspotSource: "real"
   }
 };
 
@@ -242,7 +244,7 @@ test("llm without stream field keeps the legacy JSON response shape and does not
   }
 });
 
-test("llm daily insight accepts only the current operational queue as a dedicated task", async () => {
+test("llm daily insight accepts the current operational queue and labelled hotspot signals", async () => {
   const llmPort = 19537;
   const upstreamPort = 19637;
   const upstream = await createFakeOpenAiUpstream(upstreamPort);
@@ -263,6 +265,8 @@ test("llm daily insight accepts only the current operational queue as a dedicate
       assert.match(prompt, /整理玩家反馈/);
       assert.match(prompt, /PV 评论负向上升/);
       assert.match(prompt, /版本预热视频/);
+      assert.match(prompt, /新角色强度讨论/);
+      assert.match(prompt, /热点信号（真实热点）/);
       assert.doesNotMatch(prompt, /玩家评论原文/);
     });
   } finally {

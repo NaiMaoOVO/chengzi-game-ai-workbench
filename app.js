@@ -1518,7 +1518,16 @@ function readDailyPlatformSnapshot() {
   const topicSource = topics.length
     ? topics.every((topic) => topic?.source === "real") ? "real" : "sample"
     : "";
-  return { platform, topicCount: topics.length, topicSource };
+  return {
+    platform,
+    topicCount: topics.length,
+    topicSource,
+    topics: topics.slice(0, 5).map((topic) => ({
+      title: String(topic?.title || "").trim().slice(0, 160),
+      tag: String(topic?.tag || "").trim().slice(0, 40),
+      risk: String(topic?.risk?.level || "正常").trim().slice(0, 20)
+    })).filter((topic) => topic.title)
+  };
 }
 
 window.loadTodayTodos = async function loadTodayTodos() {

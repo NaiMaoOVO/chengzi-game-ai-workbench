@@ -145,17 +145,20 @@ test("daily dashboard exposes evidence-backed AI counts and platform signals", (
   assert.match(css, /\.daily-platform-table/);
 });
 
-test("daily AI insight only submits the current action queue to a dedicated server task", () => {
+test("daily AI insight submits the current action queue and labelled hotspot signals to a dedicated server task", () => {
   assert.match(html, /id="generate-daily-ai-insight"/);
   assert.match(html, /id="daily-ai-insight-result"[^>]*aria-live="polite"/);
   assert.match(dailyWorkbench, /function generateDailyAiInsight/);
   assert.match(dailyWorkbench, /requestLlmTask\("daily-insight"/);
   assert.match(dailyWorkbench, /riskItems/);
   assert.match(dailyWorkbench, /publicationItems/);
+  assert.match(dailyWorkbench, /hotspots: dailyInsightSignalItems\(snapshot\.topics/);
+  assert.match(dailyWorkbench, /hotspotSource/);
   assert.match(dailyWorkbench, /textContent/);
   assert.match(dailyWorkbench, /button\.setAttribute\("aria-disabled", "true"\)/);
   assert.match(llmServer, /"daily-insight"\s*:/);
-  assert.match(llmServer, /待办、风险工单和待回流内容/);
+  assert.match(llmServer, /待办、风险工单、待回流内容和热点信号/);
+  assert.match(llmServer, /样例兜底，只能称为离线样例或演示信号/);
 });
 
 test("daily insight recovery action matches authentication and service mode", () => {

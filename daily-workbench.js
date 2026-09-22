@@ -530,16 +530,19 @@
 
   function buildDailyAiInsightContext() {
     const { manualItems, state } = latestDailyInsightContext;
+    const snapshot = state.platformSnapshot && typeof state.platformSnapshot === "object" ? state.platformSnapshot : {};
     return {
       game: currentGame(),
       todos: dailyInsightSignalItems(manualItems, ["title", "priority", "due_date", "game"]),
       risks: dailyInsightSignalItems(state.riskItems, ["title", "level", "source", "game"]),
-      publications: dailyInsightSignalItems(state.publicationItems, ["title", "channel", "related_topic", "game"])
+      publications: dailyInsightSignalItems(state.publicationItems, ["title", "channel", "related_topic", "game"]),
+      hotspots: dailyInsightSignalItems(snapshot.topics, ["title", "tag", "risk"]),
+      hotspotSource: snapshot.topicSource === "real" ? "real" : snapshot.topicSource === "sample" ? "sample" : ""
     };
   }
 
   function hasDailyAiSignals(context) {
-    return context.todos.length + context.risks.length + context.publications.length > 0;
+    return context.todos.length + context.risks.length + context.publications.length + context.hotspots.length > 0;
   }
 
   function setDailyAiInsightStatus(text, tone) {
@@ -563,7 +566,7 @@
     button.disabled = !available;
     button.setAttribute("aria-disabled", String(!available));
     button.title = available
-      ? "仅基于当前待办、风险和待回流内容生成"
+      ? "仅基于当前待办、风险、待回流与热点信号生成"
       : "当前没有可供 AI 判断的真实工作信号";
     setDailyAiInsightStatus(available ? "规则归纳" : "等待信号", available ? "ready" : "idle");
   }
