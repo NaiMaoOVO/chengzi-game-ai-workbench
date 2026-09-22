@@ -375,10 +375,17 @@
       return;
     }
     if (state.authRequired) {
-      summary.textContent = "请登录后再查看当前账号的风险与发布回流。";
-      recommendations.push("登录后即可恢复待办、风险工单和发布回流的同步。");
-      actionLabel = "去登录";
-      actionHandler = () => document.querySelector("#archive-login-username")?.focus();
+      const localFile = window.location.protocol === "file:";
+      summary.textContent = localFile
+        ? "本地文件模式无法登录线上账号，请改用线上站点或本机个人服务。"
+        : "请登录后再查看当前账号的风险与发布回流。";
+      recommendations.push(localFile
+        ? "通过 HTTPS 线上站点登录，或启动本机服务后继续作为个人工作台使用。"
+        : "登录后即可恢复待办、风险工单和发布回流的同步。");
+      actionLabel = localFile ? "查看本机服务" : "去登录";
+      actionHandler = localFile
+        ? openLocalServiceRecovery
+        : () => document.querySelector("#archive-login-username")?.focus();
     } else if (state.error) {
       const local = !isOnlineServiceMode();
       summary.textContent = "暂时无法读取完整运营信号；先恢复服务连接，再决定下一步。";
