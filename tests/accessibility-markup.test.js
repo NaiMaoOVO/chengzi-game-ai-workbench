@@ -209,13 +209,19 @@ test("daily dashboard promotes the page title while keeping global service noise
 
 test("daily follow-up work keeps briefing, publication and risk actionable when no records exist", () => {
   assert.match(html, /class="daily-follow-up-grid"/);
-  assert.match(html, /id="publication-panel" open/);
-  assert.match(html, /id="risk-ticket-panel" open/);
+  assert.match(html, /id="publication-panel"/);
+  assert.match(html, /id="risk-ticket-panel"/);
+  assert.doesNotMatch(html, /id="publication-panel" open/);
+  assert.doesNotMatch(html, /id="risk-ticket-panel" open/);
   assert.match(html, /class="daily-management-overview"/);
   assert.match(html, /<summary>登记一条发布<\/summary>/);
   assert.match(html, /<summary>筛选工单<\/summary>/);
   assert.match(css, /\.daily-follow-up-grid\s*\{[\s\S]*grid-template-columns/);
   assert.match(css, /\.daily-management-overview/);
+  assert.match(css, /\.daily-management-panel:not\(\[open\]\) > summary/);
+  assert.match(app, /function setManagementCount/);
+  assert.match(app, /#publication-count-badge/);
+  assert.match(app, /#risk-ticket-count-badge/);
 });
 
 test("daily workbench refreshes visible operational status automatically", () => {

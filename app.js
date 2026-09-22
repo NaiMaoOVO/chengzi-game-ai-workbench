@@ -976,6 +976,18 @@ function setPublicationStatus(text, tone) {
   status.className = "source-status" + (tone === "real" ? " source-real" : tone === "mock" ? " source-mock" : "");
 }
 
+function setManagementCount(selector, total, loaded) {
+  const badge = document.querySelector(selector);
+  if (!badge) return;
+  const normalizedTotal = Number.isFinite(Number(total)) ? Math.max(0, Number(total)) : null;
+  const normalizedLoaded = Number.isFinite(Number(loaded)) ? Math.max(0, Number(loaded)) : null;
+  badge.textContent = normalizedTotal === null
+    ? "—"
+    : normalizedLoaded !== null && normalizedLoaded < normalizedTotal
+      ? `${normalizedLoaded}/${normalizedTotal} 条`
+      : `${normalizedTotal} 条`;
+}
+
 function beginPublicationMutation(id) {
   const mutationKey = String(id);
   if (publicationMutationGuard.has(mutationKey)) {
@@ -1133,12 +1145,14 @@ async function loadPublications() {
     const items = payload.items;
     const total = Number.isFinite(Number(payload.total)) ? Number(payload.total) : items.length;
     renderPublicationList(items);
+    setManagementCount("#publication-count-badge", total, items.length);
     setPublicationStatus(total > items.length ? `已加载最近 ${items.length}/${total} 条。` : `已加载 ${items.length} 条。`, total > items.length ? "mock" : "real");
     refreshDailyQueueIfActive();
   } catch (error) {
     if (!publicationListRequestGuard.isCurrent(requestGeneration)) return;
     currentPublications = [];
     container.innerHTML = "";
+    setManagementCount("#publication-count-badge");
     if (isArchiveServiceUnavailable(error)) {
       setPublicationStatus("本机存档服务未连接；启动服务后点击「刷新台账」重试。", "mock");
     } else {
@@ -1431,12 +1445,14 @@ async function loadRiskTickets() {
     const items = payload.items;
     const total = Number.isFinite(Number(payload.total)) ? Number(payload.total) : items.length;
     renderRiskTicketList(items);
+    setManagementCount("#risk-ticket-count-badge", total, items.length);
     setRiskTicketStatus(total > items.length ? `已加载最近 ${items.length}/${total} 条。` : `已加载 ${items.length} 条。`, total > items.length ? "mock" : "real");
     refreshDailyQueueIfActive();
   } catch (error) {
     if (!riskTicketListRequestGuard.isCurrent(requestGeneration)) return;
     currentRiskTickets = [];
     container.innerHTML = "";
+    setManagementCount("#risk-ticket-count-badge");
     if (isArchiveServiceUnavailable(error)) {
       setRiskTicketStatus("本机存档服务未连接；启动服务后点击「查询工单」重试。", "mock");
     } else {

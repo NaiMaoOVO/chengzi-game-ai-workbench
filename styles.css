@@ -4571,6 +4571,16 @@ kbd {
   list-style: none;
 }
 
+.daily-management-panel:not([open]) > summary {
+  align-items: center;
+  min-height: 88px;
+  padding: 18px;
+}
+
+.daily-management-panel:not([open]) > summary p {
+  max-width: 420px;
+}
+
 .daily-management-panel > summary::-webkit-details-marker,
 .daily-management-form > summary::-webkit-details-marker { display: none; }
 
