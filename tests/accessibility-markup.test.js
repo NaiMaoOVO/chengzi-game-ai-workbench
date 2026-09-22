@@ -534,6 +534,9 @@ test("creator library sync blocks corrupt remote archives before writing", () =>
   const source = app.slice(start, end);
   assert.match(source, /remote\.invalid/);
   assert.match(source, /已阻止覆盖/);
+  assert.match(source, /本机存档服务未连接；启动服务后重试/);
+  assert.match(source, /本地数据未受影响/);
+  assert.doesNotMatch(source, /同步失败，\$\{error\.message/);
 });
 
 test("creator library sync canonicalizes identity keys before merging", () => {

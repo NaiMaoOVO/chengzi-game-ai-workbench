@@ -5722,7 +5722,13 @@ async function syncCreatorLibrary() {
     renderCreatorTable(currentCreatorRows, document.querySelector("#creator-goal")?.value || "launch", document.querySelector("#creator-activity")?.value || "newLaunch");
     setStatus(`个人库：已同步 ${Object.keys(merged).length} 位创作者。`, true);
   } catch (error) {
-    setStatus(`个人库：同步失败，${error.message || "存档服务不可用"}。本地数据未受影响。`);
+    const message = String(error?.message || "");
+    const detail = isArchiveServiceUnavailable(error)
+      ? "本机存档服务未连接；启动服务后重试"
+      : /请先登录|数据损坏|损坏记录|存储空间不足/.test(message)
+        ? message
+        : "暂不可用，请稍后重试";
+    setStatus(`个人库：同步失败，${detail}。本地数据未受影响。`);
   }
 }
 
