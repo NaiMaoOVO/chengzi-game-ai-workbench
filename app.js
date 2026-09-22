@@ -3239,13 +3239,13 @@ async function fetchBiliComments() {
     if (document.querySelector("#demo-mode-toggle")?.checked) {
       const game = document.querySelector("#feedback-game")?.value.trim() || "目标游戏";
       const cleanResult = importFeedbackComments(buildDemoFeedbackComments(game, currentTrendingTopics.slice(0, 3)));
-      status.textContent = `评论来源：真实抓取失败，已自动切换为样例兜底 · ${error.message || "请确认 comment-server.js 已启动"}`;
+      status.textContent = `评论来源：真实抓取失败，已自动切换为样例兜底 · ${normalized}`;
       status.className = "source-status source-mock";
       setFetchDiagnostic("#feedback-fetch-diagnostic", "mock", "真实抓取失败，已兜底", normalized);
       analyzeFeedback();
       return;
     }
-    status.textContent = `评论来源：抓取失败，${error.message || "请确认 comment-server.js 已启动"}`;
+    status.textContent = `评论来源：抓取失败，${normalized}`;
     status.className = "source-status source-mock";
     setFetchDiagnostic("#feedback-fetch-diagnostic", "error", "抓取失败", normalized);
   }
@@ -3340,6 +3340,9 @@ async function fetchCommentsByVideoUrl(url, limit = 40) {
 
 function normalizeBiliErrorMessage(message) {
   const text = String(message || "");
+  if (/Failed to fetch|NetworkError|load failed/i.test(text)) {
+    return "本机数据服务未连接；启动服务后重试。";
+  }
   if (text.includes("HTTP 412")) {
     return "B站公开接口触发风控（HTTP 412）。可以稍后重试，或先在热点追踪里刷新出真实视频后再抓评论。";
   }
@@ -3464,7 +3467,7 @@ async function fetchHotVideoComments() {
         });
       } catch (error) {
         const title = video.title.length > 24 ? `${video.title.slice(0, 24)}...` : video.title;
-        failures.push(`${title}：${error.message}`);
+        failures.push(`${title}：${normalizeBiliErrorMessage(error.message)}`);
       }
     }
 

@@ -95,6 +95,19 @@ test("daily todo mutations explain how to recover from a disconnected local serv
   assert.doesNotMatch(mutationSource, /更新失败（" \+ error\.message/);
 });
 
+test("B站评论导入 keeps transport errors actionable without exposing fetch internals", () => {
+  const normalizeStart = app.indexOf("function normalizeBiliErrorMessage");
+  const normalizeEnd = app.indexOf("function getCurrentTrendingCommentTargets", normalizeStart);
+  const importStart = app.indexOf("async function fetchBiliComments");
+  const importEnd = app.indexOf("function normalizeXhsNoteErrorMessage", importStart);
+  assert.ok(normalizeStart >= 0 && normalizeEnd > normalizeStart && importStart >= 0 && importEnd > importStart);
+  const normalizeSource = app.slice(normalizeStart, normalizeEnd);
+  const importSource = app.slice(importStart, importEnd);
+  assert.match(normalizeSource, /本机数据服务未连接；启动服务后重试/);
+  assert.match(importSource, /已自动切换为样例兜底 · \$\{normalized\}/);
+  assert.doesNotMatch(importSource, /兜底 · \$\{error\.message/);
+});
+
 test("daily dashboard provides grouped navigation, a command palette and decision cues", () => {
   assert.match(html, /class="nav-group-label">工作区</);
   assert.match(html, /class="nav-group-label">内容洞察</);
