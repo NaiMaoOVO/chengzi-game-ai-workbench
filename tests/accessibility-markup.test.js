@@ -385,6 +385,8 @@ test("creator library dates use the shared date formatter", () => {
   assert.match(source, /hasActualCost/);
   assert.match(source, /按时交付/);
   assert.match(source, /建议复投/);
+  assert.match(source, /data-library-occurred-on/);
+  assert.match(source, /item\.occurredOn \|\| item\.createdAt/);
   assert.ok(css.includes(".creator-library-history"));
   assert.match(source, /formatPublicationDate\(profile\.updatedAt\)/);
   assert.doesNotMatch(source, /updatedAt \|\| \"\"\)\.slice\(0, 10\)/);

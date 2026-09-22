@@ -5427,7 +5427,7 @@ function renderCreatorLibrary() {
       ].filter(Boolean).join("，") || "已记录合作";
       const delivery = item.onTime === "yes" ? "按时交付" : item.onTime === "no" ? "延期交付" : "交付时间未记录";
       const renewal = item.recommendation === "again" ? "建议复投" : item.recommendation === "avoid" ? "不建议复投" : "复投待观察";
-      const date = formatPublicationDate(item.createdAt) || "日期未记录";
+      const date = formatPublicationDate(item.occurredOn || item.createdAt) || "日期未记录";
       return `${date} · ${item.project || "未命名项目"}：${metrics}；${delivery}，${renewal}${item.result ? `；${item.result}` : ""}`;
     }).join("；");
     return `
@@ -5442,6 +5442,7 @@ function renderCreatorLibrary() {
           <label>我的判断<textarea data-library-notes rows="2" placeholder="内容质量、配合度、风险或适合场景">${escapeHtml(profile.notes || "")}</textarea></label>
         </div>
         <div class="creator-library-collaboration">
+          <label>实际合作日期<input data-library-occurred-on type="date" /></label>
           <label>本次项目<input data-library-project placeholder="如：S39 版本首曝" /></label>
           <label>发布链接<input data-library-url placeholder="可选，填写实际内容链接" /></label>
           <label>实际播放<input data-library-views type="number" min="0" placeholder="如：82000" /></label>
@@ -5472,6 +5473,7 @@ function saveCreatorLibraryCard(card) {
   const profile = library[key];
   if (!profile) return;
   const project = card.querySelector("[data-library-project]")?.value.trim() || "";
+  const occurredOn = card.querySelector("[data-library-occurred-on]")?.value || "";
   const url = card.querySelector("[data-library-url]")?.value.trim() || "";
   const result = card.querySelector("[data-library-result]")?.value.trim() || "";
   const readNumber = (selector) => {
@@ -5491,9 +5493,10 @@ function saveCreatorLibraryCard(card) {
   const recommendation = card.querySelector("[data-library-recommendation]")?.value || "observe";
   const now = new Date().toISOString();
   const collaborations = Array.isArray(profile.collaborations) ? [...profile.collaborations] : [];
-  if (project || url || result || actualViews !== null || actualEngagementRate !== null || actualClicks !== null || actualConversions !== null || quotedCost !== null || actualCost !== null || onTime !== "unknown" || quality) {
+  if (occurredOn || project || url || result || actualViews !== null || actualEngagementRate !== null || actualClicks !== null || actualConversions !== null || quotedCost !== null || actualCost !== null || onTime !== "unknown" || quality) {
     collaborations.push({
       id: `${now}-${collaborations.length + 1}`,
+      occurredOn,
       project,
       url,
       result,
