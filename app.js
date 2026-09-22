@@ -618,8 +618,10 @@ function archiveSnapshot(kind, game, payload) {
     setArchiveSyncStatus(`存档：${label}数据已保存（编号 #${result.id}）。`, "real");
     return result;
   }).catch((error) => {
-    const detail = String(error?.message || "服务不可用").slice(0, 120);
-    setArchiveSyncStatus(`存档失败：${label}数据未保存（${detail}）。主流程已继续，可稍后重试。`, "mock");
+    const recovery = isArchiveServiceUnavailable(error)
+      ? "本机存档服务未连接；启动服务后重试"
+      : "服务暂不可用，请稍后重试";
+    setArchiveSyncStatus(`存档失败：${label}数据未保存；${recovery}。主流程已继续。`, "mock");
     return null;
   });
 }

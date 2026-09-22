@@ -284,10 +284,16 @@ test("daily queue degrades gracefully when the optional morning status endpoint 
 });
 
 test("background snapshot writes expose success and failure instead of swallowing errors", () => {
+  const start = app.indexOf("function archiveSnapshot");
+  const end = app.indexOf('document.querySelector("#retry-archive-sync")', start);
+  assert.ok(start >= 0 && end > start);
+  const source = app.slice(start, end);
   assert.match(html, /id="archive-sync-status"[^>]*aria-live="polite"/);
   assert.match(app, /function setArchiveSyncStatus/);
-  assert.match(app, /存档失败/);
-  assert.doesNotMatch(app, /存档失败不影响主流程/);
+  assert.match(source, /存档失败/);
+  assert.match(source, /本机存档服务未连接/);
+  assert.doesNotMatch(source, /error\?\.message/);
+  assert.doesNotMatch(source, /存档失败不影响主流程/);
 });
 
 test("background snapshots use a stable daily idempotency key", () => {
