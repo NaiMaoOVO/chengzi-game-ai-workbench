@@ -577,6 +577,13 @@
     return "AI 洞察暂不可用，已保留规则归纳结果。";
   }
 
+  function dailyAiInsightInputLabel() {
+    const source = latestDailyInsightContext.state?.platformSnapshot?.topicSource;
+    if (source === "real") return "输入口径：当前队列 + 已读取的真实热点信号";
+    if (source === "sample") return "输入口径：当前队列 + 样例兜底热点；结果仅供离线演示";
+    return "输入口径：当前待办、风险和待回流内容";
+  }
+
   function renderDailyAiInsightResult(value) {
     const result = document.querySelector("#daily-ai-insight-result");
     if (!result) return;
@@ -587,9 +594,12 @@
     result.replaceChildren();
     const heading = document.createElement("strong");
     heading.textContent = "AI 决策洞察";
+    const source = document.createElement("small");
+    source.className = "daily-ai-insight-source";
+    source.textContent = dailyAiInsightInputLabel();
     const copy = document.createElement("p");
     copy.textContent = summary || "AI 未返回可用摘要，请以规则归纳结果为准。";
-    result.append(heading, copy);
+    result.append(heading, source, copy);
     [["优先动作", priorities], ["观察项", watchouts]].forEach(([label, items]) => {
       const values = items.filter((item) => typeof item === "string" && item.trim()).slice(0, 3);
       if (!values.length) return;

@@ -143,12 +143,15 @@ test("daily dashboard exposes evidence-backed AI counts and platform signals", (
   assert.match(css, /\.daily-insight-signal-grid/);
   assert.match(css, /\.daily-platform-panel/);
   assert.match(css, /\.daily-platform-table/);
+  assert.match(css, /\.daily-ai-insight-source/);
 });
 
 test("daily AI insight submits the current action queue and labelled hotspot signals to a dedicated server task", () => {
   assert.match(html, /id="generate-daily-ai-insight"/);
   assert.match(html, /id="daily-ai-insight-result"[^>]*aria-live="polite"/);
   assert.match(dailyWorkbench, /function generateDailyAiInsight/);
+  assert.match(dailyWorkbench, /function dailyAiInsightInputLabel/);
+  assert.match(dailyWorkbench, /样例兜底热点；结果仅供离线演示/);
   assert.match(dailyWorkbench, /requestLlmTask\("daily-insight"/);
   assert.match(dailyWorkbench, /riskItems/);
   assert.match(dailyWorkbench, /publicationItems/);

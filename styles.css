@@ -4823,6 +4823,7 @@ kbd {
 .daily-ai-insight-result strong { color: #3656cf; font-size: 12px; }
 .daily-ai-insight-result p { margin: 0; }
 .daily-ai-insight-result small { color: #667085; font-weight: 760; }
+.daily-ai-insight-result .daily-ai-insight-source { color: #7a8699; font-size: 10px; font-weight: 700; }
 .daily-ai-insight-result ul { display: grid; gap: 4px; margin: 0; padding-left: 17px; }
 .daily-insight-status[data-tone="loading"] { color: #3656cf; }
 .daily-insight-status[data-tone="warning"] { color: #a15c07; }
