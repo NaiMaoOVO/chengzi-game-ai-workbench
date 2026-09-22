@@ -88,6 +88,16 @@ const serviceModeGuard = createGenerationGuard();
 const todayTodosRequestGuard = createGenerationGuard();
 const publicationListRequestGuard = createGenerationGuard();
 const riskTicketListRequestGuard = createGenerationGuard();
+let dailyQueueRefreshTimer = null;
+
+function refreshDailyQueueIfActive() {
+  if (!document.querySelector("#daily-view")?.classList.contains("active") || dailyQueueRefreshTimer) return;
+  dailyQueueRefreshTimer = window.setTimeout(() => {
+    dailyQueueRefreshTimer = null;
+    if (document.querySelector("#daily-view")?.classList.contains("active")) window.loadTodayTodos?.();
+  }, 80);
+}
+
 let currentFeedbackRows = [];
 const FEEDBACK_XHS_SOURCE = "小红书笔记";
 let feedbackImportTarget = "bili";
@@ -427,7 +437,7 @@ document.addEventListener("gameops:local-archive-ready", () => {
     loadPublications();
     loadRiskTickets();
     refreshProfileList();
-    window.loadTodayTodos?.();
+    refreshDailyQueueIfActive();
   });
 });
 document.querySelector("#archive-login-form")?.addEventListener("submit", async (event) => {
@@ -440,7 +450,7 @@ document.querySelector("#archive-login-form")?.addEventListener("submit", async 
     await loginArchiveUser(username, password);
     const passwordInput = document.querySelector("#archive-login-password");
     if (passwordInput) passwordInput.value = "";
-    if (window.loadTodayTodos) window.loadTodayTodos();
+    refreshDailyQueueIfActive();
     loadPublications();
     loadRiskTickets();
     refreshProfileList();
@@ -1109,7 +1119,7 @@ async function loadPublications() {
     const total = Number.isFinite(Number(payload.total)) ? Number(payload.total) : items.length;
     renderPublicationList(items);
     setPublicationStatus(total > items.length ? `已加载最近 ${items.length}/${total} 条。` : `已加载 ${items.length} 条。`, total > items.length ? "mock" : "real");
-    if (window.loadTodayTodos) window.loadTodayTodos();
+    refreshDailyQueueIfActive();
   } catch (error) {
     if (!publicationListRequestGuard.isCurrent(requestGeneration)) return;
     currentPublications = [];
@@ -1399,7 +1409,7 @@ async function loadRiskTickets() {
     const total = Number.isFinite(Number(payload.total)) ? Number(payload.total) : items.length;
     renderRiskTicketList(items);
     setRiskTicketStatus(total > items.length ? `已加载最近 ${items.length}/${total} 条。` : `已加载 ${items.length} 条。`, total > items.length ? "mock" : "real");
-    if (window.loadTodayTodos) window.loadTodayTodos();
+    refreshDailyQueueIfActive();
   } catch (error) {
     if (!riskTicketListRequestGuard.isCurrent(requestGeneration)) return;
     currentRiskTickets = [];
@@ -1560,7 +1570,7 @@ function fillGameInputs(game) {
   const riskInput = document.querySelector("#risk-ticket-game");
   if (riskInput) riskInput.value = game;
   window.refreshDailyProjectContext?.();
-  if (window.loadTodayTodos) window.loadTodayTodos();
+  refreshDailyQueueIfActive();
 }
 
 async function refreshProfileList() {
@@ -7193,7 +7203,7 @@ document.querySelectorAll("[data-service-mode]")?.forEach((button) => {
       loadPublications();
       loadRiskTickets();
       refreshProfileList();
-      if (window.loadTodayTodos) window.loadTodayTodos();
+      refreshDailyQueueIfActive();
     });
     const status = document.querySelector("#overview-status");
     if (status) {

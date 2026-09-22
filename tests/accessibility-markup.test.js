@@ -218,6 +218,28 @@ test("daily queue polls only while its view is active and refreshes on return", 
   assert.match(navigation, /window\.loadTodayTodos\?\.\(\)/);
 });
 
+test("secondary archive panels refresh the daily queue only when it is visible", () => {
+  const publicationStart = app.indexOf("async function loadPublications");
+  const publicationEnd = app.indexOf("async function recordPublication", publicationStart);
+  const riskStart = app.indexOf("async function loadRiskTickets");
+  const riskEnd = app.indexOf("async function updateRiskTicketStatus", riskStart);
+  const profileStart = app.indexOf("function fillGameInputs");
+  const profileEnd = app.indexOf("async function refreshProfileList", profileStart);
+
+  assert.match(app, /function refreshDailyQueueIfActive\(\)/);
+  assert.match(app, /#daily-view.*classList\.contains\("active"\)/);
+  assert.match(app, /let dailyQueueRefreshTimer = null/);
+  assert.match(app, /window\.setTimeout\(\(\) => \{/);
+  [
+    app.slice(publicationStart, publicationEnd),
+    app.slice(riskStart, riskEnd),
+    app.slice(profileStart, profileEnd)
+  ].forEach((source) => {
+    assert.match(source, /refreshDailyQueueIfActive\(\)/);
+    assert.doesNotMatch(source, /window\.loadTodayTodos/);
+  });
+});
+
 test("daily queue degrades gracefully when the optional morning status endpoint fails", () => {
   const daily = fs.readFileSync(path.join(root, "daily-workbench.js"), "utf8");
   assert.match(app, /Promise\.allSettled/);
