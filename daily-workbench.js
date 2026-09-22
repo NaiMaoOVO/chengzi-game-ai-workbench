@@ -577,11 +577,17 @@
     return "AI 洞察暂不可用，已保留规则归纳结果。";
   }
 
-  function dailyAiInsightInputLabel() {
-    const source = latestDailyInsightContext.state?.platformSnapshot?.topicSource;
-    if (source === "real") return "输入口径：当前队列 + 已读取的真实热点信号";
-    if (source === "sample") return "输入口径：当前队列 + 样例兜底热点；结果仅供离线演示";
-    return "输入口径：当前待办、风险和待回流内容";
+  function dailyAiInsightInputLabel(context = buildDailyAiInsightContext()) {
+    const parts = [
+      context.todos.length ? `${context.todos.length} 条待办` : "",
+      context.risks.length ? `${context.risks.length} 条风险` : "",
+      context.publications.length ? `${context.publications.length} 条待回流` : ""
+    ].filter(Boolean);
+    if (context.hotspots.length) {
+      const hotspotLabel = context.hotspotSource === "real" ? "真实热点" : context.hotspotSource === "sample" ? "样例兜底热点" : "热点";
+      parts.push(`${context.hotspots.length} 条${hotspotLabel}`);
+    }
+    return `提交给 AI 的输入：${parts.join(" · ") || "当前无可用信号"}${context.hotspotSource === "sample" ? "；结果仅供离线演示" : ""}`;
   }
 
   function renderDailyAiInsightResult(value) {
@@ -596,7 +602,7 @@
     heading.textContent = "AI 决策洞察";
     const source = document.createElement("small");
     source.className = "daily-ai-insight-source";
-    source.textContent = dailyAiInsightInputLabel();
+    source.textContent = dailyAiInsightInputLabel(buildDailyAiInsightContext());
     const copy = document.createElement("p");
     copy.textContent = summary || "AI 未返回可用摘要，请以规则归纳结果为准。";
     result.append(heading, source, copy);

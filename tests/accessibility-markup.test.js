@@ -151,7 +151,9 @@ test("daily AI insight submits the current action queue and labelled hotspot sig
   assert.match(html, /id="daily-ai-insight-result"[^>]*aria-live="polite"/);
   assert.match(dailyWorkbench, /function generateDailyAiInsight/);
   assert.match(dailyWorkbench, /function dailyAiInsightInputLabel/);
-  assert.match(dailyWorkbench, /样例兜底热点；结果仅供离线演示/);
+  assert.match(dailyWorkbench, /提交给 AI 的输入/);
+  assert.match(dailyWorkbench, /hotspotLabel.*真实热点/);
+  assert.match(dailyWorkbench, /样例兜底热点/);
   assert.match(dailyWorkbench, /requestLlmTask\("daily-insight"/);
   assert.match(dailyWorkbench, /riskItems/);
   assert.match(dailyWorkbench, /publicationItems/);
