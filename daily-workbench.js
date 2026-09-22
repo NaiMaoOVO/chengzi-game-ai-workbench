@@ -361,6 +361,7 @@
     const list = document.querySelector("#daily-insight-recommendations");
     const action = document.querySelector("#daily-insight-action");
     if (!summary || !list || !action) return;
+    renderDailyInsightSignalCounts(manualItems, state);
     latestDailyInsightContext = { manualItems: Array.isArray(manualItems) ? manualItems : [], state };
     resetDailyAiInsight();
     list.innerHTML = "";
@@ -417,6 +418,102 @@
     });
     action.textContent = actionLabel;
     action.onclick = actionHandler;
+  }
+
+  function renderDailyInsightSignalCounts(manualItems = [], state = {}) {
+    const loading = Boolean(state.loading);
+    const unavailable = (key) => loading || Boolean(state[key]);
+    setText("#daily-ai-risk-count", unavailable("riskUnavailable") ? "—" : Number(state.riskCount) || 0);
+    setText("#daily-ai-publication-count", unavailable("publicationUnavailable") ? "—" : Number(state.publicationCount) || 0);
+    setText("#daily-ai-todo-count", loading ? "—" : Number(state.todoCount) || manualItems.length || 0);
+  }
+
+  function platformValue(value, fallback = "未设置") {
+    const text = typeof value === "string" ? value.trim() : "";
+    return (text || fallback).slice(0, 60);
+  }
+
+  function platformSourceLabel(source) {
+    if (source === "real") return "真实热点";
+    if (source === "sample") return "样例兜底";
+    return "未读取热点";
+  }
+
+  function appendPlatformCell(row, value, className) {
+    const cell = document.createElement("td");
+    if (className) cell.className = className;
+    cell.textContent = value;
+    row.append(cell);
+  }
+
+  function renderDailyPlatformOverview(state = {}) {
+    const list = document.querySelector("#daily-platform-list");
+    const status = document.querySelector("#daily-platform-status");
+    const note = document.querySelector("#daily-platform-note");
+    if (!list || !status || !note) return;
+    list.replaceChildren();
+
+    if (state.loading) {
+      const row = document.createElement("tr");
+      appendPlatformCell(row, "正在同步平台信号…", "daily-platform-empty");
+      row.firstChild.colSpan = 4;
+      list.append(row);
+      status.textContent = "同步中";
+      status.dataset.tone = "loading";
+      note.textContent = "正在读取当前热点追踪与待回流内容。";
+      return;
+    }
+
+    const snapshot = state.platformSnapshot && typeof state.platformSnapshot === "object" ? state.platformSnapshot : {};
+    const platform = platformValue(snapshot.platform);
+    const topics = Math.max(0, Number(snapshot.topicCount) || 0);
+    const source = snapshot.topicSource === "real" ? "real" : snapshot.topicSource === "sample" ? "sample" : "";
+    const rows = new Map();
+    const ensureRow = (name) => {
+      const key = platformValue(name);
+      if (!rows.has(key)) rows.set(key, { platform: key, topics: null, publications: 0, source: "" });
+      return rows.get(key);
+    };
+    if (snapshot.platform) {
+      const active = ensureRow(platform);
+      active.topics = topics;
+      active.source = source;
+    }
+    if (!state.publicationUnavailable) {
+      (Array.isArray(state.publicationItems) ? state.publicationItems : []).forEach((item) => {
+        const row = ensureRow(item?.channel);
+        row.publications += 1;
+      });
+    }
+
+    if (!rows.size) {
+      const row = document.createElement("tr");
+      appendPlatformCell(row, "暂无已同步的平台数据，请先刷新热点或登记发布链接。", "daily-platform-empty");
+      row.firstChild.colSpan = 4;
+      list.append(row);
+      status.textContent = "暂无信号";
+      status.dataset.tone = "idle";
+      note.textContent = state.authRequired || state.error
+        ? "服务恢复后会继续汇总平台信号；不会用模拟指标替代真实数据。"
+        : "当前工作台没有热点或待回流内容。";
+      return;
+    }
+
+    rows.forEach((item) => {
+      const row = document.createElement("tr");
+      appendPlatformCell(row, item.platform, "daily-platform-name");
+      appendPlatformCell(row, item.topics === null ? "—" : String(item.topics));
+      appendPlatformCell(row, state.publicationUnavailable ? "—" : String(item.publications));
+      const dataState = item.source
+        ? platformSourceLabel(item.source)
+        : state.publicationUnavailable ? "回流未连接" : item.publications ? "待回流" : "未读取热点";
+      appendPlatformCell(row, dataState, "daily-platform-state");
+      list.append(row);
+    });
+    const sourceLabel = source ? platformSourceLabel(source) : "未读取热点";
+    status.textContent = source === "real" ? "已读取真实信号" : source === "sample" ? "含样例兜底" : "回流信号";
+    status.dataset.tone = source === "real" ? "real" : source === "sample" ? "sample" : "idle";
+    note.textContent = `${platform}：${topics} 条热点 · ${sourceLabel}${state.publicationUnavailable ? "；待回流暂不可用" : ""}`;
   }
 
   function dailyInsightSignalItems(items, fields, limit = 5) {
@@ -548,6 +645,7 @@
     container.innerHTML = "";
     setStats(state);
     renderDailyInsight(manualItems, state);
+    renderDailyPlatformOverview(state);
 
     if (state.loading) {
       container.innerHTML = '<p class="muted-copy">正在汇总今日待办……</p>';
@@ -701,6 +799,9 @@
     });
     document.querySelector("#refresh-daily-todos")?.addEventListener("click", () => window.loadTodayTodos?.());
     document.querySelector("#generate-daily-ai-insight")?.addEventListener("click", generateDailyAiInsight);
+    document.querySelector("#daily-platform-trending-action")?.addEventListener("click", () => {
+      if (typeof navigateToView === "function") navigateToView("trending");
+    });
     document.querySelectorAll("[data-daily-filter]").forEach((element) => {
       element.addEventListener("click", () => {
         activeFilter = element.dataset.dailyFilter || "all";

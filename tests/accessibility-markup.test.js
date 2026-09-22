@@ -125,6 +125,26 @@ test("daily dashboard keeps project context and AI insight beside the operationa
   assert.match(css, /\.daily-insight-panel[\s\S]*grid-column:\s*2/);
 });
 
+test("daily dashboard exposes evidence-backed AI counts and platform signals", () => {
+  assert.match(html, /id="daily-ai-risk-count"/);
+  assert.match(html, /id="daily-ai-publication-count"/);
+  assert.match(html, /id="daily-ai-todo-count"/);
+  assert.match(html, /id="daily-platform-list"/);
+  assert.match(html, /id="daily-platform-status"[^>]*aria-live="polite"/);
+  assert.match(html, /id="daily-platform-trending-action"/);
+  assert.match(dailyWorkbench, /function renderDailyInsightSignalCounts/);
+  assert.match(dailyWorkbench, /function renderDailyPlatformOverview/);
+  assert.match(dailyWorkbench, /platformSourceLabel/);
+  assert.match(dailyWorkbench, /cell\.textContent = value/);
+  assert.match(dailyWorkbench, /navigateToView\("trending"\)/);
+  assert.match(app, /function readDailyPlatformSnapshot/);
+  assert.match(app, /platformSnapshot/);
+  assert.match(app, /topic\?\.source === "real"/);
+  assert.match(css, /\.daily-insight-signal-grid/);
+  assert.match(css, /\.daily-platform-panel/);
+  assert.match(css, /\.daily-platform-table/);
+});
+
 test("daily AI insight only submits the current action queue to a dedicated server task", () => {
   assert.match(html, /id="generate-daily-ai-insight"/);
   assert.match(html, /id="daily-ai-insight-result"[^>]*aria-live="polite"/);

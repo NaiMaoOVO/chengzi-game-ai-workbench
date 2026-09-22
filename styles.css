@@ -4818,6 +4818,83 @@ kbd {
 .daily-insight-status[data-tone="warning"] { color: #a15c07; }
 .daily-insight-status[data-tone="idle"] { color: #98a2b3; }
 
+/* Daily dashboard: evidence-backed AI and platform signals */
+
+.daily-insight-signal-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  margin-top: 14px;
+}
+
+.daily-insight-signal-grid > span {
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid #e4e8ff;
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.daily-insight-signal-grid small,
+.daily-insight-signal-grid strong { display: block; }
+.daily-insight-signal-grid small { color: #667085; font-size: 10px; font-weight: 700; }
+.daily-insight-signal-grid strong { margin-top: 2px; color: #263a80; font-size: 18px; line-height: 1.1; }
+
+.daily-platform-panel {
+  grid-column: 1 / -1;
+  padding: 18px 20px;
+  border-color: var(--product-line);
+  background: #fff;
+}
+
+.daily-platform-head .eyebrow { margin: 0 0 4px; color: #4f6ef7; }
+.daily-platform-head h3 { margin: 0 0 3px; color: var(--product-text); }
+.daily-platform-status {
+  flex: 0 0 auto;
+  padding: 5px 8px;
+  border: 1px solid #dfe7ff;
+  border-radius: 6px;
+  background: #f6f8ff;
+  color: #4762c8;
+  font-size: 11px;
+  font-weight: 750;
+}
+.daily-platform-status[data-tone="real"] { border-color: #cceedd; background: #f0fbf5; color: #16855a; }
+.daily-platform-status[data-tone="sample"] { border-color: #f4dfb8; background: #fffaf0; color: #a46407; }
+.daily-platform-status[data-tone="idle"] { border-color: #e5e8ee; background: #fafbfc; color: #667085; }
+
+.daily-platform-table-wrap {
+  margin-top: 14px;
+  overflow-x: auto;
+  border: 1px solid var(--product-line);
+  border-radius: 8px;
+}
+.daily-platform-table-wrap:focus-visible { outline: 2px solid #9aafff; outline-offset: 2px; }
+.daily-platform-table { width: 100%; min-width: 520px; border-collapse: collapse; text-align: left; }
+.daily-platform-table th,
+.daily-platform-table td { padding: 10px 12px; border-bottom: 1px solid #edf0f5; font-size: 12px; }
+.daily-platform-table th { background: #fafbfc; color: #667085; font-size: 10px; font-weight: 800; letter-spacing: 0.04em; }
+.daily-platform-table tr:last-child td { border-bottom: 0; }
+.daily-platform-table td { color: #475467; }
+.daily-platform-table .daily-platform-name { color: var(--product-text); font-weight: 750; }
+.daily-platform-table .daily-platform-state { color: #5876c8; font-weight: 700; }
+.daily-platform-empty { color: #667085; text-align: center; }
+.daily-platform-footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 11px; }
+.daily-platform-footer .muted-copy { margin: 0; font-size: 11px; }
+.daily-platform-footer .secondary-button { flex: 0 0 auto; min-height: 30px; font-size: 11px; }
+
+@media (max-width: 1080px) {
+  .daily-platform-panel { grid-column: auto; }
+}
+
+@media (max-width: 760px) {
+  .daily-insight-signal-grid { gap: 5px; }
+  .daily-insight-signal-grid > span { padding: 7px; }
+  .daily-platform-panel { padding: 16px; }
+  .daily-platform-head { align-items: flex-start; }
+  .daily-platform-footer { align-items: flex-start; flex-direction: column; }
+}
+
 .trending-item {
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 0;

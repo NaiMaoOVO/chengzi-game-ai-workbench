@@ -1496,10 +1496,20 @@ function publicationNeedsEffectBackfill(item) {
   return item.channel === "小红书" ? metrics.likes === undefined : metrics.view === undefined;
 }
 
+function readDailyPlatformSnapshot() {
+  const platform = document.querySelector("#trending-platform")?.value || "";
+  const topics = Array.isArray(currentTrendingTopics) ? currentTrendingTopics : [];
+  const topicSource = topics.length
+    ? topics.every((topic) => topic?.source === "real") ? "real" : "sample"
+    : "";
+  return { platform, topicCount: topics.length, topicSource };
+}
+
 window.loadTodayTodos = async function loadTodayTodos() {
   if (!window.renderTodayTodos) return;
   const requestGeneration = todayTodosRequestGuard.next();
-  window.renderTodayTodos([], { loading: true });
+  const platformSnapshot = readDailyPlatformSnapshot();
+  window.renderTodayTodos([], { loading: true, platformSnapshot });
   try {
     const results = await Promise.allSettled([
       archiveRequest(ARCHIVE_SERVICE_URL + "/risk-events?status=open&limit=200", { cache: "no-store" }),
@@ -1519,7 +1529,7 @@ window.loadTodayTodos = async function loadTodayTodos() {
     const [risk, publication, manual, done, morning] = await Promise.all(results.map(readResult));
     if (!todayTodosRequestGuard.isCurrent(requestGeneration)) return;
     if ([risk, publication, manual, done, morning].some(({ response }) => response?.status === 401)) {
-      window.renderTodayTodos([], { authRequired: true });
+      window.renderTodayTodos([], { authRequired: true, platformSnapshot });
       return;
     }
     for (const result of [manual, done]) {
@@ -1550,10 +1560,11 @@ window.loadTodayTodos = async function loadTodayTodos() {
       doneItems,
       doneTotal: done.payload.total ?? doneItems.length,
       morningRuns: morningUnavailable ? [] : morning.payload.items,
-      morningUnavailable
+      morningUnavailable,
+      platformSnapshot
     });
   } catch (_error) {
-    if (todayTodosRequestGuard.isCurrent(requestGeneration)) window.renderTodayTodos([], { error: true });
+    if (todayTodosRequestGuard.isCurrent(requestGeneration)) window.renderTodayTodos([], { error: true, platformSnapshot });
   }
 };
 

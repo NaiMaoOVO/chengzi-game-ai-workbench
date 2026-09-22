@@ -284,12 +284,42 @@
                 </div>
                 <span class="daily-insight-status" id="daily-insight-status">自动归纳</span>
               </div>
+              <div class="daily-insight-signal-grid" aria-label="AI 洞察当前信号">
+                <span><small>风险</small><strong id="daily-ai-risk-count">—</strong></span>
+                <span><small>待回流</small><strong id="daily-ai-publication-count">—</strong></span>
+                <span><small>待办</small><strong id="daily-ai-todo-count">—</strong></span>
+              </div>
               <p class="daily-insight-summary" id="daily-insight-summary" aria-live="polite">正在整理风险、回流与待办信号…</p>
               <ol class="daily-insight-list" id="daily-insight-recommendations"></ol>
               <article class="daily-ai-insight-result" id="daily-ai-insight-result" aria-live="polite" hidden></article>
               <div class="daily-insight-actions">
                 <button class="secondary-button" id="generate-daily-ai-insight" type="button" title="仅基于当前待办、风险和待回流内容生成">生成 AI 洞察</button>
                 <button class="secondary-button" id="daily-insight-action" type="button" hidden>查看下一步</button>
+              </div>
+            </section>
+
+            <section class="section-block daily-platform-panel" aria-label="平台数据概览">
+              <div class="daily-panel-head daily-platform-head">
+                <div>
+                  <p class="eyebrow">Platform signals</p>
+                  <h3>平台数据概览</h3>
+                  <p class="muted-copy">汇总已读取的热点条目与待回流内容，不代表平台全量数据。</p>
+                </div>
+                <span class="daily-platform-status" id="daily-platform-status" aria-live="polite">等待同步</span>
+              </div>
+              <div class="daily-platform-table-wrap" tabindex="0">
+                <table class="daily-platform-table">
+                  <thead>
+                    <tr><th scope="col">平台</th><th scope="col">热点条目</th><th scope="col">待回流</th><th scope="col">数据状态</th></tr>
+                  </thead>
+                  <tbody id="daily-platform-list">
+                    <tr><td colspan="4" class="daily-platform-empty">正在同步平台信号…</td></tr>
+                  </tbody>
+                </table>
+              </div>
+              <div class="daily-platform-footer">
+                <p class="muted-copy" id="daily-platform-note">热点数据会按当前热点追踪设置同步。</p>
+                <button class="secondary-button" id="daily-platform-trending-action" type="button">查看热点追踪</button>
               </div>
             </section>
 
