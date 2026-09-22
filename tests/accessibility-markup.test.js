@@ -645,6 +645,18 @@ test("risk ticket mutations are single-flight per ticket", () => {
   assert.match(app.slice(updateStart, deleteEnd), /finishRiskTicketMutation\(mutationKey\)/);
 });
 
+test("publication mutations are single-flight per record", () => {
+  const effectStart = app.indexOf("async function refreshPublicationEffect");
+  const deleteStart = app.indexOf("async function deletePublicationRecord", effectStart);
+  const deleteEnd = app.indexOf('document.querySelector("#record-publication")', deleteStart);
+  assert.ok(effectStart >= 0 && deleteStart > effectStart && deleteEnd > deleteStart);
+  const source = app.slice(effectStart, deleteEnd);
+
+  assert.match(app, /const publicationMutationGuard = new Set\(\)/);
+  assert.match(source, /beginPublicationMutation\(id\)/);
+  assert.match(source, /finishPublicationMutation\(mutationKey\)/);
+});
+
 test("publication and risk deletions require a clear irreversible-action confirmation", () => {
   const publicationStart = app.indexOf("async function deletePublicationRecord");
   const publicationEnd = app.indexOf('document.querySelector("#record-publication")', publicationStart);

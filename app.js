@@ -967,12 +967,27 @@ document.querySelector("#copy-briefing-im")?.addEventListener("click", copyBrief
 /* ---- 发布台账（P-2）：生成 → 发布 → 效果回流 ---- */
 
 let currentPublications = [];
+const publicationMutationGuard = new Set();
 
 function setPublicationStatus(text, tone) {
   const status = document.querySelector("#publication-status");
   if (!status) return;
   status.textContent = "发布台账：" + text;
   status.className = "source-status" + (tone === "real" ? " source-real" : tone === "mock" ? " source-mock" : "");
+}
+
+function beginPublicationMutation(id) {
+  const mutationKey = String(id);
+  if (publicationMutationGuard.has(mutationKey)) {
+    setPublicationStatus("该发布记录正在处理中，请稍候。", "mock");
+    return null;
+  }
+  publicationMutationGuard.add(mutationKey);
+  return mutationKey;
+}
+
+function finishPublicationMutation(mutationKey) {
+  if (mutationKey) publicationMutationGuard.delete(mutationKey);
 }
 
 function publicationGameFromContext() {
@@ -1186,6 +1201,8 @@ async function refreshPublicationEffect(id) {
     setPublicationStatus("该记录没有有效链接，无法回流效果数据。", "mock");
     return;
   }
+  const mutationKey = beginPublicationMutation(id);
+  if (!mutationKey) return;
   const isXhs = item.channel === "小红书";
   setPublicationStatus(isXhs ? "正在拉取小红书笔记互动数据…" : "正在拉取 B站效果数据…", "");
   try {
@@ -1230,6 +1247,8 @@ async function refreshPublicationEffect(id) {
     setPublicationStatus(confirmText, "real");
   } catch (error) {
     setPublicationStatus(archiveMutationFailure("更新发布效果", error), "mock");
+  } finally {
+    finishPublicationMutation(mutationKey);
   }
 }
 
@@ -1241,6 +1260,8 @@ function confirmRecordDeletion(kind, item, id) {
 async function deletePublicationRecord(id) {
   const item = currentPublications.find((entry) => entry.id === id);
   if (!confirmRecordDeletion("发布记录", item, id)) return;
+  const mutationKey = beginPublicationMutation(id);
+  if (!mutationKey) return;
   try {
     const response = await archiveRequest(ARCHIVE_SERVICE_URL + "/publications/" + id, { method: "DELETE" });
     const payload = await response.json().catch(() => ({}));
@@ -1249,6 +1270,8 @@ async function deletePublicationRecord(id) {
     await loadPublications();
   } catch (error) {
     setPublicationStatus(archiveMutationFailure("删除发布记录", error), "mock");
+  } finally {
+    finishPublicationMutation(mutationKey);
   }
 }
 
