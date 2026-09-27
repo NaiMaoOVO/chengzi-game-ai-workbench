@@ -216,6 +216,26 @@ test("missing required fields return per-field 400 messages", async () => {
   assert.match(JSON.parse(missingGame.text).error, /game/);
 });
 
+test("risk event text type errors return 400 without terminating the service", async () => {
+  const badPost = await postRiskEvent({ game: 123, title: "非法类型" });
+  assert.equal(badPost.status, 400);
+  assert.match(JSON.parse(badPost.text).error, /game/);
+  assert.equal((await httpRequest("/health")).status, 200);
+
+  const created = JSON.parse((await postRiskEvent({ game: "鸣潮", title: "原始风险标题" })).text).risk_event;
+  const badUpdate = await httpRequest("/risk-events/" + created.id, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ title: { text: "被静默丢弃" } })
+  });
+  assert.equal(badUpdate.status, 400);
+  assert.match(JSON.parse(badUpdate.text).error, /title/);
+  assert.equal((await httpRequest("/health")).status, 200);
+
+  const listed = JSON.parse((await httpRequest("/risk-events?game=" + encodeURIComponent("鸣潮"))).text);
+  assert.equal(listed.items.find((item) => item.id === created.id).title, "原始风险标题");
+});
+
 test("malformed JSON bodies are rejected with 400", async () => {
   const badPost = await httpRequest("/risk-events", {
     method: "POST",

@@ -42,6 +42,13 @@ const serviceCases = [
         assert.equal(post.status, 201);
         const list = await fetch(`http://127.0.0.1:${port}/snapshots?kind=smoke`).then((r) => r.json());
         assert.equal(list.items.length >= 1, true);
+        const invalidSnapshotGame = await fetch(`http://127.0.0.1:${port}/snapshots`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ kind: "smoke", game: 123, payload: { invalid: true } })
+        });
+        assert.equal(invalidSnapshotGame.status, 400);
+        assert.equal((await fetch(`http://127.0.0.1:${port}/health`)).status, 200, "invalid snapshot field types must not stop the archive service");
         const putProfile = await fetch(`http://127.0.0.1:${port}/profile`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },

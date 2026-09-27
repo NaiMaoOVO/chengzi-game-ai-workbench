@@ -1121,17 +1121,22 @@ const server = http.createServer((request, response) => {
         }
         status = raw;
       }
-      updateRiskEventStatement.run(
-        textValue(body.title, "title", 200, current.title) || current.title,
-        textValue(body.url, "url", 2048, current.url),
-        textValue(body.detail, "detail", 4000, current.detail),
-        level,
-        status,
-        textValue(body.notes, "notes", 2000, current.notes),
-        new Date().toISOString(),
-        id,
-        ownerKey
-      );
+      try {
+        updateRiskEventStatement.run(
+          textValue(body.title, "title", 200, current.title) || current.title,
+          textValue(body.url, "url", 2048, current.url),
+          textValue(body.detail, "detail", 4000, current.detail),
+          level,
+          status,
+          textValue(body.notes, "notes", 2000, current.notes),
+          new Date().toISOString(),
+          id,
+          ownerKey
+        );
+      } catch (error) {
+        sendJson(request, response, 400, { ok: false, error: error.message });
+        return;
+      }
       sendJson(request, response, 200, { ok: true, risk_event: getRiskEventStatement.get(id, ownerKey) });
     });
     return;
@@ -1160,8 +1165,15 @@ const server = http.createServer((request, response) => {
         sendJson(request, response, 400, { ok: false, error: "请求体不是合法 JSON" });
         return;
       }
-      const game = textValue(body?.game, "game", 60);
-      const title = textValue(body?.title, "title", 200);
+      let game;
+      let title;
+      try {
+        game = textValue(body?.game, "game", 60);
+        title = textValue(body?.title, "title", 200);
+      } catch (error) {
+        sendJson(request, response, 400, { ok: false, error: error.message });
+        return;
+      }
       const missing = [!game && "game", !title && "title"].filter(Boolean);
       if (missing.length) {
         sendJson(request, response, 400, { ok: false, error: "缺少必填字段：" + missing.join("、") });
@@ -1264,7 +1276,13 @@ const server = http.createServer((request, response) => {
       sendJson(request, response, 400, { error: "payload 无法序列化" });
       return;
     }
-    const game = textValue(body.game, "game", 60);
+    let game;
+    try {
+      game = textValue(body.game, "game", 60);
+    } catch (error) {
+      sendJson(request, response, 400, { error: error.message });
+      return;
+    }
     const source = body.source === "real" ? "real" : "sample";
     let requestId;
     try {
