@@ -53,8 +53,22 @@ try {
   throw new Error("LLM_BASE_URL 配置不安全：" + error.message);
 }
 
-if (process.env.ARCHIVE_AUTH_ENABLED === "1" && String(process.env.ARCHIVE_ADMIN_PASSWORD || "").length < 12) {
-  throw new Error("启用 ARCHIVE_AUTH_ENABLED 时必须设置至少 12 位的 ARCHIVE_ADMIN_PASSWORD");
+if (process.env.ARCHIVE_AUTH_ENABLED !== "1") {
+  throw new Error("线上部署必须设置 ARCHIVE_AUTH_ENABLED=1，以禁止匿名归档写入");
+}
+
+const archiveAdminUsername = String(process.env.ARCHIVE_ADMIN_USERNAME || "admin").trim();
+if (!/^[A-Za-z0-9._-]{3,40}$/.test(archiveAdminUsername)) {
+  throw new Error("ARCHIVE_ADMIN_USERNAME 必须是 3-40 位字母、数字、点、下划线或连字符");
+}
+
+const archiveAdminPassword = String(process.env.ARCHIVE_ADMIN_PASSWORD || "");
+if (archiveAdminPassword.length < 12 || archiveAdminPassword.length > 200) {
+  throw new Error("ARCHIVE_ADMIN_PASSWORD 必须是 12-200 位");
+}
+
+if ((process.env.ARCHIVE_COOKIE_SECURE || "1") !== "1") {
+  throw new Error("线上部署必须保持 ARCHIVE_COOKIE_SECURE=1");
 }
 
 if (ocrProvider === "remote" && (!process.env.OCR_REMOTE_URL || process.env.OCR_REMOTE_URL.includes("example.com"))) {

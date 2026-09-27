@@ -187,6 +187,8 @@ ARCHIVE_SESSION_HOURS=12
 
 启用晨报抓取后，`MORNING_SCHEDULE` 按 `Asia/Shanghai` 时区解释；每个游戏和平台每天只成功落库一次，服务重启不会重复生成当天晨报。抓取失败会记录失败原因，并在下一分钟重新尝试。
 
+PM2 线上配置会拒绝关闭归档认证、无效管理员账号/口令或关闭 Secure Cookie 的配置，避免线上归档接口匿名写入；本机 `start-demo.js` 演示模式仍保持本地兼容。
+
 ```bash
 npm run archive:backup
 ```
