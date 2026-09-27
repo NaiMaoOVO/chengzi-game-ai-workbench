@@ -135,7 +135,8 @@ function createFakeOpenAiUpstream(port, behavior = {}) {
       if (body.stream !== true) {
         // 非流式请求按 OpenAI 兼容协议返回一次性 JSON 补全
         res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ choices: [{ message: { content: ASSEMBLED_TEXT } }] }));
+        const content = behavior.defaultContent || ASSEMBLED_TEXT;
+        res.end(JSON.stringify({ choices: [{ message: { content } }] }));
         return;
       }
       res.writeHead(200, { "Content-Type": "text/event-stream" });
@@ -266,7 +267,9 @@ test("llm without stream field keeps the legacy JSON response shape and does not
 test("llm daily insight accepts the current operational queue and labelled hotspot signals", async () => {
   const llmPort = 19537;
   const upstreamPort = 19637;
-  const upstream = await createFakeOpenAiUpstream(upstreamPort);
+  const upstream = await createFakeOpenAiUpstream(upstreamPort, {
+    defaultContent: JSON.stringify({ summary: "今日优先处理高风险待办。", priority_actions: [], watchouts: [] })
+  });
   try {
     await withLlmService({
       LLM_PORT: String(llmPort),
@@ -296,7 +299,10 @@ test("llm daily insight accepts the current operational queue and labelled hotsp
 test("llm daily insight falls back from unsupported JSON mode while retaining task limits", async () => {
   const llmPort = 19538;
   const upstreamPort = 19638;
-  const upstream = await createFakeOpenAiUpstream(upstreamPort, { rejectJsonModeOnce: true });
+  const upstream = await createFakeOpenAiUpstream(upstreamPort, {
+    rejectJsonModeOnce: true,
+    defaultContent: JSON.stringify({ summary: "今日优先处理高风险待办。", priority_actions: [], watchouts: [] })
+  });
   try {
     await withLlmService({
       LLM_PORT: String(llmPort),
@@ -393,6 +399,41 @@ test("llm rejects non-object JSON results in both JSON and SSE modes", async () 
       const events = parseSseEvents(streamResponse.text);
       assert.equal(events.at(-1)?.event, "error");
       assert.equal(events.some((event) => event.event === "done"), false);
+    });
+  } finally {
+    await upstream.close();
+  }
+});
+
+test("llm rejects task results that omit their required headline in JSON and SSE modes", async () => {
+  const llmPort = 19543;
+  const upstreamPort = 19643;
+  const upstream = await createFakeOpenAiUpstream(upstreamPort, { fixedContent: "{}" });
+  const cases = [
+    { body: VERSION_COPY_BODY, headline: "announcement" },
+    { body: { task: "feedback-insight", data: { game: "测试游戏", comments: ["反馈一", "反馈二", "反馈三"] } }, headline: "summary" },
+    { body: DAILY_INSIGHT_BODY, headline: "summary" }
+  ];
+  try {
+    await withLlmService({
+      LLM_PORT: String(llmPort),
+      LLM_API_KEY: "required-output-field-test-key",
+      LLM_BASE_URL: "http://127.0.0.1:" + upstreamPort + "/v1",
+      LLM_MODEL: "test-model",
+      LLM_RATE_LIMIT_MAX: "100"
+    }, async () => {
+      for (const { body, headline } of cases) {
+        const jsonResponse = await postStream(llmPort, body);
+        assert.equal(jsonResponse.status, 502, `${body.task} JSON result must include ${headline}`);
+
+        const streamResponse = await postStream(llmPort, { ...body, stream: true });
+        const events = parseSseEvents(streamResponse.text);
+        assert.equal(events.at(-1)?.event, "error", `${body.task} SSE result must include ${headline}`);
+        assert.equal(events.some((event) => event.event === "done"), false);
+      }
+      const retry = await postStream(llmPort, VERSION_COPY_BODY);
+      assert.equal(retry.status, 502);
+      assert.equal(upstream.requests.length, cases.length * 2 + 1, "failed results must not be reused from the response cache");
     });
   } finally {
     await upstream.close();

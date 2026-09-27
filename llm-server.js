@@ -62,6 +62,7 @@ const TASKS = {
   "feedback-insight": {
     temperature: 0.3,
     maxTokens: 1800,
+    requiredOutputField: "summary",
     build(data) {
       const game = String(data.game || "目标游戏").slice(0, 40);
       const comments = Array.isArray(data.comments)
@@ -78,6 +79,7 @@ const TASKS = {
   "version-copy": {
     temperature: 0.7,
     maxTokens: 2000,
+    requiredOutputField: "announcement",
     build(data) {
       const game = String(data.game || "目标游戏").slice(0, 40);
       const theme = String(data.theme || "全新版本").slice(0, 60);
@@ -95,6 +97,7 @@ const TASKS = {
   "daily-insight": {
     temperature: 0.2,
     maxTokens: 1000,
+    requiredOutputField: "summary",
     build(data) {
       const game = String(data.game || "当前项目").slice(0, 40);
       const asOfDate = /^\d{4}-\d{2}-\d{2}$/.test(String(data.asOfDate || "")) ? String(data.asOfDate) : "未提供";
@@ -215,6 +218,15 @@ function extractJsonObject(text) {
   }
 }
 
+function parseTaskResult(text, task) {
+  const result = extractJsonObject(text);
+  const field = task.requiredOutputField;
+  if (typeof result[field] !== "string" || !result[field].trim()) {
+    throw new Error("LLM 返回结果缺少有效的 " + field + " 字段");
+  }
+  return result;
+}
+
 function callUpstream(prompt, task = {}, options = {}) {
   return new Promise((resolve, reject) => {
     if (options.signal?.aborted) {
@@ -275,7 +287,7 @@ function callUpstream(prompt, task = {}, options = {}) {
           const parsed = JSON.parse(body);
           const content = parsed?.choices?.[0]?.message?.content;
           if (typeof content !== "string" || !content.trim()) throw new Error("上游返回为空");
-          resolve(extractJsonObject(content));
+          resolve(parseTaskResult(content, task));
         } catch (error) {
           reject(error);
         }
@@ -478,7 +490,7 @@ async function handleStreamGenerate(request, response, taskName, task, prompt) {
       emittedAnyDelta = false;
       assembled = await streamUpstreamText(prompt, task, forwardDelta, { jsonMode: false, signal: abortController.signal });
     }
-    const result = extractJsonObject(assembled);
+    const result = parseTaskResult(assembled, task);
     sendEvent("done", { task: taskName, result: result, model: LLM_MODEL, cached: false });
     response.end();
   } catch (error) {
