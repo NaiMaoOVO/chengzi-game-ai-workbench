@@ -29,6 +29,15 @@ test("README describes all five services and the online LLM route", () => {
   assert.doesNotMatch(readme, /真实数据（B站接口、OCR）失败时自动切换本地样例数据/);
 });
 
+test("README provisions the Basic Auth file required by the HTTPS Nginx template", () => {
+  const readme = fs.readFileSync(path.join(root, "README.md"), "utf8");
+  const nginx = fs.readFileSync(path.join(root, "nginx-https.conf.example"), "utf8");
+
+  assert.match(nginx, /^\s*auth_basic_user_file\s+\/etc\/nginx\/\.htpasswd-gameops\s*;/m);
+  assert.match(readme, /htpasswd\s+-c\s+\/etc\/nginx\/\.htpasswd-gameops\s+YOUR_BASIC_AUTH_USER/);
+  assert.match(readme, /`-c` 会创建或覆盖文件[^\n]*首次创建/);
+});
+
 test("public builds generate a required inert launcher status asset instead of permitting a missing script", () => {
   const build = fs.readFileSync(path.join(root, "scripts", "build-public.js"), "utf8");
   const check = fs.readFileSync(path.join(root, "scripts", "check-public.js"), "utf8");

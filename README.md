@@ -162,6 +162,14 @@ npm run deploy:start && pm2 save && pm2 startup
 
 Nginx 配置见 `nginx.conf.example` / `nginx-https.conf.example`。HTTPS 模板的 Basic Auth 是个人站点的外层访问门槛；archive 登录用于区分每位账号自己的业务数据。若使用自定义反向代理，必须为 API 路由配置等效的访问认证，不要把仅有 CORS 或限流的服务接口直接暴露到公网。Linux 服务器设置 `OCR_PROVIDER=remote` 并配置远端 OCR 服务；macOS 服务器可用 `OCR_PROVIDER=macos` 直接调用系统 Vision。
 
+首次启用 HTTPS 模板前，先安装 `htpasswd` 工具并创建模板引用的认证文件：
+
+```bash
+sudo htpasswd -c /etc/nginx/.htpasswd-gameops YOUR_BASIC_AUTH_USER
+```
+
+命令会交互式提示设置密码。`-c` 会创建或覆盖文件，只在首次创建时使用；后续添加访问账号时省略 `-c`，并确认 Nginx worker 用户可以读取该文件。此处的 Basic Auth 是整站外层门禁，不是 archive 业务账号。
+
 验证：
 
 ```bash
