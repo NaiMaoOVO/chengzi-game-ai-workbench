@@ -1197,7 +1197,13 @@ const server = http.createServer((request, response) => {
         return;
       }
       const id = riskEventIdOf(url.pathname);
-      const current = getRiskEventStatement.get(id, ownerKey);
+      let current;
+      try {
+        current = getRiskEventStatement.get(id, ownerKey);
+      } catch (_error) {
+        sendJson(request, response, 500, { ok: false, error: "风险事件暂时无法读取，请稍后重试" });
+        return;
+      }
       if (!current) {
         sendJson(request, response, 404, { ok: false, error: "风险事件不存在" });
         return;
@@ -1220,23 +1226,30 @@ const server = http.createServer((request, response) => {
         }
         status = raw;
       }
+      let title;
+      let link;
+      let detail;
+      let notes;
       try {
-        updateRiskEventStatement.run(
-          textValue(body.title, "title", 200, current.title) || current.title,
-          textValue(body.url, "url", 2048, current.url),
-          textValue(body.detail, "detail", 4000, current.detail),
-          level,
-          status,
-          textValue(body.notes, "notes", 2000, current.notes),
-          new Date().toISOString(),
-          id,
-          ownerKey
-        );
+        title = textValue(body.title, "title", 200, current.title) || current.title;
+        link = textValue(body.url, "url", 2048, current.url);
+        detail = textValue(body.detail, "detail", 4000, current.detail);
+        notes = textValue(body.notes, "notes", 2000, current.notes);
       } catch (error) {
         sendJson(request, response, 400, { ok: false, error: error.message });
         return;
       }
-      sendJson(request, response, 200, { ok: true, risk_event: getRiskEventStatement.get(id, ownerKey) });
+      try {
+        updateRiskEventStatement.run(title, link, detail, level, status, notes, new Date().toISOString(), id, ownerKey);
+      } catch (_error) {
+        sendJson(request, response, 500, { ok: false, error: "风险事件暂时无法更新，请稍后重试" });
+        return;
+      }
+      try {
+        sendJson(request, response, 200, { ok: true, risk_event: getRiskEventStatement.get(id, ownerKey) });
+      } catch (_error) {
+        sendJson(request, response, 500, { ok: false, error: "风险事件已更新，但暂时无法读取，请稍后重试" });
+      }
     });
     return;
   }
