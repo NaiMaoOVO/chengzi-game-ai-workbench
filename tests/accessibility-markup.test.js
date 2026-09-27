@@ -18,6 +18,31 @@ test("screenshot drop zone has button semantics and keyboard activation", () => 
   assert.match(app, /dropZone\?\.addEventListener\("keydown"/);
 });
 
+test("archive backup status panel distinguishes healthy, failed, and restricted states", async () => {
+  assert.match(html, /aria-label="数据服务状态"/);
+  assert.match(html, /id="service-status-backup"/);
+  const start = app.indexOf("async function checkArchiveBackupStatus()");
+  const end = app.indexOf("function renderArchiveBackupStatus", start);
+  assert.ok(start >= 0 && end > start);
+  let responseState = { response: { status: 200, ok: true }, payload: { service: "gameops-archive", backup: { status: "complete" } } };
+  const checker = vm.runInNewContext(`${app.slice(start, end)}; checkArchiveBackupStatus`, {
+    ARCHIVE_SERVICE_URL: "https://archive.example",
+    archiveJsonRequestWithTimeout: async () => responseState
+  });
+
+  let result = await checker();
+  assert.equal(result.tone, "success");
+  assert.equal(result.detail, "今日备份已通过校验");
+  responseState = { response: { status: 200, ok: true }, payload: { service: "gameops-archive", backup: { status: "failed", retry_interval_minutes: 60 } } };
+  result = await checker();
+  assert.equal(result.tone, "danger");
+  assert.equal(result.detail, "备份生成失败，约 60 分钟后重试");
+  responseState = { response: { status: 403, ok: false }, payload: { ok: false, error: "admin_required" } };
+  result = await checker();
+  assert.equal(result.tone, "warning");
+  assert.equal(result.detail, "仅管理员可查看备份状态");
+});
+
 test("imported livestream record ids are escaped before rendering into HTML attributes", () => {
   const start = app.indexOf("function renderStreamerList()");
   const end = app.indexOf("function addEmptyStreamer", start);

@@ -2628,6 +2628,43 @@ async function checkServiceEndpoint(url, path = "/health", timeoutMs = 2400, exp
   }
 }
 
+async function checkArchiveBackupStatus() {
+  try {
+    const { response, payload } = await archiveJsonRequestWithTimeout(ARCHIVE_SERVICE_URL + "/backup/status", { cache: "no-store" }, 3000);
+    if (response.status === 401 || response.status === 403) {
+      return { tone: "warning", detail: response.status === 403 ? "仅管理员可查看备份状态" : "登录管理员账号后查看备份状态" };
+    }
+    if (!response.ok || payload.service !== "gameops-archive" || !payload.backup || typeof payload.backup.status !== "string") {
+      return { tone: "danger", detail: "备份状态不可用；请检查归档服务后刷新" };
+    }
+    const backup = payload.backup;
+    const lastSuccess = /^\d{4}-\d{2}-\d{2}$/.test(backup.last_success_date || "")
+      && backup.last_success_date !== backup.business_date
+      ? `（上次成功 ${backup.last_success_date}）`
+      : "";
+    const retryMinutes = Number.isSafeInteger(backup.retry_interval_minutes)
+      ? Math.max(1, Math.min(1440, backup.retry_interval_minutes))
+      : 60;
+    if (backup.status === "complete") return { tone: "success", detail: "今日备份已通过校验" };
+    if (backup.status === "running") return { tone: "warning", detail: "正在生成今日备份" };
+    if (backup.status === "failed") return { tone: "danger", detail: `备份生成失败，约 ${retryMinutes} 分钟后重试${lastSuccess}` };
+    if (backup.status === "disabled") return { tone: "warning", detail: `自动备份已关闭${lastSuccess}` };
+    return { tone: "warning", detail: `今日备份尚未确认${lastSuccess}` };
+  } catch (_error) {
+    return { tone: "danger", detail: "无法读取备份状态；请检查归档服务后刷新" };
+  }
+}
+
+function renderArchiveBackupStatus(result) {
+  const card = document.querySelector("#service-status-backup");
+  if (!card) return;
+  card.classList.toggle("online", result?.tone === "success");
+  card.classList.toggle("offline", result?.tone === "danger");
+  card.classList.toggle("warning", result?.tone === "warning");
+  const copy = card.querySelector("p");
+  if (copy) copy.textContent = result?.detail || "检测中...";
+}
+
 function renderServiceCard(id, result, fallback) {
   const card = document.querySelector(id);
   if (!card) return;
@@ -2673,19 +2710,24 @@ async function refreshOverviewServiceStatus() {
   renderServiceCard("#service-status-hotspot", null, "检测中");
   renderServiceCard("#service-status-comment", null, "检测中");
   renderServiceCard("#service-status-llm", null, "检测中");
+  renderArchiveBackupStatus(null);
   await checkLlmHealth(modeGeneration);
   if (!serviceModeGuard.isCurrent(modeGeneration)) return null;
 
-  const { ocr, hotspot, comment, llm } = await getLocalServiceStatus();
+  const [{ ocr, hotspot, comment, llm }, archiveBackup] = await Promise.all([
+    getLocalServiceStatus(),
+    checkArchiveBackupStatus()
+  ]);
   if (!serviceModeGuard.isCurrent(modeGeneration)) return null;
 
   renderServiceCard("#service-status-ocr", ocr);
   renderServiceCard("#service-status-hotspot", hotspot);
   renderServiceCard("#service-status-comment", comment);
   renderServiceCard("#service-status-llm", llm);
+  renderArchiveBackupStatus(archiveBackup);
   renderLlmBadge("#feedback-ai-badge");
   renderLlmBadge("#version-ai-badge");
-  return { ocr, hotspot, comment, llm };
+  return { ocr, hotspot, comment, llm, archiveBackup };
 }
 
 function renderDemoCheck(items) {

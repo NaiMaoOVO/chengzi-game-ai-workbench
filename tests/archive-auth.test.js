@@ -99,6 +99,7 @@ test("archive auth requires login, CSRF, and keeps each account's data private",
   const health = await request("/health");
   assert.equal(health.payload.auth_required, true);
   assert.equal((await request("/daily-todos")).status, 401);
+  assert.equal((await request("/backup/status")).status, 401, "备份运行状态不能匿名读取");
 
   const rejectedLogin = await request("/auth/login", {
     method: "POST",
@@ -116,6 +117,12 @@ test("archive auth requires login, CSRF, and keeps each account's data private",
   assert.equal(adminLogin.payload.user.role, "admin");
   const adminCookie = sessionCookie(adminLogin);
   const adminCsrf = adminLogin.payload.csrf_token;
+  const adminBackupStatus = await request("/backup/status", { headers: { Cookie: adminCookie } });
+  assert.equal(adminBackupStatus.status, 200);
+  assert.equal(adminBackupStatus.payload.backup.status, "disabled", "测试环境应默认关闭后台备份");
+  assert.deepEqual(Object.keys(adminBackupStatus.payload.backup).sort(), [
+    "business_date", "enabled", "last_success_date", "retry_interval_minutes", "status"
+  ]);
 
   const migratedLibrary = await request("/creator-library", { headers: { Cookie: adminCookie } });
   assert.equal(migratedLibrary.status, 200);
@@ -187,6 +194,7 @@ test("archive auth requires login, CSRF, and keeps each account's data private",
   assert.equal(memberLogin.status, 200);
   const memberCookie = sessionCookie(memberLogin);
   const memberCsrf = memberLogin.payload.csrf_token;
+  assert.equal((await request("/backup/status", { headers: { Cookie: memberCookie } })).status, 403, "成员不能查看全局备份状态");
 
   const sameRunIdentity = new DatabaseSync(databasePath);
   const morningRunValues = ["2026-09-19", "同一游戏", "B站", "success", "2026-09-19T01:00:00.000Z"];

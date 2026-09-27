@@ -64,15 +64,20 @@ test("automatic backup retries a failed run, then runs once per Shanghai date", 
 
   assert.equal(scheduler.check().status, "started");
   assert.equal(children.length, 1);
+  assert.equal(scheduler.getStatus().status, "running");
   children[0].emit("exit", 1, null);
+  assert.equal(scheduler.getStatus().status, "failed");
   assert.equal(scheduler.check().status, "started");
   assert.equal(children.length, 2);
   children[1].emit("exit", 0, null);
   assert.equal(scheduler.check().status, "already-backed-up");
+  assert.equal(scheduler.getStatus().status, "complete");
+  assert.equal(scheduler.getStatus().last_success_date, "2026-09-28");
   assert.equal(children.length, 2);
 
   now = new Date("2026-09-28T16:01:00.000Z");
   assert.equal(scheduler.check().status, "started");
+  assert.equal(scheduler.getStatus().status, "running");
   assert.equal(children.length, 3);
 });
 

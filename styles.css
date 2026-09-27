@@ -355,7 +355,7 @@ button[type="submit"] {
 
 .service-status-panel {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: 10px;
 }
 
@@ -398,6 +398,10 @@ button[type="submit"] {
 
 .service-status-card.offline .service-dot {
   background: var(--accent-2);
+}
+
+.service-status-card.warning .service-dot {
+  background: #d08a27;
 }
 
 .ai-mode-badge {

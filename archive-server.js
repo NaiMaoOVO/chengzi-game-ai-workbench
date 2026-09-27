@@ -353,6 +353,8 @@ try {
   process.exit(1);
 }
 
+const backupScheduler = createArchiveBackupScheduler({ root: __dirname, databasePath: dbPath, env: process.env });
+
 function recordOwner(session) {
   if (!archiveAuth.enabled) return "default";
   return session?.user?.id ? `user:${session.user.id}` : `user:${archiveAuth.adminUserId}`;
@@ -721,6 +723,15 @@ const server = http.createServer((request, response) => {
     return;
   }
   const ownerKey = recordOwner(session);
+  if (request.method === "GET" && url.pathname === "/backup/status") {
+    if (archiveAuth.enabled && session.user.role !== "admin") {
+      sendJson(request, response, 403, { ok: false, error: "admin_required" });
+      return;
+    }
+    backupScheduler.check();
+    sendJson(request, response, 200, { ok: true, service: "gameops-archive", backup: backupScheduler.getStatus() });
+    return;
+  }
   if (request.method === "GET" && url.pathname === "/auth/session") {
     sendJson(request, response, 200, archiveAuth.enabled
       ? { ok: true, auth_required: true, user: session.user, csrf_token: session.csrfToken }
@@ -1621,7 +1632,6 @@ server.listen(PORT, "127.0.0.1", () => {
   console.log("🗄 存档服务已启动 → http://127.0.0.1:" + PORT);
   console.log("   数据文件: " + dbPath);
   console.log("   健康检查: http://127.0.0.1:" + PORT + "/health");
-  const backupScheduler = createArchiveBackupScheduler({ root: __dirname, databasePath: dbPath, env: process.env });
   backupScheduler.start();
 });
 
