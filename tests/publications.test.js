@@ -356,3 +356,15 @@ test("publication update storage errors return 500 and preserve the existing row
   const after = JSON.parse((await httpRequest("/publications?game=" + encodeURIComponent("鸣潮"))).text);
   assert.equal(after.items.find((item) => item.id === created.id).title, "发布更新故障保护");
 });
+
+test("publication list storage errors return a sanitized 500 and keep the service alive", async () => {
+  const db = new DatabaseSync(databasePath);
+  db.exec("ALTER TABLE publications RENAME TO publications_unavailable");
+  db.close();
+
+  const response = await httpRequest("/publications");
+  assert.equal(response.status, 500);
+  assert.deepEqual(JSON.parse(response.text), { ok: false, error: "发布记录暂时无法读取，请稍后重试" });
+  assert.doesNotMatch(response.text, /publications|sqlite|no such table/i);
+  assert.equal((await httpRequest("/health")).status, 200);
+});
