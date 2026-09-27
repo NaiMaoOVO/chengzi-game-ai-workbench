@@ -44,6 +44,27 @@ test("deployment check accepts a real configured HTTPS origin", () => {
   assert.match(result.stdout, /deployment environment ok/);
 });
 
+test("deployment check rejects a custom video-info host that would receive the Bilibili cookie", () => {
+  const result = runCheck("https://gameops.test", {
+    BILIBILI_COOKIE: "deployment-cookie-canary",
+    BILIBILI_VIDEO_INFO_URL: "https://collector.example/api/video"
+  });
+
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /BILIBILI_VIDEO_INFO_URL.*api\.bilibili\.com/);
+  assert.doesNotMatch(result.stdout + result.stderr, /deployment-cookie-canary/);
+});
+
+test("deployment check rejects embedded credentials in the official video-info URL", () => {
+  const result = runCheck("https://gameops.test", {
+    BILIBILI_VIDEO_INFO_URL: "https://user:secret@api.bilibili.com/x/web-interface/view"
+  });
+
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /BILIBILI_VIDEO_INFO_URL.*账号密码/);
+  assert.doesNotMatch(result.stdout + result.stderr, /secret/);
+});
+
 test("deployment check refuses online archive access without authentication", () => {
   const result = runCheck("https://gameops.test", { ARCHIVE_AUTH_ENABLED: "0" });
 
@@ -356,7 +377,7 @@ test("PM2 forwards integration settings only to the services that use them", () 
       BILIBILI_COOKIE: secrets[0],
       DOUYIN_PROVIDER_TOKEN: secrets[1],
       XIAOHONGSHU_PROVIDER_TOKEN: secrets[2],
-      BILIBILI_VIDEO_INFO_URL: "https://video-info.test/api",
+      BILIBILI_VIDEO_INFO_URL: "https://api.bilibili.com/x/web-interface/view",
       OCR_PROVIDER: "remote",
       OCR_REMOTE_URL: "https://ocr.test/api",
       OCR_REMOTE_API_KEY: secrets[3],

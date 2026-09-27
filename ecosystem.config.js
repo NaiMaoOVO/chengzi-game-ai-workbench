@@ -3,6 +3,7 @@ const { isIP } = require("node:net");
 require("./lib/env-file").loadProjectEnv(__dirname);
 const { parseIntegerConfig } = require("./lib/http-guards");
 const { assertSafeProviderUrl, SUPPORTED_PLATFORMS, isSupportedPlatform } = require("./lib/platform-provider");
+const { assertSafeVideoInfoUrl } = require("./lib/bilibili-url");
 const { isValidBusinessTime } = require("./lib/business-date");
 
 const cwd = __dirname;
@@ -10,6 +11,8 @@ const allowedOrigin = process.env.ALLOWED_ORIGIN || "";
 const ocrProvider = String(process.env.OCR_PROVIDER || "macos").trim().toLowerCase();
 const morningSchedule = String(process.env.MORNING_SCHEDULE || "09:00").trim();
 const morningPlatform = String(process.env.MORNING_PLATFORM || "B站").trim();
+
+assertSafeVideoInfoUrl(process.env.BILIBILI_VIDEO_INFO_URL, { production: true });
 
 if (!new Set(["macos", "remote"]).has(ocrProvider)) {
   throw new Error("OCR_PROVIDER 必须是 macos 或 remote");

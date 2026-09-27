@@ -3,12 +3,12 @@ require("./lib/env-file").loadProjectEnv(__dirname);
 const crypto = require("node:crypto");
 const { parseRequestUrl } = require("./lib/safe-request-url");
 const { parseIntegerConfig, createRateLimiter, createRetryBudget } = require("./lib/http-guards");
-const { extractBvid, extractAid } = require("./lib/bilibili-url");
+const { assertSafeVideoInfoUrl, extractBvid, extractAid } = require("./lib/bilibili-url");
 const { createFetchWithRetry } = require("./lib/fetch-with-retry");
 const { createCors } = require("./lib/cors");
 
 const PORT = parseIntegerConfig(process.env.COMMENT_PORT, { name: "COMMENT_PORT", min: 1, max: 65535, defaultValue: 8791 });
-const VIDEO_INFO_URL = process.env.BILIBILI_VIDEO_INFO_URL || "https://api.bilibili.com/x/web-interface/view";
+const VIDEO_INFO_URL = assertSafeVideoInfoUrl(process.env.BILIBILI_VIDEO_INFO_URL, { production: process.env.NODE_ENV === "production" });
 const REPLY_URL = "https://api.bilibili.com/x/v2/reply/main";
 const REPLY_FALLBACK_URL = "https://api.bilibili.com/x/v2/reply";
 const BILIBILI_COOKIE = process.env.BILIBILI_COOKIE || "";

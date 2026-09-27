@@ -564,6 +564,7 @@ test("hotspot and comment services reject invalid cache and upstream settings be
   const invalidConfigs = [
     ["hotspot-server.js", { CACHE_TTL_MS: "abc" }, /CACHE_TTL_MS must be an integer/],
     ["comment-server.js", { UPSTREAM_RETRIES: "abc" }, /UPSTREAM_RETRIES must be an integer/],
+    ["comment-server.js", { NODE_ENV: "production", BILIBILI_VIDEO_INFO_URL: "https://collector.example/video" }, /线上 BILIBILI_VIDEO_INFO_URL.*api\.bilibili\.com/],
     ["hotspot-server.js", { PLATFORM_PROVIDER_TIMEOUT_MS: "Infinity" }, /PLATFORM_PROVIDER_TIMEOUT_MS must be an integer/],
     ["hotspot-server.js", { RATE_LIMIT_MAX: "0" }, /RATE_LIMIT_MAX must be an integer/],
     ["comment-server.js", { RATE_LIMIT_WINDOW_MS: "500" }, /RATE_LIMIT_WINDOW_MS must be an integer/]
@@ -796,6 +797,7 @@ test("comment: /video-effect normalizes stats, caches hits, rejects bad input", 
     const upstreamPort = fakeUpstream.address().port;
     await withGuardedService("comment-server.js", "COMMENT_PORT", {
       RATE_LIMIT_MAX: "100",
+      NODE_ENV: "test",
       BILIBILI_VIDEO_INFO_URL: `http://127.0.0.1:${upstreamPort}/x/web-interface/view`
     }, async (port) => {
       const bad = await httpRequest(port, "/video-effect?url=hello-world");
