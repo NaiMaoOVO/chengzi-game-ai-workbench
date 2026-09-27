@@ -98,6 +98,25 @@ test("deployment check rejects malformed rate limit settings before PM2 starts s
   }
 });
 
+test("deployment check validates the scheduled morning time and normalizes whitespace", () => {
+  for (const value of ["9:00", "24:00", "12:60", "09:00x"]) {
+    const result = runCheck("https://gameops.test", { MORNING_SCHEDULE: value });
+    assert.equal(result.status, 1, `MORNING_SCHEDULE=${value} unexpectedly passed`);
+    assert.match(result.stderr, /MORNING_SCHEDULE 必须是 24 小时制 HH:mm/);
+  }
+
+  const valid = runCheck("https://gameops.test", { MORNING_SCHEDULE: " 07:35 " });
+  assert.equal(valid.status, 0, valid.stderr);
+
+  const config = spawnSync(process.execPath, ["-e", 'console.log(require("./ecosystem.config.js").apps.find((app) => app.name === "gameops-archive").env.MORNING_SCHEDULE)'], {
+    cwd: projectRoot,
+    env: deploymentEnv("https://gameops.test", { MORNING_SCHEDULE: " 07:35 " }),
+    encoding: "utf8"
+  });
+  assert.equal(config.status, 0, config.stderr);
+  assert.equal(config.stdout.trim(), "07:35");
+});
+
 test("deployment check validates production admin and remote OCR transport", () => {
   const invalidConfigs = [
     [{ ARCHIVE_ADMIN_USERNAME: "bad username" }, /ARCHIVE_ADMIN_USERNAME 必须是 3-40 位/],

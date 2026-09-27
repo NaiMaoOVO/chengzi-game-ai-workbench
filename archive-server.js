@@ -8,7 +8,7 @@ const { parseRequestUrl } = require("./lib/safe-request-url");
 const { createRateLimiter } = require("./lib/http-guards");
 const { createCors } = require("./lib/cors");
 const { createArchiveAuth } = require("./lib/archive-auth");
-const { businessDate, businessTime } = require("./lib/business-date");
+const { businessDate, businessTime, isValidBusinessTime } = require("./lib/business-date");
 
 const PORT = Number(process.env.ARCHIVE_PORT) || 8796;
 const MAX_BODY_BYTES = 5 * 1024 * 1024;
@@ -19,6 +19,10 @@ const checkRateLimit = createRateLimiter({ windowMs: RATE_LIMIT_WINDOW_MS, max: 
 const ARCHIVE_AUTH_ENABLED = process.env.ARCHIVE_AUTH_ENABLED === "1";
 const checkLoginRateLimit = createRateLimiter({ windowMs: RATE_LIMIT_WINDOW_MS, max: Math.max(1, Number(process.env.ARCHIVE_AUTH_RATE_LIMIT_MAX || 8)), trustProxy: process.env.TRUST_PROXY === "1" });
 const MORNING_SCHEDULE = (process.env.MORNING_SCHEDULE || "09:00").trim();
+if (!isValidBusinessTime(MORNING_SCHEDULE)) {
+  console.error("存档服务配置无效：MORNING_SCHEDULE 必须是 24 小时制 HH:mm（00:00-23:59）");
+  process.exit(1);
+}
 const MORNING_GAMES = (process.env.MORNING_GAMES || "").split(",").map((value) => value.trim()).filter(Boolean);
 const MORNING_PLATFORM = process.env.MORNING_PLATFORM || "B站";
 const HOTSPOT_SOURCE_URL = process.env.HOTSPOT_SOURCE_URL || "http://127.0.0.1:8790";

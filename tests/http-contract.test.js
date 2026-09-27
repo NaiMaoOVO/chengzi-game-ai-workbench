@@ -1,8 +1,10 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { spawn } = require("node:child_process");
+const { spawn, spawnSync } = require("node:child_process");
+const fs = require("node:fs");
 const http = require("node:http");
 const net = require("node:net");
+const os = require("node:os");
 const path = require("node:path");
 const { parseRequestUrl } = require("../lib/safe-request-url");
 
@@ -519,6 +521,27 @@ test("llm: identity, disallowed Origin -> 403, bad bodies -> 400, exceeding limi
     const retryAfter = Number(limited.headers["retry-after"]);
     assert.ok(Number.isInteger(retryAfter) && retryAfter >= 1 && retryAfter <= 60, "Retry-After 应为 1-60 的整数秒");
   });
+});
+
+test("archive: invalid morning schedule exits before the service listens", () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "gameops-invalid-morning-"));
+  try {
+    const result = spawnSync(process.execPath, [path.join(projectRoot, "archive-server.js")], {
+      cwd: projectRoot,
+      env: {
+        ...process.env,
+        ARCHIVE_DB_PATH: path.join(tempDir, "archive.db"),
+        MORNING_SCHEDULE: "9:00"
+      },
+      encoding: "utf8",
+      timeout: 3000
+    });
+
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /MORNING_SCHEDULE 必须是 24 小时制 HH:mm/);
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
 });
 
 test("archive: identity, malformed Host -> 400, disallowed Origin -> 403, wrong method/bad JSON guards", async () => {
