@@ -8959,6 +8959,11 @@ function refreshSlotNames() {
   }
 }
 
+function handleProjectSlotStorageChange(event) {
+  if (event.key !== PROJECT_SLOTS_KEY && event.key !== null) return;
+  refreshSlotNames();
+}
+
 /* ---- 平台差异化策略 ---- */
 
 function renderPlatformStrategy(platform) {
@@ -9190,6 +9195,7 @@ document.querySelectorAll(".project-slot").forEach((slot) => {
     if (idx) loadProjectFromSlot(idx);
   });
 });
+window.addEventListener("storage", handleProjectSlotStorageChange);
 
 /* ---- 确认状态初始化 ---- */
 setupConfirmButtons();

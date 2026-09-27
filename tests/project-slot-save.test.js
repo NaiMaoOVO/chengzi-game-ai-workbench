@@ -92,3 +92,22 @@ test("loading a malformed project slot rejects it before restoring any data", ()
   assert.equal(harness.raw(), original);
   assert.match(harness.status.textContent, /结构异常/);
 });
+
+test("project slot names refresh after cross-tab storage updates and clears", () => {
+  assert.ok(/window\.addEventListener\("storage",\s*handleProjectSlotStorageChange\)/.test(app), "slot handler should subscribe to storage events");
+  assert.ok(/event\.key !== PROJECT_SLOTS_KEY && event\.key !== null/.test(app), "unrelated storage changes should be ignored");
+  const start = app.indexOf("function handleProjectSlotStorageChange(event) {");
+  const end = app.indexOf("\n/* ---- 平台差异化策略 ---- */", start);
+  assert.ok(start >= 0 && end > start);
+  let refreshes = 0;
+  const handler = vm.runInNewContext(`(() => {
+    const PROJECT_SLOTS_KEY = "gameops-project-slots-v2";
+    ${app.slice(start, end)}
+    return handleProjectSlotStorageChange;
+  })()`, { refreshSlotNames: () => { refreshes += 1; } });
+  handler({ key: "unrelated" });
+  assert.equal(refreshes, 0);
+  handler({ key: "gameops-project-slots-v2" });
+  handler({ key: null });
+  assert.equal(refreshes, 2);
+});
