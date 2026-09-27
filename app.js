@@ -7809,12 +7809,21 @@ function saveProjectState() {
       }
       const readable = state && typeof state === "object" && !Array.isArray(state)
         && state.controls && typeof state.controls === "object" && !Array.isArray(state.controls);
-      if (!readable && !window.confirm("现有项目快照损坏或无法载入。覆盖前请先备份原始数据；仍要用当前页面状态替换吗？")) {
-        if (status) {
-          status.textContent = "总览状态：已取消覆盖，原始快照未修改。";
-          status.className = "source-status source-mock";
+      if (!readable) {
+        if (!window.confirm("现有项目快照损坏或无法载入。覆盖前请先备份原始数据；仍要用当前页面状态替换吗？")) {
+          if (status) {
+            status.textContent = "总览状态：已取消覆盖，原始快照未修改。";
+            status.className = "source-status source-mock";
+          }
+          return;
         }
-        return;
+        if (storage.getItem(PROJECT_STORAGE_KEY) !== existing) {
+          if (status) {
+            status.textContent = "总览状态：其他标签页已更新本机快照，本次覆盖已取消；请重新载入后再保存。";
+            status.className = "source-status source-mock";
+          }
+          return;
+        }
       }
     }
     storage.setItem(PROJECT_STORAGE_KEY, JSON.stringify(collectProjectState()));

@@ -26,7 +26,7 @@ function createHarness(getItem) {
   return { load, status, restored };
 }
 
-function createSaveHarness(initial, confirmResult = false, readError = false) {
+function createSaveHarness(initial, confirmResult = false, readError = false, mutateOnConfirm = null) {
   let raw = initial;
   let writes = 0;
   let confirmations = 0;
@@ -38,7 +38,7 @@ function createSaveHarness(initial, confirmResult = false, readError = false) {
         getItem: () => { if (readError) throw new Error("storage read denied"); return raw; },
         setItem: (_key, value) => { writes += 1; raw = value; }
       },
-      confirm: () => { confirmations += 1; return confirmResult; }
+      confirm: () => { confirmations += 1; if (mutateOnConfirm !== null) raw = mutateOnConfirm; return confirmResult; }
     },
     document: { querySelector: () => status },
     collectProjectState: () => ({ controls: { game: "鸣潮" } })
@@ -116,4 +116,14 @@ test("saving does not write when the existing project snapshot cannot be inspect
   assert.equal(harness.writes(), 0);
   assert.equal(harness.raw(), raw);
   assert.match(harness.status.textContent, /保存失败/);
+});
+
+test("saving does not overwrite a snapshot updated in another tab during confirmation", () => {
+  const newer = JSON.stringify({ controls: { game: "原神" } });
+  const harness = createSaveHarness("{broken-json", true, false, newer);
+  harness.save();
+  assert.equal(harness.confirmations(), 1);
+  assert.equal(harness.writes(), 0);
+  assert.equal(harness.raw(), newer);
+  assert.match(harness.status.textContent, /其他标签页已更新/);
 });
