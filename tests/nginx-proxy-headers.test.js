@@ -102,3 +102,17 @@ test("HSTS template defaults to the configured host until subdomains are confirm
   assert.match(config, /^\s*#.*所有子域都支持 HTTPS 时.*includeSubDomains/m);
   assert.match(readme, /`includeSubDomains`.*所有子域.*HTTPS/);
 });
+
+test("HTTP Nginx template redirects at server scope before proxy locations", () => {
+  const config = fs.readFileSync(path.join(root, "nginx.conf.example"), "utf8");
+  const serverStarts = [...config.matchAll(/^\s*server\s*\{/gm)].map((match) => match.index);
+  assert.equal(serverStarts.length, 1);
+
+  const httpServer = config.slice(serverStarts[0]);
+  const firstLocation = httpServer.indexOf("\n    location ");
+  assert.notEqual(firstLocation, -1, "expected proxy locations after the HTTP redirect");
+  const serverDirectives = httpServer.slice(0, firstLocation);
+  assert.match(serverDirectives, /^\s*listen 80\s*;/m);
+  assert.match(serverDirectives, /^\s*return 301 https:\/\/\$host\$request_uri\s*;/m);
+  assert.doesNotMatch(serverDirectives, /^\s*proxy_pass\s+/m);
+});
