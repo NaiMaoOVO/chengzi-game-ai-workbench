@@ -91,6 +91,34 @@ test("malformed provider rows do not discard valid rows from the same response",
   assert.deepEqual(result.items.map((item) => item.title), ["有效内容"]);
 });
 
+test("provider response bodies are bounded before JSON parsing", async () => {
+  const oversizedPayload = JSON.stringify({ items: [], padding: "x".repeat(3 * 1024 * 1024) });
+
+  await assert.rejects(() => fetchPlatformProvider({
+    providerUrl: "https://provider.example/search",
+    platform: "抖音",
+    game: "鸣潮",
+    range: "24h",
+    limit: 10,
+    fetchImpl: async () => new Response(oversizedPayload, { status: 200 })
+  }), /平台提供器响应超过大小限制/);
+});
+
+test("provider parses valid JSON from a bounded response stream", async () => {
+  const result = await fetchPlatformProvider({
+    providerUrl: "https://provider.example/search",
+    platform: "抖音",
+    game: "鸣潮",
+    range: "24h",
+    limit: 10,
+    fetchImpl: async () => new Response(JSON.stringify({
+      items: [{ title: "流式响应热点", publishedAt: new Date().toISOString() }]
+    }), { status: 200 })
+  });
+
+  assert.deepEqual(result.items.map((item) => item.title), ["流式响应热点"]);
+});
+
 test("provider results are filtered locally by the requested time range", async () => {
   const now = Date.now();
   const result = await fetchPlatformProvider({
