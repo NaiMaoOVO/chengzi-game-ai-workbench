@@ -483,6 +483,72 @@ test("archive restore refuses to replace the database while the archive service 
   stillLive.close();
 });
 
+test("archive restore rechecks service status after preserving the live database", async (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "gameops-backup-restore-service-race-test-"));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const databasePath = path.join(dir, "archive.db");
+  const backupDir = path.join(dir, "backups");
+  const db = new DatabaseSync(databasePath);
+  db.exec("CREATE TABLE check_rows (value TEXT NOT NULL); INSERT INTO check_rows VALUES ('before backup');");
+  db.close();
+  const env = { ...process.env, ARCHIVE_DB_PATH: databasePath, ARCHIVE_BACKUP_DIR: backupDir, ARCHIVE_PORT: "19722" };
+  const backup = spawnSync(process.execPath, [path.join(root, "scripts", "backup-archive.js")], { cwd: root, env, encoding: "utf8" });
+  assert.equal(backup.status, 0, backup.stderr || backup.stdout);
+  const backupFile = path.join(backupDir, fs.readdirSync(backupDir).find((name) => /^archive-.*\.db$/.test(name)));
+  const changed = new DatabaseSync(databasePath);
+  changed.exec("INSERT INTO check_rows VALUES ('after backup');");
+  changed.close();
+  const originalDatabase = fs.readFileSync(databasePath);
+  const readyFile = path.join(dir, "restore-ready");
+  const continueFile = path.join(dir, "restore-continue");
+  const preload = path.join(dir, "pause-after-safety-copy.cjs");
+  fs.writeFileSync(preload, [
+    'const fs = require("node:fs");',
+    'const copyFileSync = fs.copyFileSync;',
+    'fs.copyFileSync = function (source, destination, ...args) {',
+    '  const result = copyFileSync.call(fs, source, destination, ...args);',
+    '  if (String(destination).includes(".pre-restore-")) {',
+    '    fs.writeFileSync(process.env.TEST_RESTORE_READY_FILE, "ready");',
+    '    const wait = new Int32Array(new SharedArrayBuffer(4));',
+    '    const deadline = Date.now() + 5000;',
+    '    while (!fs.existsSync(process.env.TEST_RESTORE_CONTINUE_FILE) && Date.now() < deadline) Atomics.wait(wait, 0, 0, 10);',
+    '  }',
+    '  return result;',
+    '};'
+  ].join("\n"));
+  const child = spawn(process.execPath, [
+    "--require", preload,
+    path.join(root, "scripts", "restore-archive-backup.js"), backupFile, "--service-stopped"
+  ], { cwd: root, env: { ...env, TEST_RESTORE_READY_FILE: readyFile, TEST_RESTORE_CONTINUE_FILE: continueFile }, stdio: ["ignore", "ignore", "pipe"] });
+  let stderr = "";
+  child.stderr.setEncoding("utf8");
+  child.stderr.on("data", (chunk) => { stderr += chunk; });
+  let exit;
+  const exited = new Promise((resolve) => child.once("exit", (code, signal) => { exit = { code, signal }; resolve(exit); }));
+  t.after(async () => {
+    if (child.exitCode === null) child.kill("SIGTERM");
+  });
+
+  const deadline = Date.now() + 5000;
+  while (!fs.existsSync(readyFile) && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 10));
+  assert.equal(fs.existsSync(readyFile), true, "restore should finish preflight and preserve the live database");
+  const service = http.createServer((_request, response) => { response.writeHead(200); response.end("ok"); });
+  await new Promise((resolve, reject) => {
+    service.once("error", reject);
+    service.listen(19722, "127.0.0.1", resolve);
+  });
+  t.after(() => new Promise((resolve) => service.close(resolve)));
+  fs.writeFileSync(continueFile, "continue");
+  const result = await Promise.race([exited, new Promise((resolve) => setTimeout(() => resolve(null), 5000))]);
+  assert.ok(result, "restore process should exit after the second service probe");
+  assert.equal(result.code, 1);
+  assert.match(stderr, /仍有服务响应，已拒绝恢复/);
+  assert.deepEqual(fs.readFileSync(databasePath), originalDatabase);
+  const stillLive = new DatabaseSync(databasePath, { readOnly: true });
+  assert.deepEqual(stillLive.prepare("SELECT value FROM check_rows ORDER BY rowid").all().map((row) => row.value), ["before backup", "after backup"]);
+  stillLive.close();
+});
+
 test("archive restore rejects a checksum-valid non-SQLite backup without touching the live database", () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "gameops-backup-restore-invalid-test-"));
   const databasePath = path.join(dir, "archive.db");

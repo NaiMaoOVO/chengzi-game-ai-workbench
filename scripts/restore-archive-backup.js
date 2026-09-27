@@ -81,6 +81,7 @@ async function restoreArchive() {
     assertSqliteIntegrity(stagePath);
 
     for (const [source, destination] of existingFiles) preserveFile(source, destination);
+    await assertArchiveServiceStopped();
 
     const removedSidecars = [];
     try {

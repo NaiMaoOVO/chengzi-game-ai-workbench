@@ -125,8 +125,14 @@ test("automatic scheduler launches the existing backup script and verifies its o
       if (error.code !== "ENOENT") throw error;
     }
     if (name) {
-      backupPath = path.join(backupDir, name);
-      break;
+      const candidatePath = path.join(backupDir, name);
+      try {
+        verifyArchiveBackup(candidatePath);
+        backupPath = candidatePath;
+        break;
+      } catch (_error) {
+        // Wait for VACUUM INTO and its checksum to finish before inspecting the copy.
+      }
     }
     await new Promise((resolve) => setTimeout(resolve, 20));
   }
