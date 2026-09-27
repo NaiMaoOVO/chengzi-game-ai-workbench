@@ -26,6 +26,17 @@ test("rate limiter trusts the proxy header only when explicitly enabled", () => 
   assert.equal(limiter(request("2.2.2.2")).allowed, true);
 });
 
+test("rate limiter aggregates excess addresses instead of evicting active counters", () => {
+  const limiter = createRateLimiter({ windowMs: 60000, max: 1, maxKeys: 3 });
+  const request = (address) => ({ socket: { remoteAddress: address }, headers: {} });
+  assert.equal(limiter(request("client-a")).allowed, true);
+  assert.equal(limiter(request("client-b")).allowed, true);
+  assert.equal(limiter(request("client-c")).allowed, true);
+  assert.equal(limiter(request("client-d")).allowed, false, "overflow addresses share a bounded counter");
+  assert.equal(limiter(request("client-a")).allowed, false, "key churn must not reset an active address window");
+  assert.equal(limiter(request("client-b")).allowed, false, "older active counters remain in force");
+});
+
 test("rate limiter rejects invalid bounds instead of silently allowing requests", () => {
   assert.throws(() => createRateLimiter({ windowMs: Number.NaN, max: 1 }), /windowMs/);
   assert.throws(() => createRateLimiter({ windowMs: 60000, max: Number.NaN }), /max/);
