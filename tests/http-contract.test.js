@@ -523,24 +523,31 @@ test("llm: identity, disallowed Origin -> 403, bad bodies -> 400, exceeding limi
   });
 });
 
-test("archive: invalid morning schedule exits before the service listens", () => {
-  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "gameops-invalid-morning-"));
-  try {
-    const result = spawnSync(process.execPath, [path.join(projectRoot, "archive-server.js")], {
-      cwd: projectRoot,
-      env: {
-        ...process.env,
-        ARCHIVE_DB_PATH: path.join(tempDir, "archive.db"),
-        MORNING_SCHEDULE: "9:00"
-      },
-      encoding: "utf8",
-      timeout: 3000
-    });
+test("archive: invalid morning schedule or platform exits before the service listens", () => {
+  const invalidConfigs = [
+    [{ MORNING_SCHEDULE: "9:00" }, /MORNING_SCHEDULE 必须是 24 小时制 HH:mm/],
+    [{ MORNING_PLATFORM: "未知平台" }, /MORNING_PLATFORM 必须是以下平台之一/]
+  ];
 
-    assert.equal(result.status, 1);
-    assert.match(result.stderr, /MORNING_SCHEDULE 必须是 24 小时制 HH:mm/);
-  } finally {
-    fs.rmSync(tempDir, { recursive: true, force: true });
+  for (const [extraEnv, message] of invalidConfigs) {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "gameops-invalid-morning-"));
+    try {
+      const result = spawnSync(process.execPath, [path.join(projectRoot, "archive-server.js")], {
+        cwd: projectRoot,
+        env: {
+          ...process.env,
+          ARCHIVE_DB_PATH: path.join(tempDir, "archive.db"),
+          ...extraEnv
+        },
+        encoding: "utf8",
+        timeout: 3000
+      });
+
+      assert.equal(result.status, 1);
+      assert.match(result.stderr, message);
+    } finally {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    }
   }
 });
 

@@ -5,10 +5,18 @@ const { spawnSync } = require("node:child_process");
 
 const {
   assertSafeProviderUrl,
+  SUPPORTED_PLATFORMS,
+  isSupportedPlatform,
   normalizeProviderItems,
   fetchPlatformProvider,
   rangeStart
 } = require("../lib/platform-provider");
+
+test("hotspot platform support is shared with scheduled morning reports", () => {
+  assert.deepEqual(SUPPORTED_PLATFORMS, ["B站", "抖音", "小红书", "TapTap", "微博"]);
+  for (const platform of SUPPORTED_PLATFORMS) assert.equal(isSupportedPlatform(platform), true);
+  assert.equal(isSupportedPlatform("未知平台"), false);
+});
 
 test("provider today range starts at Shanghai midnight even on UTC hosts", () => {
   const modulePath = path.resolve(__dirname, "../lib/platform-provider.js");

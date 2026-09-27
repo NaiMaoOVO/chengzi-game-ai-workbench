@@ -1,19 +1,23 @@
 const path = require("node:path");
 const { isIP } = require("node:net");
 require("./lib/env-file").loadProjectEnv(__dirname);
-const { assertSafeProviderUrl } = require("./lib/platform-provider");
+const { assertSafeProviderUrl, SUPPORTED_PLATFORMS, isSupportedPlatform } = require("./lib/platform-provider");
 const { isValidBusinessTime } = require("./lib/business-date");
 
 const cwd = __dirname;
 const allowedOrigin = process.env.ALLOWED_ORIGIN || "";
 const ocrProvider = String(process.env.OCR_PROVIDER || "macos").trim().toLowerCase();
 const morningSchedule = String(process.env.MORNING_SCHEDULE || "09:00").trim();
+const morningPlatform = String(process.env.MORNING_PLATFORM || "B站").trim();
 
 if (!new Set(["macos", "remote"]).has(ocrProvider)) {
   throw new Error("OCR_PROVIDER 必须是 macos 或 remote");
 }
 if (!isValidBusinessTime(morningSchedule)) {
   throw new Error("MORNING_SCHEDULE 必须是 24 小时制 HH:mm（00:00-23:59）");
+}
+if (!isSupportedPlatform(morningPlatform)) {
+  throw new Error(`MORNING_PLATFORM 必须是以下平台之一：${SUPPORTED_PLATFORMS.join("、")}`);
 }
 
 for (const name of [
@@ -214,7 +218,7 @@ module.exports = {
       ARCHIVE_SESSION_HOURS: process.env.ARCHIVE_SESSION_HOURS || "12",
       MORNING_SCHEDULE: morningSchedule,
       MORNING_GAMES: process.env.MORNING_GAMES || "",
-      MORNING_PLATFORM: process.env.MORNING_PLATFORM || "B站",
+      MORNING_PLATFORM: morningPlatform,
       HOTSPOT_SOURCE_URL: process.env.HOTSPOT_SOURCE_URL || "http://127.0.0.1:8790"
     })
   ]

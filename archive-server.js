@@ -9,6 +9,7 @@ const { createRateLimiter } = require("./lib/http-guards");
 const { createCors } = require("./lib/cors");
 const { createArchiveAuth } = require("./lib/archive-auth");
 const { businessDate, businessTime, isValidBusinessTime } = require("./lib/business-date");
+const { SUPPORTED_PLATFORMS, isSupportedPlatform } = require("./lib/platform-provider");
 
 const PORT = Number(process.env.ARCHIVE_PORT) || 8796;
 const MAX_BODY_BYTES = 5 * 1024 * 1024;
@@ -24,7 +25,11 @@ if (!isValidBusinessTime(MORNING_SCHEDULE)) {
   process.exit(1);
 }
 const MORNING_GAMES = (process.env.MORNING_GAMES || "").split(",").map((value) => value.trim()).filter(Boolean);
-const MORNING_PLATFORM = process.env.MORNING_PLATFORM || "B站";
+const MORNING_PLATFORM = String(process.env.MORNING_PLATFORM || "B站").trim();
+if (!isSupportedPlatform(MORNING_PLATFORM)) {
+  console.error(`存档服务配置无效：MORNING_PLATFORM 必须是以下平台之一：${SUPPORTED_PLATFORMS.join("、")}`);
+  process.exit(1);
+}
 const HOTSPOT_SOURCE_URL = process.env.HOTSPOT_SOURCE_URL || "http://127.0.0.1:8790";
 
 const corsHeaders = cors.corsHeaders;

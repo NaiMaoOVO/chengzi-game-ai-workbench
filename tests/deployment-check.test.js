@@ -117,6 +117,20 @@ test("deployment check validates the scheduled morning time and normalizes white
   assert.equal(config.stdout.trim(), "07:35");
 });
 
+test("deployment check validates morning platforms and passes the normalized value to PM2", () => {
+  const invalid = runCheck("https://gameops.test", { MORNING_PLATFORM: "未知平台" });
+  assert.equal(invalid.status, 1);
+  assert.match(invalid.stderr, /MORNING_PLATFORM 必须是以下平台之一/);
+
+  const config = spawnSync(process.execPath, ["-e", 'console.log(require("./ecosystem.config.js").apps.find((app) => app.name === "gameops-archive").env.MORNING_PLATFORM)'], {
+    cwd: projectRoot,
+    env: deploymentEnv("https://gameops.test", { MORNING_PLATFORM: "  抖音 " }),
+    encoding: "utf8"
+  });
+  assert.equal(config.status, 0, config.stderr);
+  assert.equal(config.stdout.trim(), "抖音");
+});
+
 test("deployment check validates production admin and remote OCR transport", () => {
   const invalidConfigs = [
     [{ ARCHIVE_ADMIN_USERNAME: "bad username" }, /ARCHIVE_ADMIN_USERNAME 必须是 3-40 位/],

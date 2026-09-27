@@ -2,7 +2,7 @@ const http = require("node:http");
 const crypto = require("node:crypto");
 require("./lib/env-file").loadProjectEnv(__dirname);
 const { calculateHeatScore, rankHotspots } = require("./lib/hotspot-ranking");
-const { fetchPlatformProvider } = require("./lib/platform-provider");
+const { fetchPlatformProvider, isSupportedPlatform } = require("./lib/platform-provider");
 const { parseRequestUrl } = require("./lib/safe-request-url");
 const { createRateLimiter, createRetryBudget } = require("./lib/http-guards");
 const { createFetchWithRetry } = require("./lib/fetch-with-retry");
@@ -35,7 +35,6 @@ const checkRateLimit = createRateLimiter({
   trustProxy: process.env.TRUST_PROXY === "1"
 });
 const responseCache = new Map();
-const SUPPORTED_PLATFORMS = new Set(["B站", "抖音", "小红书", "TapTap", "微博"]);
 const SUPPORTED_RANGES = new Set(["today", "24h", "3d", "7d"]);
 const SESSION_COOKIE_TTL_MS = 24 * 60 * 60 * 1000;
 let sessionCookieCache = { value: "", generatedAt: 0 };
@@ -496,7 +495,7 @@ async function handleHotspots(request, response) {
     sendJson(request, response, 400, { error: "invalid game", message: "游戏名称长度需为 1-80 个字符。" });
     return;
   }
-  if (!SUPPORTED_PLATFORMS.has(platform)) {
+  if (!isSupportedPlatform(platform)) {
     sendJson(request, response, 400, { error: "invalid platform" });
     return;
   }
