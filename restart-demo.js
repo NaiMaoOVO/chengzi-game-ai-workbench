@@ -4,10 +4,11 @@ const http = require("node:http");
 const os = require("node:os");
 const path = require("node:path");
 require("./lib/env-file").loadProjectEnv(__dirname);
+const { parseIntegerConfig } = require("./lib/http-guards");
 
 const ROOT = __dirname;
 const STATE_FILE = path.join(os.tmpdir(), `gameops-workbench-${process.getuid?.() || "user"}.json`);
-const CONTROLLER_PORT = Number(process.env.CONTROLLER_PORT) || 8793;
+const CONTROLLER_PORT = parseIntegerConfig(process.env.CONTROLLER_PORT, { name: "CONTROLLER_PORT", min: 1, max: 65535, defaultValue: 8793 });
 const START_SCRIPT = path.join(ROOT, "start-demo.js");
 
 function isProjectController(pid) {
@@ -134,7 +135,9 @@ async function main() {
   child.on("exit", (code) => process.exit(code || 0));
 }
 
-main().catch((error) => {
-  console.error(`重启失败：${error.message}`);
-  process.exit(1);
-});
+if (require.main === module) {
+  main().catch((error) => {
+    console.error(`重启失败：${error.message}`);
+    process.exit(1);
+  });
+}

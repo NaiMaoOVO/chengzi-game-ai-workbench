@@ -626,6 +626,17 @@ test("all service entry points reject out-of-range ports before binding", () => 
   }
 });
 
+test("restart helper rejects an invalid controller port without restarting services", () => {
+  const result = spawnSync(process.execPath, ["-e", 'require("./restart-demo.js")'], {
+    cwd: projectRoot,
+    env: { ...process.env, CONTROLLER_PORT: "65536" },
+    encoding: "utf8",
+    timeout: 3000
+  });
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /CONTROLLER_PORT must be an integer between 1 and 65535/);
+});
+
 test("XHS bridge rejects invalid child timeout before listening", () => {
   const result = spawnSync(process.execPath, [path.join(projectRoot, "xiaohongshu-bridge.js")], {
     cwd: projectRoot,
