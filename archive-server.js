@@ -640,7 +640,13 @@ const server = http.createServer((request, response) => {
     return;
   }
 
-  const session = archiveAuth.authenticate(request);
+  let session;
+  try {
+    session = archiveAuth.authenticate(request);
+  } catch (_error) {
+    sendJson(request, response, 500, { ok: false, error: "登录状态暂时无法验证，请稍后重试" });
+    return;
+  }
   const stateChanging = !["GET", "HEAD", "OPTIONS"].includes(request.method || "");
   if (archiveAuth.enabled && !session) {
     sendJson(request, response, 401, { ok: false, error: "unauthorized" });

@@ -250,3 +250,23 @@ test("corrupted creator libraries remain visible and cannot be overwritten", asy
   assert.equal(overwrite.status, 409, "远端损坏时必须阻止同步覆盖原始数据");
   assert.equal(overwrite.payload.error, "creator_library_invalid");
 });
+
+test("archive session lookup storage errors return a sanitized 500 and keep the service alive", async () => {
+  const login = await request("/auth/login", {
+    method: "POST",
+    headers: jsonHeaders(),
+    body: JSON.stringify({ username: "ops-admin", password: "admin-password-2026" })
+  });
+  assert.equal(login.status, 200);
+  const cookie = sessionCookie(login);
+
+  const corruption = new DatabaseSync(databasePath);
+  corruption.exec("ALTER TABLE archive_users RENAME TO archive_users_unavailable");
+  corruption.close();
+
+  const response = await request("/auth/session", { headers: { Cookie: cookie } });
+  assert.equal(response.status, 500);
+  assert.deepEqual(response.payload, { ok: false, error: "登录状态暂时无法验证，请稍后重试" });
+  assert.doesNotMatch(JSON.stringify(response.payload), /archive_users|sqlite|no such table/i);
+  assert.equal((await request("/health")).status, 200);
+});
