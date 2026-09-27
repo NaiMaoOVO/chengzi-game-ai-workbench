@@ -343,9 +343,12 @@ const upsertCreatorLibraryStatement = db.prepare("INSERT INTO creator_libraries 
 
 const KIND_PATTERN = /^[a-z][a-z0-9_-]{0,40}$/;
 
-function listSnapshots(url, ownerKey) {
+function snapshotKindOf(url) {
   const kind = (url.searchParams.get("kind") || "").trim();
-  if (!KIND_PATTERN.test(kind)) throw new Error("kind 参数不合法");
+  return KIND_PATTERN.test(kind) ? kind : null;
+}
+
+function listSnapshots(url, ownerKey, kind) {
   const limitRaw = Number.parseInt(url.searchParams.get("limit"), 10);
   const limit = Number.isFinite(limitRaw) ? Math.min(50, Math.max(1, limitRaw)) : 20;
   const game = (url.searchParams.get("game") || "").trim();
@@ -358,9 +361,7 @@ function listSnapshots(url, ownerKey) {
   });
 }
 
-function latestSnapshot(url, ownerKey) {
-  const kind = (url.searchParams.get("kind") || "").trim();
-  if (!KIND_PATTERN.test(kind)) throw new Error("kind 参数不合法");
+function latestSnapshot(url, ownerKey, kind) {
   const game = (url.searchParams.get("game") || "").trim();
   const row = game
     ? db.prepare("SELECT id, kind, game, source, payload, created_at FROM snapshots WHERE owner_key = ? AND kind = ? AND game = ? ORDER BY id DESC LIMIT 1").get(ownerKey, kind, game)
@@ -738,10 +739,15 @@ const server = http.createServer((request, response) => {
     }
   }
   if (request.method === "GET" && url.pathname === "/snapshots") {
+    const kind = snapshotKindOf(url);
+    if (!kind) {
+      sendJson(request, response, 400, { ok: false, error: "kind 参数不合法" });
+      return;
+    }
     try {
-      sendJson(request, response, 200, { ok: true, items: listSnapshots(url, ownerKey) });
-    } catch (error) {
-      sendJson(request, response, 400, { ok: false, error: error.message });
+      sendJson(request, response, 200, { ok: true, items: listSnapshots(url, ownerKey, kind) });
+    } catch (_error) {
+      sendJson(request, response, 500, { ok: false, error: "快照暂时无法读取，请稍后重试" });
     }
     return;
   }
@@ -790,10 +796,15 @@ const server = http.createServer((request, response) => {
     return;
   }
   if (request.method === "GET" && url.pathname === "/latest") {
+    const kind = snapshotKindOf(url);
+    if (!kind) {
+      sendJson(request, response, 400, { ok: false, error: "kind 参数不合法" });
+      return;
+    }
     try {
-      sendJson(request, response, 200, { ok: true, snapshot: latestSnapshot(url, ownerKey) });
-    } catch (error) {
-      sendJson(request, response, 400, { ok: false, error: error.message });
+      sendJson(request, response, 200, { ok: true, snapshot: latestSnapshot(url, ownerKey, kind) });
+    } catch (_error) {
+      sendJson(request, response, 500, { ok: false, error: "快照暂时无法读取，请稍后重试" });
     }
     return;
   }

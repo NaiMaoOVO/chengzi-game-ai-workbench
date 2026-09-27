@@ -478,3 +478,21 @@ test("risk event list storage errors return a sanitized 500 and keep the service
   assert.doesNotMatch(response.text, /risk_events|sqlite|no such table/i);
   assert.equal((await httpRequest("/health")).status, 200);
 });
+
+test("snapshot read storage errors return sanitized 500s while invalid kinds remain 400", async () => {
+  for (const requestPath of ["/snapshots?kind=invalid!", "/latest?kind=invalid!"]) {
+    assert.equal((await httpRequest(requestPath)).status, 400);
+  }
+
+  const db = new DatabaseSync(databasePath);
+  db.exec("ALTER TABLE snapshots RENAME TO snapshots_unavailable");
+  db.close();
+
+  for (const requestPath of ["/snapshots?kind=feedback", "/latest?kind=feedback"]) {
+    const response = await httpRequest(requestPath);
+    assert.equal(response.status, 500);
+    assert.deepEqual(JSON.parse(response.text), { ok: false, error: "快照暂时无法读取，请稍后重试" });
+    assert.doesNotMatch(response.text, /snapshots|sqlite|no such table/i);
+    assert.equal((await httpRequest("/health")).status, 200);
+  }
+});
