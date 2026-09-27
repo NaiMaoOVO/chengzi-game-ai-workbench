@@ -40,6 +40,7 @@ let archiveCsrfToken = "";
 let archiveSessionUser = null;
 let archiveAuthRequired = false;
 let archiveSessionRefreshGeneration = 0;
+let archiveSessionContextGeneration = 0;
 
 function setArchiveSession(payload) {
   archiveSessionRefreshGeneration += 1;
@@ -63,11 +64,12 @@ function archiveRequest(url, options = {}) {
 
 async function refreshArchiveSession() {
   const generation = ++archiveSessionRefreshGeneration;
+  const contextGeneration = archiveSessionContextGeneration;
   const currentSession = () => ({ required: archiveAuthRequired, user: archiveSessionUser });
   try {
     const response = await archiveRequest(ARCHIVE_SERVICE_URL + "/auth/session", { cache: "no-store" });
     const payload = await response.json().catch(() => ({}));
-    if (generation !== archiveSessionRefreshGeneration) return currentSession();
+    if (generation !== archiveSessionRefreshGeneration || contextGeneration !== archiveSessionContextGeneration) return currentSession();
     if (response.status === 401) return setArchiveSession({ auth_required: true });
     if (!response.ok) return currentSession();
     return setArchiveSession(payload);
@@ -77,18 +79,22 @@ async function refreshArchiveSession() {
 }
 
 async function loginArchiveUser(username, password) {
+  const contextGeneration = ++archiveSessionContextGeneration;
   const response = await archiveRequest(ARCHIVE_SERVICE_URL + "/auth/login", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ username, password })
   });
   const payload = await response.json().catch(() => ({}));
+  if (contextGeneration !== archiveSessionContextGeneration) throw new Error("登录状态已变化，登录结果未应用，请重试");
   if (!response.ok || !payload.ok) throw new Error(payload.error || "登录失败");
   return setArchiveSession({ auth_required: true, ...payload });
 }
 
 async function logoutArchiveUser() {
+  const contextGeneration = ++archiveSessionContextGeneration;
   const response = await archiveRequest(ARCHIVE_SERVICE_URL + "/auth/logout", { method: "POST" });
+  if (contextGeneration !== archiveSessionContextGeneration) throw new Error("登录状态已变化，退出结果未应用，请重试");
   if (!response.ok) throw new Error("退出登录失败");
   return setArchiveSession({ auth_required: true });
 }
@@ -126,7 +132,10 @@ function setServiceMode(mode) {
     /* localStorage may be unavailable in private contexts. */
   }
   const appliedMode = applyServiceMode(nextMode);
-  if (modeChanged) setArchiveSession({});
+  if (modeChanged) {
+    archiveSessionContextGeneration += 1;
+    setArchiveSession({});
+  }
   return appliedMode;
 }
 

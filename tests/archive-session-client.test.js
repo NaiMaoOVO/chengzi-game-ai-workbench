@@ -44,10 +44,12 @@ function createArchiveSessionClient() {
     let archiveSessionUser = null;
     let archiveAuthRequired = false;
     let archiveSessionRefreshGeneration = 0;
+    let archiveSessionContextGeneration = 0;
     ${archiveSessionFunctions}
     this.archiveSessionClient = {
       setArchiveSession,
       refreshArchiveSession,
+      loginArchiveUser,
       logoutArchiveUser,
       setServiceMode,
       current: () => ({ required: archiveAuthRequired, user: archiveSessionUser, csrfToken: archiveCsrfToken, serviceUrl: ARCHIVE_SERVICE_URL })
@@ -179,4 +181,57 @@ test("changing service mode clears the prior account and ignores a late session 
   assert.equal(afterSwitch.csrfToken, "");
   assert.equal(current.user, null);
   assert.equal(current.csrfToken, "");
+});
+
+test("a login response from the previous service mode cannot restore its account", async () => {
+  const context = createArchiveSessionClient();
+  let resolveLogin;
+  context.fetch = () => new Promise((resolve) => { resolveLogin = resolve; });
+
+  const pendingLogin = context.archiveSessionClient.loginArchiveUser("ops-user", "password");
+  context.archiveSessionClient.setServiceMode("online");
+  resolveLogin({
+    ok: true,
+    status: 200,
+    json: async () => ({ ok: true, user: { id: 7, username: "ops-user", role: "member" }, csrf_token: "old-mode-csrf" })
+  });
+
+  await assert.rejects(pendingLogin, /登录状态已变化/);
+  const current = context.archiveSessionClient.current();
+  assert.equal(current.serviceUrl, "/api/archive");
+  assert.equal(current.user, null);
+  assert.equal(current.csrfToken, "");
+});
+
+test("a logout response from the previous service mode cannot mutate the new mode session", async () => {
+  const context = createArchiveSessionClient();
+  seedVerifiedLogin(context);
+  let resolveLogout;
+  context.fetch = () => new Promise((resolve) => { resolveLogout = resolve; });
+
+  const pendingLogout = context.archiveSessionClient.logoutArchiveUser();
+  context.archiveSessionClient.setServiceMode("online");
+  resolveLogout({ ok: true, status: 200, json: async () => ({ ok: true }) });
+
+  await assert.rejects(pendingLogout, /登录状态已变化/);
+  const current = context.archiveSessionClient.current();
+  assert.equal(current.serviceUrl, "/api/archive");
+  assert.equal(current.user, null);
+  assert.equal(current.csrfToken, "");
+});
+
+test("successful login and logout still apply the verified session state", async () => {
+  const context = createArchiveSessionClient();
+  context.fetch = async (url) => url.endsWith("/auth/login")
+    ? { ok: true, status: 200, json: async () => ({ ok: true, user: { id: 9, username: "current-user", role: "member" }, csrf_token: "current-csrf-token" }) }
+    : { ok: true, status: 200, json: async () => ({ ok: true }) };
+
+  await context.archiveSessionClient.loginArchiveUser("current-user", "password");
+  assert.equal(context.archiveSessionClient.current().user.username, "current-user");
+  assert.equal(context.archiveSessionClient.current().csrfToken, "current-csrf-token");
+
+  await context.archiveSessionClient.logoutArchiveUser();
+  assert.equal(context.archiveSessionClient.current().required, true);
+  assert.equal(context.archiveSessionClient.current().user, null);
+  assert.equal(context.archiveSessionClient.current().csrfToken, "");
 });
