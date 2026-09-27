@@ -38,7 +38,13 @@ for (const name of [
 for (const [name, options, message] of [
   ["UPSTREAM_TIMEOUT_MS", { min: 1000, max: 2147483647 }, "UPSTREAM_TIMEOUT_MS 必须是 1000-2147483647 之间的整数"],
   ["UPSTREAM_RETRIES", { min: 0, max: 3 }, "UPSTREAM_RETRIES 必须是 0-3 的整数"],
-  ["CACHE_TTL_MS", { min: 0 }, "CACHE_TTL_MS 必须是非负整数"]
+  ["CACHE_TTL_MS", { min: 0 }, "CACHE_TTL_MS 必须是非负整数"],
+  ["OCR_TIMEOUT_MS", { min: 1, max: 2147483647 }, "OCR_TIMEOUT_MS 必须是 1-2147483647 之间的整数"],
+  ["OCR_READINESS_TIMEOUT_MS", { min: 1, max: 2147483647 }, "OCR_READINESS_TIMEOUT_MS 必须是 1-2147483647 之间的整数"],
+  ["OCR_MAX_CONCURRENCY", { min: 1 }, "OCR_MAX_CONCURRENCY 必须是正整数"],
+  ["LLM_TIMEOUT_MS", { min: 1, max: 2147483647 }, "LLM_TIMEOUT_MS 必须是 1-2147483647 之间的整数"],
+  ["LLM_MAX_CONCURRENCY", { min: 1 }, "LLM_MAX_CONCURRENCY 必须是正整数"],
+  ["LLM_CACHE_TTL_MS", { min: 0 }, "LLM_CACHE_TTL_MS 必须是非负整数"]
 ]) {
   const rawValue = process.env[name];
   if (rawValue === undefined || !String(rawValue).trim()) continue;

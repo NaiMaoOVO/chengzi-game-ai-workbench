@@ -569,6 +569,26 @@ test("hotspot and comment services reject invalid cache and upstream settings be
   }
 });
 
+test("OCR and LLM services reject invalid timeouts, concurrency, and cache settings before listening", () => {
+  const invalidConfigs = [
+    ["ocr-server.js", { OCR_PROVIDER: "remote", OCR_TIMEOUT_MS: "-1" }, /OCR_TIMEOUT_MS must be an integer/],
+    ["ocr-server.js", { OCR_PROVIDER: "remote", OCR_MAX_CONCURRENCY: "Infinity" }, /OCR_MAX_CONCURRENCY must be an integer/],
+    ["llm-server.js", { LLM_TIMEOUT_MS: "-1" }, /LLM_TIMEOUT_MS must be an integer/],
+    ["llm-server.js", { LLM_CACHE_TTL_MS: "Infinity" }, /LLM_CACHE_TTL_MS must be an integer/]
+  ];
+
+  for (const [script, extraEnv, message] of invalidConfigs) {
+    const result = spawnSync(process.execPath, [path.join(projectRoot, script)], {
+      cwd: projectRoot,
+      env: { ...process.env, ...extraEnv },
+      encoding: "utf8",
+      timeout: 3000
+    });
+    assert.equal(result.status, 1, `${script} unexpectedly started with invalid config`);
+    assert.match(result.stderr, message);
+  }
+});
+
 test("archive: identity, malformed Host -> 400, disallowed Origin -> 403, wrong method/bad JSON guards", async () => {
   await withGuardedService("archive-server.js", "ARCHIVE_PORT", {
     ARCHIVE_DB_PATH: path.join(require("node:os").tmpdir(), `gameops-archive-guard-${Date.now()}.db`),
