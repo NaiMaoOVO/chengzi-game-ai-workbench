@@ -408,9 +408,9 @@ server.on("error", (error) => {
   process.exit(1);
 });
 
-// 慢速请求显式上限：与 hotspot 保持一致的防御默认值。
-server.headersTimeout = Math.max(UPSTREAM_TIMEOUT_MS, 10000);
-server.requestTimeout = Math.max(UPSTREAM_TIMEOUT_MS + 5000, 30000);
+// 限制客户端入站耗时；上游接口超时只控制服务器发出的请求。
+server.headersTimeout = 10000;
+server.requestTimeout = 60000;
 
 server.listen(PORT, "127.0.0.1", () => {
   console.log(`Comment service running at http://127.0.0.1:${PORT}`);

@@ -5,7 +5,7 @@ const path = require("node:path");
 
 const root = path.resolve(__dirname, "..");
 
-test("LLM upstream timeout cannot extend the inbound HTTP request timeout", () => {
+function readServerTimeouts(entrypoint, env) {
   const probe = `
     const http = require("node:http");
     const createServer = http.createServer;
@@ -13,18 +13,29 @@ test("LLM upstream timeout cannot extend the inbound HTTP request timeout", () =
       const server = createServer(...args);
       server.listen = function () {
         process.stdout.write(JSON.stringify({ requestTimeout: this.requestTimeout, headersTimeout: this.headersTimeout }));
-        return this;
+        process.exit(0);
       };
       return server;
     };
-    require("./llm-server.js");
+    require("./${entrypoint}");
   `;
   const result = spawnSync(process.execPath, ["-e", probe], {
     cwd: root,
-    env: { ...process.env, LLM_PORT: "19537", LLM_TIMEOUT_MS: "600000" },
+    env: { ...process.env, NODE_ENV: "development", ...env },
     encoding: "utf8"
   });
 
   assert.equal(result.status, 0, result.stderr || result.stdout);
-  assert.deepEqual(JSON.parse(result.stdout), { requestTimeout: 60000, headersTimeout: 10000 });
-});
+  return JSON.parse(result.stdout);
+}
+
+for (const { name, entrypoint, env, expected } of [
+  { name: "hotspot", entrypoint: "hotspot-server.js", env: { HOTSPOT_PORT: "19531", UPSTREAM_TIMEOUT_MS: "600000" }, expected: { requestTimeout: 60000, headersTimeout: 10000 } },
+  { name: "comment", entrypoint: "comment-server.js", env: { COMMENT_PORT: "19532", UPSTREAM_TIMEOUT_MS: "600000" }, expected: { requestTimeout: 60000, headersTimeout: 10000 } },
+  { name: "OCR", entrypoint: "ocr-server.js", env: { PORT: "19533", OCR_PROVIDER: "remote", OCR_TIMEOUT_MS: "600000" }, expected: { requestTimeout: 120000, headersTimeout: 10000 } },
+  { name: "LLM", entrypoint: "llm-server.js", env: { LLM_PORT: "19534", LLM_TIMEOUT_MS: "600000" }, expected: { requestTimeout: 60000, headersTimeout: 10000 } }
+]) {
+  test(`${name} upstream timeout cannot extend inbound HTTP limits`, () => {
+    assert.deepEqual(readServerTimeouts(entrypoint, env), expected);
+  });
+}

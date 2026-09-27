@@ -619,9 +619,9 @@ server.on("error", (error) => {
   process.exit(1);
 });
 
-// 慢速请求显式上限：头部等待与请求体耗时不超过上游超时太多，避免依赖 Node 默认的 60s/300s。
-server.headersTimeout = Math.max(UPSTREAM_TIMEOUT_MS, 10000);
-server.requestTimeout = Math.max(UPSTREAM_TIMEOUT_MS + 5000, 30000);
+// 限制客户端入站耗时；上游提供器超时只控制服务器发出的请求。
+server.headersTimeout = 10000;
+server.requestTimeout = 60000;
 
 server.listen(PORT, "127.0.0.1", () => {
   console.log(`Hotspot service running at http://127.0.0.1:${PORT}`);

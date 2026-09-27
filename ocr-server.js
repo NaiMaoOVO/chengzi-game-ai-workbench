@@ -490,8 +490,8 @@ const server = http.createServer((request, response) => {
   });
 });
 
-server.requestTimeout = Math.max(OCR_TIMEOUT_MS + 5000, 60000);
-server.headersTimeout = Math.min(OCR_TIMEOUT_MS, 60000);
+server.requestTimeout = 120000;
+server.headersTimeout = 10000;
 
 server.listen(PORT, "127.0.0.1", () => {
   console.log(`🖼  OCR 服务已启动 → http://127.0.0.1:${PORT}`);
