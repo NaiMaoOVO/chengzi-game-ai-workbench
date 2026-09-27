@@ -27,6 +27,10 @@ test("archive login rejects out-of-range passwords before running scrypt", () =>
       assert.equal(scryptCalls, 0);
       assert.ok(auth.login({ username: "known-member", password }));
       assert.equal(scryptCalls, 1);
+      assert.equal(auth.login({ username: "known-member", password: "incorrect-member-password" }), null);
+      assert.equal(scryptCalls, 2);
+      assert.equal(auth.login({ username: "missing-member", password: "incorrect-member-password" }), null);
+      assert.equal(scryptCalls, 3);
     } finally {
       crypto.scryptSync = originalScrypt;
     }
