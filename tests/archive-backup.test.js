@@ -7,7 +7,7 @@ const http = require("node:http");
 const os = require("node:os");
 const path = require("node:path");
 const { DatabaseSync } = require("node:sqlite");
-const { assertSafeArchiveBackupDirectory, sha256File } = require("../lib/archive-backup");
+const { assertSafeArchiveBackupDirectory, sha256File, verifyArchiveBackup } = require("../lib/archive-backup");
 
 const root = path.resolve(__dirname, "..");
 
@@ -175,6 +175,27 @@ test("archive backup verification rejects a checksum-valid non-SQLite file", () 
   assert.equal(result.status, 1);
   assert.match(result.stderr, /SQLite|完整性|校验失败/);
   fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test("archive backup verification rejects oversized checksum metadata before reading it", (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "gameops-backup-checksum-size-test-"));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const file = path.join(dir, "archive-large-checksum.db");
+  fs.writeFileSync(file, "not a sqlite database");
+  const checksumPath = file + ".sha256";
+  fs.writeFileSync(checksumPath, "x".repeat(1024 * 1024));
+  const originalReadFileSync = fs.readFileSync;
+  let checksumRead = false;
+  fs.readFileSync = function trackedReadFileSync(target, ...args) {
+    if (target === checksumPath) checksumRead = true;
+    return originalReadFileSync.call(this, target, ...args);
+  };
+  try {
+    assert.throws(() => verifyArchiveBackup(file), /校验文件过大/);
+    assert.equal(checksumRead, false, "oversized checksum content must not be loaded into memory");
+  } finally {
+    fs.readFileSync = originalReadFileSync;
+  }
 });
 
 test("archive backup verification binds the checksum to the target filename", () => {
