@@ -459,6 +459,20 @@ test("ocr: rejects a non-HTTP remote URL even when insecure remote transport is 
   });
 });
 
+test("ocr: normalizes provider case and surrounding whitespace before readiness", async () => {
+  await withGuardedService("ocr-server.js", "PORT", {
+    OCR_PROVIDER: " REMOTE ",
+    OCR_REMOTE_URL: "http://127.0.0.1:1"
+  }, async (port) => {
+    const response = await httpRequest(port, "/ready");
+    const readiness = JSON.parse(response.text);
+
+    assert.equal(response.status, 200);
+    assert.equal(readiness.provider, "remote");
+    assert.equal(readiness.providerConfigured, true);
+  });
+});
+
 test("llm: identity, disallowed Origin -> 403, bad bodies -> 400, exceeding limit -> 429 + Retry-After", async () => {
   await withGuardedService("llm-server.js", "LLM_PORT", {
     LLM_API_KEY: "contract-test-key",
