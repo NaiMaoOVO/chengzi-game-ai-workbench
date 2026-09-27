@@ -180,6 +180,35 @@ test("missing required fields return per-field 400 messages", async () => {
   assert.match(JSON.parse(missingTitle.text).error, /title/);
 });
 
+test("publication dates and text limits reject invalid input without taking down the service", async () => {
+  const invalidDates = ["yesterday", "2026-02-30", "2026-02-30T10:00:00.000Z", 20260903];
+  for (const published_at of invalidDates) {
+    const response = await postPublication({ game: "鸣潮", title: "日期校验", channel: "B站", published_at });
+    assert.equal(response.status, 400);
+    assert.match(JSON.parse(response.text).error, /published_at/);
+    assert.equal((await httpRequest("/health")).status, 200, "bad input must not terminate the archive service");
+  }
+
+  const overlongTitle = await postPublication({ game: "鸣潮", title: "标".repeat(201), channel: "B站" });
+  assert.equal(overlongTitle.status, 400);
+  assert.match(JSON.parse(overlongTitle.text).error, /title/);
+  assert.equal((await httpRequest("/health")).status, 200, "text validation errors must not terminate the archive service");
+
+  const calendarDate = await postPublication({ game: "鸣潮", title: "日期格式", channel: "B站", published_at: "2024-02-29" });
+  assert.equal(calendarDate.status, 201);
+  assert.equal(JSON.parse(calendarDate.text).publication.published_at, "2024-02-29");
+
+  const created = JSON.parse(calendarDate.text).publication;
+  const badUpdate = await httpRequest("/publications/" + created.id, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ published_at: "2026-02-30" })
+  });
+  assert.equal(badUpdate.status, 400);
+  const listed = JSON.parse((await httpRequest("/publications?game=" + encodeURIComponent("鸣潮"))).text);
+  assert.equal(listed.items.find((item) => item.id === created.id).published_at, "2024-02-29");
+});
+
 test("malformed JSON bodies are rejected with 400", async () => {
   const badPost = await httpRequest("/publications", {
     method: "POST",

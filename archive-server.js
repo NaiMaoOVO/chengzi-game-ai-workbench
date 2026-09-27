@@ -501,6 +501,19 @@ function isCalendarDate(value) {
   return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day;
 }
 
+function publicationDateValue(value, fallback = null) {
+  if (value === undefined) return fallback;
+  if (value === null) return null;
+  if (typeof value !== "string") throw new Error("published_at 不合法（格式：YYYY-MM-DD 或 ISO 日期时间）");
+  const text = value.trim();
+  if (!text) return null;
+  if (text.length > 80) throw new Error("published_at 不能超过 80 个字符");
+  if (isCalendarDate(text)) return text;
+  const timestamp = /^(\d{4}-\d{2}-\d{2})T/.exec(text);
+  if (timestamp && isCalendarDate(timestamp[1]) && Number.isFinite(Date.parse(text))) return text;
+  throw new Error("published_at 不合法（格式：YYYY-MM-DD 或 ISO 日期时间）");
+}
+
 function validateDailyTodo(body, current) {
   const title = textValue(body?.title, "title", 200, current?.title || "");
   if (!title) throw new Error("title 必填");
@@ -834,7 +847,7 @@ const server = http.createServer((request, response) => {
           textValue(body.channel, "channel", 60, current.channel) || current.channel,
           textValue(body.url, "url", 2048, current.url),
           textValue(body.related_topic, "related_topic", 200, current.related_topic),
-          textValue(body.published_at, "published_at", 80, current.published_at),
+          publicationDateValue(body.published_at, current.published_at),
           Object.hasOwn(body, "metrics_json") ? serializeMetrics(body.metrics_json) : current.metrics_json,
           new Date().toISOString(),
           id,
@@ -871,9 +884,19 @@ const server = http.createServer((request, response) => {
         sendJson(request, response, 400, { ok: false, error: "请求体不是合法 JSON" });
         return;
       }
-      const game = textValue(body?.game, "game", 60);
-      const title = textValue(body?.title, "title", 200);
-      const channel = textValue(body?.channel, "channel", 60);
+      let game;
+      let title;
+      let channel;
+      let publishedAt;
+      try {
+        game = textValue(body?.game, "game", 60);
+        title = textValue(body?.title, "title", 200);
+        channel = textValue(body?.channel, "channel", 60);
+        publishedAt = publicationDateValue(body?.published_at);
+      } catch (error) {
+        sendJson(request, response, 400, { ok: false, error: error.message });
+        return;
+      }
       const missing = [!game && "game", !title && "title", !channel && "channel"].filter(Boolean);
       if (missing.length) {
         sendJson(request, response, 400, { ok: false, error: "缺少必填字段：" + missing.join("、") });
@@ -910,7 +933,7 @@ const server = http.createServer((request, response) => {
           channel,
           textValue(body?.url, "url", 2048),
           textValue(body?.related_topic, "related_topic", 200),
-          textValue(body?.published_at, "published_at", 80) || null,
+          publishedAt,
           metricsJson,
           requestId,
           now,
