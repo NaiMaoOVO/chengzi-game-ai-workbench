@@ -9,14 +9,17 @@ const functionEnd = utils.indexOf("\nconst PROJECT_STORAGE_KEY", functionStart);
 const archiveSessionFunctions = utils.slice(functionStart, functionEnd);
 
 function createArchiveSessionClient() {
+  const registeredListeners = {};
+  const localStorageWrites = [];
   const context = {
     ARCHIVE_SERVICE_URL: "/api/archive",
     Headers,
     fetch: async () => ({ ok: true, status: 200, json: async () => ({}) }),
     window: {
-      localStorage: { getItem: () => "local", setItem() {} },
+      localStorage: { getItem: () => "local", setItem: (key, value) => localStorageWrites.push({ key, value }) },
       sessionStorage: { setItem() {}, removeItem() {} },
-      location: { protocol: "file:", hostname: "" }
+      location: { protocol: "file:", hostname: "" },
+      addEventListener: (type, listener) => { registeredListeners[type] = listener; }
     },
     document: { dispatchEvent() {} },
     CustomEvent: class CustomEvent {
@@ -29,6 +32,7 @@ function createArchiveSessionClient() {
 
   vm.runInNewContext(`
     const SERVICE_MODE_STORAGE_KEY = "gameops-service-mode-v1";
+    const ARCHIVE_SESSION_CHANGE_KEY = "gameops-archive-session-change-v1";
     const SERVICE_URL_PRESETS = {
       local: { ocr: "local-ocr", hotspot: "local-hotspot", comment: "local-comment", launcher: "local-launcher", llm: "local-llm", archive: "http://127.0.0.1:8796", xiaohongshu: "local-xhs" },
       online: { ocr: "/api/ocr", hotspot: "/api/hotspot", comment: "/api/comment", launcher: "", llm: "/api/llm", archive: "/api/archive", xiaohongshu: "/api/xiaohongshu" }
@@ -55,6 +59,8 @@ function createArchiveSessionClient() {
       current: () => ({ required: archiveAuthRequired, user: archiveSessionUser, csrfToken: archiveCsrfToken, serviceUrl: ARCHIVE_SERVICE_URL })
     };
   `, context);
+  context.archiveSessionListeners = registeredListeners;
+  context.localStorageWrites = localStorageWrites;
   return context;
 }
 
@@ -234,4 +240,60 @@ test("successful login and logout still apply the verified session state", async
   assert.equal(context.archiveSessionClient.current().required, true);
   assert.equal(context.archiveSessionClient.current().user, null);
   assert.equal(context.archiveSessionClient.current().csrfToken, "");
+  assert.equal(context.localStorageWrites.length, 2);
+  assert.ok(context.localStorageWrites.every((entry) => entry.key === "gameops-archive-session-change-v1"));
+  assert.doesNotMatch(JSON.stringify(context.localStorageWrites), /current-user|current-csrf-token|password/);
+});
+
+test("an account change in another tab refreshes this tab to the new account", async () => {
+  const context = createArchiveSessionClient();
+  seedVerifiedLogin(context);
+  let requestedUrl = "";
+  context.fetch = async (url) => {
+    requestedUrl = url;
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({ auth_required: true, user: { id: 8, username: "other-user", role: "member" }, csrf_token: "other-user-csrf" })
+    };
+  };
+
+  await context.archiveSessionListeners.storage({ key: "gameops-archive-session-change-v1", newValue: "opaque-change-marker" });
+
+  const current = context.archiveSessionClient.current();
+  assert.match(requestedUrl, /\/auth\/session$/);
+  assert.equal(current.user.username, "other-user");
+  assert.equal(current.csrfToken, "other-user-csrf");
+});
+
+test("a logout in another tab clears this tab after the server confirms 401", async () => {
+  const context = createArchiveSessionClient();
+  seedVerifiedLogin(context);
+  context.fetch = async () => ({ ok: false, status: 401, json: async () => ({ error: "unauthorized" }) });
+
+  await context.archiveSessionListeners.storage({ key: "gameops-archive-session-change-v1", newValue: "opaque-change-marker" });
+
+  const current = context.archiveSessionClient.current();
+  assert.equal(current.required, true);
+  assert.equal(current.user, null);
+  assert.equal(current.csrfToken, "");
+});
+
+test("a service mode change in another tab applies the new endpoint before revalidation", async () => {
+  const context = createArchiveSessionClient();
+  seedVerifiedLogin(context);
+  let requestedUrl = "";
+  context.fetch = async (url) => {
+    requestedUrl = url;
+    return { ok: true, status: 200, json: async () => ({ ok: true, auth_required: true, user: null }) };
+  };
+
+  await context.archiveSessionListeners.storage({ key: "gameops-service-mode-v1", newValue: "online" });
+
+  const current = context.archiveSessionClient.current();
+  assert.equal(requestedUrl, "/api/archive/auth/session");
+  assert.equal(current.serviceUrl, "/api/archive");
+  assert.equal(current.required, true);
+  assert.equal(current.user, null);
+  assert.equal(current.csrfToken, "");
 });

@@ -8,6 +8,7 @@
  ============================================================ */
 
 const SERVICE_MODE_STORAGE_KEY = "gameops-service-mode-v1";
+const ARCHIVE_SESSION_CHANGE_KEY = "gameops-archive-session-change-v1";
 const SERVICE_URL_PRESETS = {
   local: {
     ocr: "http://127.0.0.1:8787",
@@ -62,6 +63,12 @@ function archiveRequest(url, options = {}) {
   return fetch(url, { ...options, headers, credentials: "same-origin" });
 }
 
+function notifyArchiveSessionChanged() {
+  try {
+    window.localStorage?.setItem(ARCHIVE_SESSION_CHANGE_KEY, Date.now() + "-" + Math.random().toString(36).slice(2));
+  } catch (_error) { /* Cross-tab notification is optional when browser storage is unavailable. */ }
+}
+
 async function refreshArchiveSession() {
   const generation = ++archiveSessionRefreshGeneration;
   const contextGeneration = archiveSessionContextGeneration;
@@ -88,7 +95,9 @@ async function loginArchiveUser(username, password) {
   const payload = await response.json().catch(() => ({}));
   if (contextGeneration !== archiveSessionContextGeneration) throw new Error("登录状态已变化，登录结果未应用，请重试");
   if (!response.ok || !payload.ok) throw new Error(payload.error || "登录失败");
-  return setArchiveSession({ auth_required: true, ...payload });
+  const session = setArchiveSession({ auth_required: true, ...payload });
+  notifyArchiveSessionChanged();
+  return session;
 }
 
 async function logoutArchiveUser() {
@@ -96,7 +105,9 @@ async function logoutArchiveUser() {
   const response = await archiveRequest(ARCHIVE_SERVICE_URL + "/auth/logout", { method: "POST" });
   if (contextGeneration !== archiveSessionContextGeneration) throw new Error("登录状态已变化，退出结果未应用，请重试");
   if (!response.ok) throw new Error("退出登录失败");
-  return setArchiveSession({ auth_required: true });
+  const session = setArchiveSession({ auth_required: true });
+  notifyArchiveSessionChanged();
+  return session;
 }
 
 function inferDefaultServiceMode() {
@@ -158,6 +169,21 @@ function applyServiceMode(mode = getServiceMode()) {
   XHS_SERVICE_URL = urls.xiaohongshu || "";
   return mode;
 }
+
+function handleArchiveStorageChange(event) {
+  if (event?.key === ARCHIVE_SESSION_CHANGE_KEY) return refreshArchiveSession();
+  if (event?.key !== SERVICE_MODE_STORAGE_KEY) return;
+  const nextMode = event.newValue === "online" || event.newValue === "local"
+    ? event.newValue
+    : inferDefaultServiceMode();
+  if (ARCHIVE_SERVICE_URL === SERVICE_URL_PRESETS[nextMode]?.archive) return;
+  applyServiceMode(nextMode);
+  archiveSessionContextGeneration += 1;
+  setArchiveSession({});
+  return refreshArchiveSession();
+}
+
+if (typeof window !== "undefined") window.addEventListener?.("storage", handleArchiveStorageChange);
 
 applyServiceMode();
 
