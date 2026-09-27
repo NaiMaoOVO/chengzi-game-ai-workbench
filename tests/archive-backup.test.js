@@ -488,6 +488,39 @@ test("archive restore refuses dangling SQLite sidecar symlinks before replacing 
   assert.equal(fs.readdirSync(dir).some((name) => name.includes("pre-restore")), false);
 });
 
+test("archive restore refuses a symlink database path without replacing the link target", (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "gameops-backup-restore-db-link-test-"));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const databaseTargetPath = path.join(dir, "actual-archive.db");
+  const databasePath = path.join(dir, "archive.db");
+  const backupSourcePath = path.join(dir, "backup-source.db");
+  const backupDir = path.join(dir, "backups");
+  const live = new DatabaseSync(databaseTargetPath);
+  live.exec("CREATE TABLE check_rows (value TEXT NOT NULL); INSERT INTO check_rows VALUES ('keep link target');");
+  live.close();
+  const source = new DatabaseSync(backupSourcePath);
+  source.exec("CREATE TABLE check_rows (value TEXT NOT NULL); INSERT INTO check_rows VALUES ('backup copy');");
+  source.close();
+  const env = { ...process.env, ARCHIVE_DB_PATH: backupSourcePath, ARCHIVE_BACKUP_DIR: backupDir };
+  const backup = spawnSync(process.execPath, [path.join(root, "scripts", "backup-archive.js")], { cwd: root, env, encoding: "utf8" });
+  assert.equal(backup.status, 0, backup.stderr || backup.stdout);
+  const backupFile = path.join(backupDir, fs.readdirSync(backupDir).find((name) => /^archive-.*\.db$/.test(name)));
+  fs.symlinkSync(databaseTargetPath, databasePath);
+
+  const result = spawnSync(process.execPath, [path.join(root, "scripts", "restore-archive-backup.js"), backupFile, "--service-stopped"], {
+    cwd: root,
+    env: { ...env, ARCHIVE_DB_PATH: databasePath, ARCHIVE_PORT: "19720" },
+    encoding: "utf8"
+  });
+  assert.equal(result.status, 1, result.stdout);
+  assert.match(result.stderr, /符号链接/);
+  assert.equal(fs.lstatSync(databasePath).isSymbolicLink(), true);
+  const stillLive = new DatabaseSync(databaseTargetPath, { readOnly: true });
+  assert.equal(stillLive.prepare("SELECT value FROM check_rows").get().value, "keep link target");
+  stillLive.close();
+  assert.equal(fs.readdirSync(dir).some((name) => name.includes("pre-restore")), false);
+});
+
 test("archive file hashing streams large files through a bounded buffer", () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "gameops-backup-hash-test-"));
   const file = path.join(dir, "large-backup.db");
