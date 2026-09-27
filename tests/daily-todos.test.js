@@ -4,9 +4,11 @@ const { spawn } = require("node:child_process");
 const http = require("node:http");
 const os = require("node:os");
 const path = require("node:path");
+const { DatabaseSync } = require("node:sqlite");
 
 const projectRoot = path.resolve(__dirname, "..");
 const PORT = 19712;
+const databasePath = path.join(os.tmpdir(), "gameops-daily-todos-" + process.pid + "-" + Date.now() + ".db");
 
 function httpRequest(requestPath, options) {
   const { method = "GET", headers = {}, body = null } = options || {};
@@ -46,7 +48,7 @@ const child = spawn(process.execPath, [path.join(projectRoot, "archive-server.js
   env: {
     ...process.env,
     ARCHIVE_PORT: String(PORT),
-    ARCHIVE_DB_PATH: path.join(os.tmpdir(), "gameops-daily-todos-" + process.pid + "-" + Date.now() + ".db"),
+    ARCHIVE_DB_PATH: databasePath,
     MORNING_GAMES: ""
   },
   stdio: ["ignore", "pipe", "pipe"]
@@ -207,4 +209,22 @@ test("daily todo retries with one idempotency key create only one row", async ()
   assert.equal(secondPayload.daily_todo.id, firstTodo.id);
   const listed = JSON.parse((await httpRequest("/daily-todos?game=" + encodeURIComponent("鸣潮"))).text);
   assert.equal(listed.items.filter((item) => item.title === "网络重试不能重复创建").length, 1);
+});
+
+test("daily todo create storage errors return 500 without leaking database details", async () => {
+  const db = new DatabaseSync(databasePath);
+  db.exec("CREATE TRIGGER reject_daily_todo_insert BEFORE INSERT ON daily_todos BEGIN SELECT RAISE(ABORT, 'blocked'); END;");
+  db.close();
+
+  const response = await httpRequest("/daily-todos", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "Idempotency-Key": "daily-storage-failure-20260927" },
+    body: JSON.stringify({ game: "数据库写故障样本", title: "存储异常保护" })
+  });
+  assert.equal(response.status, 500);
+  assert.deepEqual(JSON.parse(response.text), { ok: false, error: "待办暂时无法保存，请稍后重试" });
+  assert.doesNotMatch(response.text, /blocked|sqlite/i);
+  assert.equal((await httpRequest("/health")).status, 200);
+  const after = JSON.parse((await httpRequest("/daily-todos?game=" + encodeURIComponent("数据库写故障样本"))).text);
+  assert.equal(after.items.length, 0, "失败的创建不应留下待办");
 });

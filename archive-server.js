@@ -1085,9 +1085,16 @@ const server = http.createServer((request, response) => {
         if (Object.hasOwn(body, "link_view") && typeof body.link_view !== "string") throw new Error("link_view 必须为字符串");
         const linkView = typeof body.link_view === "string" && /^[a-z][a-z0-9_-]{0,30}$/.test(body.link_view.trim()) ? body.link_view.trim() : "";
         const next = validateDailyTodo(body, null);
+        const source = textValue(body.source, "source", 60, "manual") || "manual";
         const requestId = requestIdOf(request, body);
         if (requestId) {
-          const existing = findDailyTodoByRequestStatement.get(ownerKey, requestId);
+          let existing;
+          try {
+            existing = findDailyTodoByRequestStatement.get(ownerKey, requestId);
+          } catch (_error) {
+            sendJson(request, response, 500, { ok: false, error: "待办暂时无法保存，请稍后重试" });
+            return;
+          }
           if (existing) {
             sendJson(request, response, 200, { ok: true, daily_todo: existing, idempotent: true });
             return;
@@ -1096,15 +1103,27 @@ const server = http.createServer((request, response) => {
         const now = new Date().toISOString();
         let info;
         try {
-          const source = textValue(body.source, "source", 60, "manual") || "manual";
           info = insertDailyTodoStatement.run(ownerKey, game, next.title, next.priority, next.status, next.dueDate, next.notes, source, linkView, requestId, now, now);
-        } catch (error) {
-          const existing = requestId ? findDailyTodoByRequestStatement.get(ownerKey, requestId) : null;
-          if (!existing) throw error;
+        } catch (_error) {
+          let existing = null;
+          try {
+            if (requestId) existing = findDailyTodoByRequestStatement.get(ownerKey, requestId);
+          } catch (_lookupError) {
+            // The write outcome cannot be confirmed; report storage failure rather than crashing or guessing.
+          }
+          if (!existing) {
+            sendJson(request, response, 500, { ok: false, error: "待办暂时无法保存，请稍后重试" });
+            return;
+          }
           sendJson(request, response, 200, { ok: true, daily_todo: existing, idempotent: true });
           return;
         }
-        sendJson(request, response, 201, { ok: true, daily_todo: getDailyTodoStatement.get(Number(info.lastInsertRowid), ownerKey) });
+        try {
+          const dailyTodo = getDailyTodoStatement.get(Number(info.lastInsertRowid), ownerKey);
+          sendJson(request, response, 201, { ok: true, daily_todo: dailyTodo });
+        } catch (_error) {
+          sendJson(request, response, 500, { ok: false, error: "待办已提交，但暂时无法读取，请稍后重试" });
+        }
       } catch (error) {
         sendJson(request, response, 400, { ok: false, error: error.message });
       }
