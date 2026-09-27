@@ -73,7 +73,9 @@ test("deployment check rejects malformed, insecure and local public origins", ()
     "not-a-url",
     "http://gameops.test",
     "https://localhost",
+    "https://localhost.",
     "https://127.0.0.1:8793",
+    "https://127.0.0.1.:8793",
     "https://[::1]:8793",
     "https://gameops.test/path",
     "https://gameops.test, http://localhost:8793"

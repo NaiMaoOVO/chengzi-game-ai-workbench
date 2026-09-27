@@ -34,7 +34,7 @@ for (const origin of configuredOrigins) {
   } catch (_error) {
     throw new Error(allowedOriginError);
   }
-  const host = parsedOrigin.hostname.replace(/^\[|\]$/g, "").toLowerCase();
+  const host = parsedOrigin.hostname.replace(/^\[|\]$/g, "").toLowerCase().replace(/\.+$/, "");
   const ipVersion = isIP(host);
   const isLoopback = host === "localhost" || host.endsWith(".localhost") ||
     (ipVersion === 4 && host.startsWith("127.")) || (ipVersion === 6 && host === "::1");
