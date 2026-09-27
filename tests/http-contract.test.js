@@ -691,6 +691,30 @@ test("archive: identity, malformed Host -> 400, disallowed Origin -> 403, wrong 
   });
 });
 
+test("archive list endpoints reject partially parsed or unsafe numeric query parameters", async () => {
+  await withGuardedService("archive-server.js", "ARCHIVE_PORT", {
+    ARCHIVE_DB_PATH: path.join(os.tmpdir(), `gameops-archive-list-query-${Date.now()}.db`),
+    MORNING_GAMES: ""
+  }, async (port) => {
+    const invalidPaths = [
+      "/snapshots?kind=feedback&limit=1junk",
+      "/morning-runs?limit=1.5",
+      "/publications?limit=10oops",
+      "/daily-todos?offset=12abc",
+      "/risk-events?offset=9007199254740992",
+      "/stats?days=1.5"
+    ];
+
+    for (const pathValue of invalidPaths) {
+      const response = await httpRequest(port, pathValue);
+      assert.equal(response.status, 400, `${pathValue} should be rejected rather than parsed partially`);
+      assert.match(JSON.parse(response.text).error, /参数必须是安全整数/);
+    }
+
+    assert.equal((await httpRequest(port, "/health")).status, 200, "bad list query parameters must not stop the archive service");
+  });
+});
+
 // 发布台账效果回流：/video-effect 用假上游锁定归一化指标、缓存与防御行为。
 test("comment: /video-effect normalizes stats, caches hits, rejects bad input", async () => {
   const fakeUpstream = http.createServer((req, res) => {

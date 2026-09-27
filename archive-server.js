@@ -355,14 +355,38 @@ const upsertCreatorLibraryStatement = db.prepare("INSERT INTO creator_libraries 
 
 const KIND_PATTERN = /^[a-z][a-z0-9_-]{0,40}$/;
 
+class InvalidQueryParameterError extends Error {
+  constructor(name) {
+    super(`${name} 参数必须是安全整数`);
+    this.name = "InvalidQueryParameterError";
+  }
+}
+
+function integerQuery(url, name, { min, max, defaultValue }) {
+  const raw = url.searchParams.get(name);
+  if (raw === null || raw.trim() === "") return defaultValue;
+  const normalized = raw.trim();
+  if (!/^[+-]?\d+$/.test(normalized)) throw new InvalidQueryParameterError(name);
+  const value = Number(normalized);
+  if (!Number.isSafeInteger(value)) throw new InvalidQueryParameterError(name);
+  return Math.min(max, Math.max(min, value));
+}
+
+function sendArchiveReadError(request, response, error, fallback) {
+  const invalidQuery = error instanceof InvalidQueryParameterError;
+  sendJson(request, response, invalidQuery ? 400 : 500, {
+    ok: false,
+    error: invalidQuery ? error.message : fallback
+  });
+}
+
 function snapshotKindOf(url) {
   const kind = (url.searchParams.get("kind") || "").trim();
   return KIND_PATTERN.test(kind) ? kind : null;
 }
 
 function listSnapshots(url, ownerKey, kind) {
-  const limitRaw = Number.parseInt(url.searchParams.get("limit"), 10);
-  const limit = Number.isFinite(limitRaw) ? Math.min(50, Math.max(1, limitRaw)) : 20;
+  const limit = integerQuery(url, "limit", { min: 1, max: 50, defaultValue: 20 });
   const game = (url.searchParams.get("game") || "").trim();
   const rows = game
     ? db.prepare("SELECT id, kind, game, source, payload, created_at FROM snapshots WHERE owner_key = ? AND kind = ? AND game = ? ORDER BY id DESC LIMIT ?").all(ownerKey, kind, game, limit)
@@ -438,10 +462,8 @@ function listPublications(url, ownerKey) {
   if (game) { filters.push("game = ?"); params.push(game); }
   if (channel) { filters.push("channel = ?"); params.push(channel); }
   const whereSql = filters.length ? " WHERE " + filters.join(" AND ") : "";
-  const limitRaw = Number.parseInt(url.searchParams.get("limit"), 10);
-  const limit = Number.isFinite(limitRaw) ? Math.min(200, Math.max(1, limitRaw)) : 20;
-  const offsetRaw = Number.parseInt(url.searchParams.get("offset"), 10);
-  const offset = Number.isFinite(offsetRaw) ? Math.max(0, offsetRaw) : 0;
+  const limit = integerQuery(url, "limit", { min: 1, max: 200, defaultValue: 20 });
+  const offset = integerQuery(url, "offset", { min: 0, max: Number.MAX_SAFE_INTEGER, defaultValue: 0 });
   const total = db.prepare("SELECT COUNT(*) AS count FROM publications" + whereSql).get(...params).count;
   const rows = db.prepare("SELECT id, game, title, channel, url, related_topic, published_at, metrics_json, created_at, updated_at FROM publications" + whereSql + " ORDER BY id DESC LIMIT ? OFFSET ?").all(...params, limit, offset);
   return { items: rows.map(formatPublication), total };
@@ -496,10 +518,8 @@ function listDailyTodos(url, ownerKey) {
   if (status) { filters.push("status = ?"); params.push(status); }
   if (dueDate) { filters.push("(due_date IS NULL OR due_date = ?)"); params.push(dueDate); }
   const whereSql = filters.length ? " WHERE " + filters.join(" AND ") : "";
-  const limitRaw = Number.parseInt(url.searchParams.get("limit"), 10);
-  const limit = Number.isFinite(limitRaw) ? Math.min(200, Math.max(1, limitRaw)) : 50;
-  const offsetRaw = Number.parseInt(url.searchParams.get("offset"), 10);
-  const offset = Number.isFinite(offsetRaw) ? Math.max(0, offsetRaw) : 0;
+  const limit = integerQuery(url, "limit", { min: 1, max: 200, defaultValue: 50 });
+  const offset = integerQuery(url, "offset", { min: 0, max: Number.MAX_SAFE_INTEGER, defaultValue: 0 });
   const total = db.prepare("SELECT COUNT(*) AS count FROM daily_todos" + whereSql).get(...params).count;
   const rows = db.prepare("SELECT id, game, title, priority, status, due_date, completed_at, notes, source, link_view, created_at, updated_at FROM daily_todos" + whereSql + " ORDER BY CASE status WHEN 'open' THEN 0 ELSE 1 END, CASE priority WHEN 'high' THEN 0 WHEN 'medium' THEN 1 ELSE 2 END, id DESC LIMIT ? OFFSET ?").all(...params, limit, offset);
   return { items: rows, total };
@@ -570,18 +590,15 @@ function listRiskEvents(url, ownerKey) {
   if (status) { filters.push("status = ?"); params.push(status); }
   if (level) { filters.push("level = ?"); params.push(level); }
   const whereSql = filters.length ? " WHERE " + filters.join(" AND ") : "";
-  const limitRaw = Number.parseInt(url.searchParams.get("limit"), 10);
-  const limit = Number.isFinite(limitRaw) ? Math.min(200, Math.max(1, limitRaw)) : 20;
-  const offsetRaw = Number.parseInt(url.searchParams.get("offset"), 10);
-  const offset = Number.isFinite(offsetRaw) ? Math.max(0, offsetRaw) : 0;
+  const limit = integerQuery(url, "limit", { min: 1, max: 200, defaultValue: 20 });
+  const offset = integerQuery(url, "offset", { min: 0, max: Number.MAX_SAFE_INTEGER, defaultValue: 0 });
   const total = db.prepare("SELECT COUNT(*) AS count FROM risk_events" + whereSql).get(...params).count;
   const rows = db.prepare("SELECT id, game, title, source, url, detail, level, status, notes, created_at, updated_at FROM risk_events" + whereSql + " ORDER BY id DESC LIMIT ? OFFSET ?").all(...params, limit, offset);
   return { items: rows, total };
 }
 
 function listMorningRuns(url, ownerKey) {
-  const limitRaw = Number.parseInt(url.searchParams.get("limit"), 10);
-  const limit = Number.isFinite(limitRaw) ? Math.min(50, Math.max(1, limitRaw)) : 20;
+  const limit = integerQuery(url, "limit", { min: 1, max: 50, defaultValue: 20 });
   const rows = db.prepare("SELECT run_date, game, platform, status, started_at, finished_at, error FROM morning_runs WHERE owner_key = ? ORDER BY run_date DESC, started_at DESC LIMIT ?").all(ownerKey, limit);
   return { items: rows };
 }
@@ -783,27 +800,27 @@ const server = http.createServer((request, response) => {
     }
     try {
       sendJson(request, response, 200, { ok: true, items: listSnapshots(url, ownerKey, kind) });
-    } catch (_error) {
-      sendJson(request, response, 500, { ok: false, error: "快照暂时无法读取，请稍后重试" });
+    } catch (error) {
+      sendArchiveReadError(request, response, error, "快照暂时无法读取，请稍后重试");
     }
     return;
   }
   if (request.method === "GET" && url.pathname === "/stats") {
     try {
       const kind = url.searchParams.get("kind") || "feedback";
-      const days = Math.min(90, Math.max(1, Number.parseInt(url.searchParams.get("days"), 10) || 14));
+      const days = integerQuery(url, "days", { min: 1, max: 90, defaultValue: 14 });
       const game = (url.searchParams.get("game") || "").trim();
       sendJson(request, response, 200, { ok: true, kind, days, series: computeStats(kind, days, game, ownerKey) });
-    } catch (_error) {
-      sendJson(request, response, 500, { ok: false, error: "统计数据暂时无法读取，请稍后重试" });
+    } catch (error) {
+      sendArchiveReadError(request, response, error, "统计数据暂时无法读取，请稍后重试");
     }
     return;
   }
   if (request.method === "GET" && url.pathname === "/morning-runs") {
     try {
       sendJson(request, response, 200, { ok: true, ...listMorningRuns(url, ownerKey) });
-    } catch (_error) {
-      sendJson(request, response, 500, { ok: false, error: "晨报运行记录暂时无法读取，请稍后重试" });
+    } catch (error) {
+      sendArchiveReadError(request, response, error, "晨报运行记录暂时无法读取，请稍后重试");
     }
     return;
   }
@@ -879,8 +896,8 @@ const server = http.createServer((request, response) => {
   if (request.method === "GET" && url.pathname === "/publications") {
     try {
       sendJson(request, response, 200, { ok: true, ...listPublications(url, ownerKey) });
-    } catch (_error) {
-      sendJson(request, response, 500, { ok: false, error: "发布记录暂时无法读取，请稍后重试" });
+    } catch (error) {
+      sendArchiveReadError(request, response, error, "发布记录暂时无法读取，请稍后重试");
     }
     return;
   }
@@ -1083,16 +1100,16 @@ const server = http.createServer((request, response) => {
   if (request.method === "GET" && url.pathname === "/risk-events") {
     try {
       sendJson(request, response, 200, { ok: true, ...listRiskEvents(url, ownerKey) });
-    } catch (_error) {
-      sendJson(request, response, 500, { ok: false, error: "风险事件暂时无法读取，请稍后重试" });
+    } catch (error) {
+      sendArchiveReadError(request, response, error, "风险事件暂时无法读取，请稍后重试");
     }
     return;
   }
   if (request.method === "GET" && url.pathname === "/daily-todos") {
     try {
       sendJson(request, response, 200, { ok: true, ...listDailyTodos(url, ownerKey) });
-    } catch (_error) {
-      sendJson(request, response, 500, { ok: false, error: "待办列表暂时无法读取，请稍后重试" });
+    } catch (error) {
+      sendArchiveReadError(request, response, error, "待办列表暂时无法读取，请稍后重试");
     }
     return;
   }
