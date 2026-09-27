@@ -6,6 +6,15 @@ const path = require("node:path");
 const root = path.join(__dirname, "..");
 
 for (const filename of ["nginx.conf.example", "nginx-https.conf.example"]) {
+  test(`${filename} lets LLM SSE responses stream through Nginx`, () => {
+    const config = fs.readFileSync(path.join(root, filename), "utf8");
+    const llmLocation = config.match(/location\s+\/api\/llm\/\s*\{([^{}]*)\}/)?.[1];
+
+    assert.ok(llmLocation, "expected an LLM API proxy location");
+    assert.match(llmLocation, /^\s*proxy_request_buffering\s+off\s*;/m);
+    assert.match(llmLocation, /^\s*proxy_buffering\s+off\s*;/m);
+  });
+
   test(`${filename} forwards one trusted client IP to each API service`, () => {
     const config = fs.readFileSync(path.join(root, filename), "utf8");
     const locations = [...config.matchAll(/location\s+[^{}]+\{([^{}]*)\}/g)]
