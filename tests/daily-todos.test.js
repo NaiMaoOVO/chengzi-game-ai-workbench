@@ -161,6 +161,25 @@ test("daily todo validation rejects invalid fields and missing records", async (
   assert.equal(missingUpdate.status, 404);
 });
 
+test("daily todo enum fields reject explicit non-string values instead of defaulting", async () => {
+  for (const [field, value] of [["priority", 7], ["status", { value: "done" }], ["link_view", ["feedback"]]]) {
+    const response = await postDailyTodo({ game: "鸣潮", title: "枚举字段校验", [field]: value });
+    assert.equal(response.status, 400, field + " must reject a non-string value");
+    assert.match(JSON.parse(response.text).error, new RegExp(field));
+  }
+
+  const created = JSON.parse((await postDailyTodo({ game: "鸣潮", title: "待办更新类型校验" })).text).daily_todo;
+  for (const [field, value] of [["priority", null], ["status", { value: "done" }]]) {
+    const response = await httpRequest("/daily-todos/" + created.id, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ [field]: value })
+    });
+    assert.equal(response.status, 400, field + " updates must reject a non-string value");
+    assert.match(JSON.parse(response.text).error, new RegExp(field));
+  }
+});
+
 test("daily todo updates reject explicit non-string text instead of reporting a no-op as success", async () => {
   const created = JSON.parse((await postDailyTodo({ game: "鸣潮", title: "修复待办" })).text).daily_todo;
   const updated = await httpRequest("/daily-todos/" + created.id, {

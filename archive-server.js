@@ -518,8 +518,10 @@ function publicationDateValue(value, fallback = null) {
 function validateDailyTodo(body, current) {
   const title = textValue(body?.title, "title", 200, current?.title || "");
   if (!title) throw new Error("title 必填");
+  if (Object.hasOwn(body || {}, "priority") && typeof body.priority !== "string") throw new Error("priority 必须为字符串");
   const priority = typeof body?.priority === "string" && body.priority.trim() ? body.priority.trim() : current?.priority || "medium";
   if (!DAILY_TODO_PRIORITIES.has(priority)) throw new Error("priority 不合法（允许：low、medium、high）");
+  if (Object.hasOwn(body || {}, "status") && typeof body.status !== "string") throw new Error("status 必须为字符串");
   const status = typeof body?.status === "string" && body.status.trim() ? body.status.trim() : current?.status || "open";
   if (!DAILY_TODO_STATUSES.has(status)) throw new Error("status 不合法（允许：open、done、dropped）");
   let dueDate = current?.due_date || null;
@@ -1032,6 +1034,7 @@ const server = http.createServer((request, response) => {
         if (!body || typeof body !== "object" || Array.isArray(body)) throw new Error("请求体必须是 JSON 对象");
         const game = textValue(body.game, "game", 60);
         if (!game) throw new Error("game 必填");
+        if (Object.hasOwn(body, "link_view") && typeof body.link_view !== "string") throw new Error("link_view 必须为字符串");
         const linkView = typeof body.link_view === "string" && /^[a-z][a-z0-9_-]{0,30}$/.test(body.link_view.trim()) ? body.link_view.trim() : "";
         const next = validateDailyTodo(body, null);
         const requestId = requestIdOf(request, body);
@@ -1179,9 +1182,17 @@ const server = http.createServer((request, response) => {
         sendJson(request, response, 400, { ok: false, error: "缺少必填字段：" + missing.join("、") });
         return;
       }
+      if (Object.hasOwn(body, "level") && typeof body.level !== "string") {
+        sendJson(request, response, 400, { ok: false, error: "level 不合法（允许：低、中、高）" });
+        return;
+      }
       const level = typeof body?.level === "string" ? body.level.trim() : "";
       if (level && !RISK_EVENT_LEVELS.has(level)) {
         sendJson(request, response, 400, { ok: false, error: "level 不合法（允许：低、中、高）" });
+        return;
+      }
+      if (Object.hasOwn(body, "status") && typeof body.status !== "string") {
+        sendJson(request, response, 400, { ok: false, error: "status 不合法（允许：open、processing、resolved、dropped）" });
         return;
       }
       const status = typeof body?.status === "string" ? body.status.trim() : "";

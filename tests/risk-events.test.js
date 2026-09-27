@@ -287,6 +287,14 @@ test("invalid level or status return 400 on create and update", async () => {
   assert.equal(row.status, "open");
 });
 
+test("risk event enum fields reject explicit non-string values instead of defaulting", async () => {
+  for (const [field, value] of [["level", 2], ["status", { value: "resolved" }]]) {
+    const response = await postRiskEvent({ game: "鸣潮", title: "枚举字段校验", [field]: value });
+    assert.equal(response.status, 400, field + " must reject a non-string value");
+    assert.match(JSON.parse(response.text).error, new RegExp(field));
+  }
+});
+
 test("unknown risk event ids return 404 on update and delete", async () => {
   const putUnknown = await httpRequest("/risk-events/999999999", {
     method: "PUT",
