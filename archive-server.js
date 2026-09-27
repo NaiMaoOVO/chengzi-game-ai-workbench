@@ -140,7 +140,7 @@ function secureExistingArchiveFiles(databasePath) {
     const filePath = databasePath + suffix;
     let stats;
     try {
-      stats = fs.statSync(filePath);
+      stats = fs.lstatSync(filePath);
     } catch (error) {
       if (error.code === "ENOENT") continue;
       throw error;
