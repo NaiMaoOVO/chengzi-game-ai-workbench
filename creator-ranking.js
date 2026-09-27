@@ -80,7 +80,7 @@
   function creatorKey(row) {
     const normalize = (value) => String(value || "").trim().replace(/\s+/g, "").toLowerCase();
     const platform = normalize(row?.platform || "未标注");
-    const accountId = normalize(row?.accountId);
+    const accountId = String(row?.accountId || "").trim().replace(/\s+/g, "");
     if (accountId) return `${platform}::id::${accountId}`;
     let accountUrl = "";
     try {

@@ -25,8 +25,12 @@ test("creator library keys keep same-name creators on different platforms separa
 
 test("creator identity prefers account id or homepage over mutable display name", () => {
   assert.equal(
-    creatorKey({ platform: "B站", name: "旧名称", accountId: "  UID-42 " }),
+    creatorKey({ platform: "B站", name: "旧名称", accountId: "  uid-42 " }),
     creatorKey({ platform: "B站", name: "改名后的达人", accountId: "uid-42" })
+  );
+  assert.notEqual(
+    creatorKey({ platform: "抖音", name: "账号甲", accountId: "MS4wLjABAAA" }),
+    creatorKey({ platform: "抖音", name: "账号乙", accountId: "ms4wljabaaa" })
   );
   assert.equal(
     creatorKey({ platform: "抖音", name: "旧名称", accountUrl: "https://www.douyin.com/user/demo/" }),
