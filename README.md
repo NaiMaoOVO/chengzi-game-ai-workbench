@@ -160,17 +160,19 @@ npm run deploy:check     # 校验环境变量与构建产物，配置不完整�
 npm run deploy:start && pm2 save && pm2 startup
 ```
 
-Nginx 配置见 `nginx.conf.example` / `nginx-https.conf.example`。HTTPS 模板的 Basic Auth 是个人站点的外层访问门槛；archive 登录用于区分每位账号自己的业务数据。Linux 服务器设置 `OCR_PROVIDER=remote` 并配置远端 OCR 服务；macOS 服务器可用 `OCR_PROVIDER=macos` 直接调用系统 Vision。
+Nginx 配置见 `nginx.conf.example` / `nginx-https.conf.example`。HTTPS 模板的 Basic Auth 是个人站点的外层访问门槛；archive 登录用于区分每位账号自己的业务数据。若使用自定义反向代理，必须为 API 路由配置等效的访问认证，不要把仅有 CORS 或限流的服务接口直接暴露到公网。Linux 服务器设置 `OCR_PROVIDER=remote` 并配置远端 OCR 服务；macOS 服务器可用 `OCR_PROVIDER=macos` 直接调用系统 Vision。
 
 验证：
 
 ```bash
-curl -fsS https://example.com/api/hotspot/health
-curl -fsS https://example.com/api/comment/health
-curl -fsS https://example.com/api/ocr/health
-curl -fsS https://example.com/api/archive/health
-curl -fsS https://example.com/api/llm/health
+curl --user YOUR_BASIC_AUTH_USER -fsS https://example.com/api/hotspot/health
+curl --user YOUR_BASIC_AUTH_USER -fsS https://example.com/api/comment/health
+curl --user YOUR_BASIC_AUTH_USER -fsS https://example.com/api/ocr/health
+curl --user YOUR_BASIC_AUTH_USER -fsS https://example.com/api/archive/health
+curl --user YOUR_BASIC_AUTH_USER -fsS https://example.com/api/llm/health
 ```
+
+`curl --user` 只提供用户名时会交互式提示密码，避免把口令写进命令历史。
 
 ### 账号隔离与线上写入
 
