@@ -177,24 +177,53 @@ test("archive backup verification rejects a checksum-valid non-SQLite file", () 
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
-test("archive backup verification rejects oversized checksum metadata before reading it", (t) => {
+test("archive backup bounds checksum reads even when the file grows after its size check", (t) => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "gameops-backup-checksum-size-test-"));
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   const file = path.join(dir, "archive-large-checksum.db");
   fs.writeFileSync(file, "not a sqlite database");
   const checksumPath = file + ".sha256";
   fs.writeFileSync(checksumPath, "x".repeat(1024 * 1024));
+  const originalOpenSync = fs.openSync;
+  const originalStatSync = fs.statSync;
+  const originalFstatSync = fs.fstatSync;
   const originalReadFileSync = fs.readFileSync;
-  let checksumRead = false;
+  const originalReadSync = fs.readSync;
+  let checksumDescriptor = null;
+  let checksumReadBytes = 0;
+  let largestChecksumRead = 0;
+  fs.openSync = function trackedOpenSync(target, ...args) {
+    const descriptor = originalOpenSync.call(this, target, ...args);
+    if (path.resolve(String(target)) === checksumPath) checksumDescriptor = descriptor;
+    return descriptor;
+  };
+  fs.statSync = function reportStaleChecksumSize(target, ...args) {
+    const stats = originalStatSync.call(this, target, ...args);
+    return target === checksumPath ? { size: 1, isFile: () => true } : stats;
+  };
+  fs.fstatSync = function reportStaleDescriptorSize(descriptor, ...args) {
+    const stats = originalFstatSync.call(this, descriptor, ...args);
+    return descriptor === checksumDescriptor ? { size: 1, isFile: () => true } : stats;
+  };
   fs.readFileSync = function trackedReadFileSync(target, ...args) {
-    if (target === checksumPath) checksumRead = true;
-    return originalReadFileSync.call(this, target, ...args);
+    const content = originalReadFileSync.call(this, target, ...args);
+    if (target === checksumPath) checksumReadBytes += Buffer.byteLength(content);
+    return content;
+  };
+  fs.readSync = function trackedReadSync(descriptor, buffer, offset, length, position) {
+    if (descriptor === checksumDescriptor) largestChecksumRead = Math.max(largestChecksumRead, length);
+    return originalReadSync.call(this, descriptor, buffer, offset, length, position);
   };
   try {
     assert.throws(() => verifyArchiveBackup(file), /校验文件过大/);
-    assert.equal(checksumRead, false, "oversized checksum content must not be loaded into memory");
+    assert.equal(largestChecksumRead, 513, "checksum reads should stop after one byte beyond the accepted limit");
+    assert.equal(checksumReadBytes, 0, "checksum content must not be loaded with an unbounded read");
   } finally {
+    fs.openSync = originalOpenSync;
+    fs.statSync = originalStatSync;
+    fs.fstatSync = originalFstatSync;
     fs.readFileSync = originalReadFileSync;
+    fs.readSync = originalReadSync;
   }
 });
 
