@@ -103,6 +103,14 @@ test("archive backup rejects malformed retention before pruning existing copies"
     assert.equal(fs.existsSync(existingBackup + ".sha256"), true);
     assert.equal(sha256File(existingBackup), existingDigest);
   }
+
+  const maximum = spawnSync(process.execPath, [path.join(root, "scripts", "backup-archive.js")], {
+    cwd: root,
+    env: { ...process.env, ARCHIVE_DB_PATH: databasePath, ARCHIVE_BACKUP_DIR: backupDir, ARCHIVE_BACKUP_KEEP: "100" },
+    encoding: "utf8"
+  });
+  assert.equal(maximum.status, 0, maximum.stderr || maximum.stdout);
+  assert.equal(fs.readdirSync(backupDir).filter((name) => /^archive-.*\.db$/.test(name)).length, 2);
 });
 
 test("archive backup hardens an existing backup directory", () => {
