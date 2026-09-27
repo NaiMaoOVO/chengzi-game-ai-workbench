@@ -63,13 +63,11 @@ async function refreshArchiveSession() {
   try {
     const response = await archiveRequest(ARCHIVE_SERVICE_URL + "/auth/session", { cache: "no-store" });
     const payload = await response.json().catch(() => ({}));
-    if (!response.ok) {
-      setArchiveSession({ auth_required: response.status === 401 });
-      return { required: response.status === 401, user: null };
-    }
+    if (response.status === 401) return setArchiveSession({ auth_required: true });
+    if (!response.ok) return { required: archiveAuthRequired, user: archiveSessionUser };
     return setArchiveSession(payload);
   } catch (_error) {
-    return setArchiveSession({});
+    return { required: archiveAuthRequired, user: archiveSessionUser };
   }
 }
 
