@@ -379,11 +379,16 @@ function streamUpstreamText(prompt, task, onDelta, options = {}) {
       let buffer = "";
       let assembled = "";
       let receivedBytes = 0;
+      let doneReceived = false;
       const consumeLine = (rawLine) => {
         const line = rawLine.replace(/\r$/, "");
         if (!line.startsWith("data:")) return;
         const data = line.slice(5).trim();
-        if (!data || data === "[DONE]") return;
+        if (!data) return;
+        if (data === "[DONE]") {
+          doneReceived = true;
+          return;
+        }
         let parsed;
         try {
           parsed = JSON.parse(data);
@@ -413,6 +418,10 @@ function streamUpstreamText(prompt, task, onDelta, options = {}) {
       });
       response.on("end", () => {
         if (buffer.trim()) consumeLine(buffer);
+        if (!doneReceived) {
+          reject(new Error("LLM 上游流未正常结束"));
+          return;
+        }
         if (assembled.trim()) resolve(assembled);
         else reject(new Error("上游返回为空"));
       });

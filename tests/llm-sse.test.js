@@ -110,7 +110,8 @@ function createFakeOpenAiUpstream(port, behavior = {}) {
       if (typeof behavior.fixedContent === "string") {
         res.writeHead(200, { "Content-Type": body.stream === true ? "text/event-stream" : "application/json" });
         if (body.stream === true) {
-          res.end("data: " + JSON.stringify({ choices: [{ delta: { content: behavior.fixedContent } }] }) + "\n\ndata: [DONE]\n\n");
+          const doneFrame = behavior.omitDone ? "" : "\n\ndata: [DONE]\n\n";
+          res.end("data: " + JSON.stringify({ choices: [{ delta: { content: behavior.fixedContent } }] }) + doneFrame);
         } else {
           res.end(JSON.stringify({ choices: [{ message: { content: behavior.fixedContent } }] }));
         }
@@ -390,6 +391,31 @@ test("llm rejects non-object JSON results in both JSON and SSE modes", async () 
       const streamResponse = await postStream(llmPort, { ...VERSION_COPY_BODY, stream: true });
       assert.equal(streamResponse.status, 200);
       const events = parseSseEvents(streamResponse.text);
+      assert.equal(events.at(-1)?.event, "error");
+      assert.equal(events.some((event) => event.event === "done"), false);
+    });
+  } finally {
+    await upstream.close();
+  }
+});
+
+test("llm stream does not report success when upstream closes without the SSE done marker", async () => {
+  const llmPort = 19542;
+  const upstreamPort = 19642;
+  const upstream = await createFakeOpenAiUpstream(upstreamPort, {
+    fixedContent: '{"headline":"valid JSON, incomplete stream"}',
+    omitDone: true
+  });
+  try {
+    await withLlmService({
+      LLM_PORT: String(llmPort),
+      LLM_API_KEY: "sse-end-marker-test-key",
+      LLM_BASE_URL: "http://127.0.0.1:" + upstreamPort + "/v1",
+      LLM_MODEL: "test-model",
+      LLM_RATE_LIMIT_MAX: "100"
+    }, async () => {
+      const response = await postStream(llmPort, { ...VERSION_COPY_BODY, stream: true });
+      const events = parseSseEvents(response.text);
       assert.equal(events.at(-1)?.event, "error");
       assert.equal(events.some((event) => event.event === "done"), false);
     });
