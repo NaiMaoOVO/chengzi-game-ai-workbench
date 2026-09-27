@@ -1101,7 +1101,7 @@ test("daily queue retains same-user snapshots on refresh but clears first-load p
   const errorIndex = source.indexOf("if (renderConnectionState(state)) return;");
   const populateIndex = source.indexOf("doneList.hidden = !doneItems.length && !state.doneUnavailable;");
   const cachedLoadingIndex = source.indexOf("if (hasCurrentUserSnapshot && state.loading)");
-  const cachedErrorIndex = source.indexOf("if (hasCurrentUserSnapshot && (state.error || state.archiveOffline))");
+  const cachedErrorIndex = source.indexOf("if (hasCurrentUserSnapshot && (state.error || state.archiveOffline || state.archiveStorageUnavailable))");
   assert.ok(source.indexOf("if (state.authRequired) lastDailyQueueSnapshot = null;") < cachedLoadingIndex);
   assert.ok(cachedLoadingIndex >= 0 && cachedLoadingIndex < clearIndex);
   assert.ok(cachedErrorIndex >= 0 && cachedErrorIndex < clearIndex);
@@ -1697,6 +1697,40 @@ test("daily AI insight links to service recovery when the archive API is offline
   assert.match(summary.textContent, /本机存档服务未连接/);
   action.onclick();
   assert.equal(recoveryCount, 1);
+});
+
+test("daily AI insight recommends retrying when the archive storage is not ready", () => {
+  const start = dailyWorkbench.indexOf("function renderDailyInsight(");
+  const end = dailyWorkbench.indexOf("function renderDailyInsightSignalCounts", start);
+  assert.ok(start >= 0 && end > start);
+  const summary = { textContent: "" };
+  const list = { innerHTML: "", items: [], append(item) { this.items.push(item); } };
+  const action = { hidden: true, textContent: "", onclick: null };
+  let retryCount = 0;
+  const sandbox = {
+    document: {
+      querySelector: (selector) => ({
+        "#daily-insight-summary": summary,
+        "#daily-insight-recommendations": list,
+        "#daily-insight-action": action
+      })[selector] || null,
+      createElement: () => ({ textContent: "" })
+    },
+    window: { loadTodayTodos: () => { retryCount += 1; } },
+    renderDailyInsightSignalCounts() {},
+    syncDailyAiInsight() {},
+    isOnlineServiceMode: () => false,
+    openLocalServiceRecovery() {},
+    titleEl: () => null
+  };
+  vm.runInNewContext(["let latestDailyInsightContext = {};", dailyWorkbench.slice(start, end)].join("\n"), sandbox);
+  sandbox.renderDailyInsight([], { archiveStorageUnavailable: true });
+  assert.equal(action.hidden, false);
+  assert.equal(action.textContent, "重试同步");
+  assert.match(summary.textContent, /存储暂未就绪/);
+  assert.match(list.items.map((item) => item.textContent).join(""), /检查归档数据库或磁盘状态/);
+  action.onclick();
+  assert.equal(retryCount, 1);
 });
 
 test("non-daily operational tools share the product workspace visual system", () => {
@@ -2877,6 +2911,74 @@ test("daily queue distinguishes a total archive network outage from partial endp
   assert.equal(captured[1].items.length, 0);
 });
 
+test("daily queue checks archive readiness only after every core read returns a server error", async () => {
+  const start = app.indexOf("window.loadTodayTodos = async function loadTodayTodos");
+  const end = app.indexOf("let llmModelName", start);
+  assert.ok(start >= 0 && end > start);
+  const paths = [
+    "/risk-events?status=open&limit=200",
+    "/publications?limit=200",
+    "/daily-todos?status=open&limit=200",
+    "/daily-todos?status=done&limit=200",
+    "/morning-runs?limit=20"
+  ];
+  const runQueue = async ({ failedPaths = [], readiness = { status: 200, payload: { ok: true, ready: true } }, rejectAll = false } = {}) => {
+    const captured = [];
+    let readinessCalls = 0;
+    const guard = { next: () => 1, isCurrent: (generation) => generation === 1 };
+    const sandbox = {
+      ARCHIVE_SERVICE_URL: "http://127.0.0.1:8796",
+      todayTodosController: null,
+      todayTodosRequestGuard: guard,
+      AbortController,
+      URLSearchParams,
+      document: { querySelector: () => null },
+      readDailyPlatformSnapshot: () => ({ game: "鸣潮", platform: "B站", topics: [] }),
+      archiveJsonRequestWithTimeout: async (url) => {
+        const path = url.slice("http://127.0.0.1:8796".length);
+        if (path === "/ready") {
+          readinessCalls += 1;
+          return { response: { ok: readiness.status === 200, status: readiness.status }, payload: readiness.payload };
+        }
+        if (rejectAll) throw new Error("Failed to fetch");
+        if (path.startsWith("/snapshots?")) return { response: { ok: true, status: 200 }, payload: { ok: true, items: [] } };
+        const failed = failedPaths.includes(path);
+        return {
+          response: { ok: !failed, status: failed ? 500 : 200 },
+          payload: failed ? { ok: false, error: "temporary failure" } : { ok: true, items: [], total: 0 }
+        };
+      },
+      publicationNeedsEffectBackfill: () => true,
+      window: { renderTodayTodos: (items, state) => captured.push({ items, state }) }
+    };
+    vm.runInNewContext(app.slice(start, end), sandbox);
+    await sandbox.window.loadTodayTodos();
+    return { captured, readinessCalls };
+  };
+
+  const storageUnavailable = await runQueue({
+    failedPaths: paths.slice(0, 4),
+    readiness: { status: 503, payload: { ok: false, ready: false, error: "storage_unavailable" } }
+  });
+  assert.equal(storageUnavailable.readinessCalls, 1);
+  assert.equal(storageUnavailable.captured[1].state.archiveStorageUnavailable, true);
+
+  const partialFailure = await runQueue({ failedPaths: paths.slice(0, 2) });
+  assert.equal(partialFailure.readinessCalls, 0);
+  assert.equal(partialFailure.captured[1].state.archiveStorageUnavailable, false);
+
+  const readyStorage = await runQueue({
+    failedPaths: paths.slice(0, 4),
+    readiness: { status: 200, payload: { ok: true, ready: true } }
+  });
+  assert.equal(readyStorage.readinessCalls, 1);
+  assert.equal(readyStorage.captured[1].state.archiveStorageUnavailable, false);
+
+  const offline = await runQueue({ rejectAll: true });
+  assert.equal(offline.readinessCalls, 0);
+  assert.equal(offline.captured[1].state.archiveOffline, true);
+});
+
 test("daily queue retains the last successful rows during refresh and full outages", () => {
   const start = dailyWorkbench.indexOf("window.renderTodayTodos = function renderTodayTodos");
   const end = dailyWorkbench.indexOf("async function request(path", start);
@@ -2946,7 +3048,46 @@ test("daily queue retains the last successful rows during refresh and full outag
   assert.equal(calls.empty.at(-1)[1], "重新连接");
   calls.empty.at(-1)[2]();
   assert.equal(calls.recovery, 1);
+
+  sandbox.window.renderTodayTodos([], {
+    archiveStorageUnavailable: true,
+    todoUnavailable: true,
+    doneUnavailable: true,
+    riskUnavailable: true,
+    publicationUnavailable: true,
+    morningUnavailable: true,
+    platformHistoryUnavailable: true
+  });
+  assert.match(container.innerHTML, /最近成功的待办/);
+  assert.equal(calls.stats.at(-1).staleSnapshot, true);
+  assert.match(calls.status.at(-1)[0], /存储暂未就绪/);
+  assert.equal(calls.empty.at(-1)[1], "重试同步");
   assert.equal(calls.snapshots, 0);
+});
+
+test("daily queue explains a reachable archive service with unavailable storage", () => {
+  const start = dailyWorkbench.indexOf("function renderConnectionState(state)");
+  const end = dailyWorkbench.indexOf("function updateFilterControls", start);
+  assert.ok(start >= 0 && end > start);
+  const calls = { connection: [], status: [], empty: [], retry: 0 };
+  const sandbox = {
+    window: { loadTodayTodos: () => { calls.retry += 1; } },
+    document: { querySelector: () => null },
+    archiveAuthRequired: false,
+    archiveSessionUser: null,
+    isOnlineServiceMode: () => false,
+    setConnection: (...args) => calls.connection.push(args),
+    renderEmptyState: (...args) => calls.empty.push(args),
+    setStatus: (...args) => calls.status.push(args),
+    openLocalServiceRecovery() {}
+  };
+  const renderConnectionState = vm.runInNewContext(`${dailyWorkbench.slice(start, end)}\nrenderConnectionState`, sandbox);
+  assert.equal(renderConnectionState({ archiveStorageUnavailable: true }), true);
+  assert.deepEqual(calls.connection.at(-1), ["本机服务在线 · 存储未就绪", "danger"]);
+  assert.match(calls.empty.at(-1)[0], /服务正在响应，但 SQLite 存储暂不可用/);
+  assert.equal(calls.empty.at(-1)[1], "重试同步");
+  calls.empty.at(-1)[2]();
+  assert.equal(calls.retry, 1);
 });
 
 test("daily queue offers local service recovery without saving an empty outage as fresh data", () => {

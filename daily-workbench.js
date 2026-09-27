@@ -34,8 +34,8 @@
     if (element) element.textContent = String(value);
   }
 
-  function setStats({ todoCount = 0, todoTotal = todoCount, riskCount = 0, publicationCount = 0, doneItems = [], doneTotal = doneItems.length, loading = false, error = false, authRequired = false, archiveOffline = false, staleSnapshot = false, todoUnavailable = false, doneUnavailable = false, riskUnavailable = false, publicationUnavailable = false, publicationTruncated = false } = {}) {
-    const serviceUnavailable = loading || error || authRequired || archiveOffline && !staleSnapshot;
+  function setStats({ todoCount = 0, todoTotal = todoCount, riskCount = 0, publicationCount = 0, doneItems = [], doneTotal = doneItems.length, loading = false, error = false, authRequired = false, archiveOffline = false, archiveStorageUnavailable = false, staleSnapshot = false, todoUnavailable = false, doneUnavailable = false, riskUnavailable = false, publicationUnavailable = false, publicationTruncated = false } = {}) {
+    const serviceUnavailable = loading || error || authRequired || ((archiveOffline || archiveStorageUnavailable) && !staleSnapshot);
     setText("#daily-stat-todo", serviceUnavailable || todoUnavailable ? "—" : todoCount);
     setText("#daily-stat-risk", serviceUnavailable || riskUnavailable ? "—" : riskCount);
     setText("#daily-stat-publish", serviceUnavailable || publicationUnavailable || publicationTruncated && !publicationCount
@@ -416,6 +416,17 @@
       setStatus("等待登录。", "mock");
       return true;
     }
+    if (state.archiveStorageUnavailable) {
+      const local = !isOnlineServiceMode();
+      setConnection(local ? "本机服务在线 · 存储未就绪" : "线上存档存储未就绪", "danger");
+      renderEmptyState(
+        local ? "本机存档服务正在响应，但 SQLite 存储暂不可用；请检查数据库状态后重试。" : "线上存档服务正在响应，但账号数据存储暂不可用；请稍后重试。",
+        "重试同步",
+        () => window.loadTodayTodos?.()
+      );
+      setStatus("服务进程在线，但归档存储未就绪；待办、风险和回流状态暂不可确认。", "mock");
+      return true;
+    }
     if (state.error) {
       const local = !isOnlineServiceMode();
       setConnection(local ? "本机服务未连接" : "线上存档服务暂不可用", "danger");
@@ -482,6 +493,11 @@
       actionHandler = localFile
         ? openLocalServiceRecovery
         : () => document.querySelector("#archive-login-username")?.focus();
+    } else if (state.archiveStorageUnavailable) {
+      summary.textContent = "归档服务仍可访问，但存储暂未就绪；当前无法确认完整的运营队列。";
+      recommendations.push("检查归档数据库或磁盘状态，恢复后重新同步；不要把缺失数据当作队列已清空。");
+      actionLabel = "重试同步";
+      actionHandler = () => window.loadTodayTodos?.();
     } else if (state.error || state.archiveOffline) {
       const local = !isOnlineServiceMode();
       summary.textContent = state.archiveOffline
@@ -1098,7 +1114,7 @@
       }
       return;
     }
-    if (hasCurrentUserSnapshot && (state.error || state.archiveOffline)) {
+    if (hasCurrentUserSnapshot && (state.error || state.archiveOffline || state.archiveStorageUnavailable)) {
       const previousState = lastDailyQueueSnapshot.state;
       const unavailable = (key) => Boolean(state.error || state[key]);
       const staleState = {
@@ -1124,9 +1140,19 @@
       renderDailyPlatformOverview(staleState);
       renderMorningStatus(lastDailyQueueSnapshot.state.morningRuns || [], false, true);
       const local = !isOnlineServiceMode();
-      setConnection(local ? "本机服务未连接 · 显示最近同步数据" : "线上存档服务暂不可用 · 显示最近同步数据", "warning");
-      setStatus(`同步失败；仍显示上次成功同步于 ${formatMorningTime(lastDailyQueueSnapshot.capturedAt)} 的工作队列。点击“刷新”重试。`, "mock");
-      if (state.archiveOffline) {
+      setConnection(state.archiveStorageUnavailable
+        ? local ? "本机服务在线 · 存储未就绪 · 显示最近数据" : "存储未就绪 · 显示最近数据"
+        : local ? "本机服务未连接 · 显示最近同步数据" : "线上存档服务暂不可用 · 显示最近同步数据", "warning");
+      setStatus(state.archiveStorageUnavailable
+        ? `存储暂未就绪；仍显示上次成功同步于 ${formatMorningTime(lastDailyQueueSnapshot.capturedAt)} 的工作队列。恢复存储后重试同步。`
+        : `同步失败；仍显示上次成功同步于 ${formatMorningTime(lastDailyQueueSnapshot.capturedAt)} 的工作队列。点击“刷新”重试。`, "mock");
+      if (state.archiveStorageUnavailable) {
+        renderEmptyState(
+          local ? "本机服务在线，但归档存储暂不可用；下方保留上次成功同步的队列。" : "归档存储暂不可用；下方保留上次成功同步的队列。",
+          "重试同步",
+          () => window.loadTodayTodos?.()
+        );
+      } else if (state.archiveOffline) {
         renderEmptyState(
           local ? "本机服务未连接；下方保留上次成功同步的队列。" : "线上存档服务暂不可用；下方保留上次同步的队列。",
           local ? "打开并启动本地服务" : "重新连接",
@@ -1177,13 +1203,15 @@
     if (!rows.length) {
       const local = !isOnlineServiceMode();
       renderEmptyState(
-        state.archiveOffline
+        state.archiveStorageUnavailable
+          ? local ? "本机服务在线，但归档存储暂不可用，无法确认今日队列状态。" : "归档存储暂不可用，无法确认账号工作队列状态。"
+          : state.archiveOffline
           ? local ? "本机存档服务未连接，无法确认今日队列状态。" : "线上存档服务暂不可用，无法确认账号工作队列状态。"
           : state.todoUnavailable ? "个人待办暂不可用，无法确认今日队列是否已清空。" : "今日队列已清空，安排一件最重要的事吧。",
-        state.archiveOffline
+        state.archiveStorageUnavailable ? "重试同步" : state.archiveOffline
           ? local ? "打开并启动本地服务" : "重新连接"
           : state.todoUnavailable ? "重试同步" : "添加待办",
-        state.archiveOffline
+        state.archiveStorageUnavailable ? () => window.loadTodayTodos?.() : state.archiveOffline
           ? local ? openLocalServiceRecovery : () => window.loadTodayTodos?.()
           : state.todoUnavailable ? () => window.loadTodayTodos?.() : () => titleEl()?.focus()
       );
@@ -1220,7 +1248,11 @@
     if (Number(state.todoTotal) > manualItems.length) truncations.push(`手动待办仅加载最近 ${manualItems.length}/${state.todoTotal} 条`);
     if (Number(state.doneTotal) > doneItems.length) truncations.push(`已完成仅加载最近 ${doneItems.length}/${state.doneTotal} 条`);
     const local = !isOnlineServiceMode();
-    if (state.archiveOffline) {
+    if (state.archiveStorageUnavailable) {
+      const localStorageLabel = local ? "本机服务在线，但存储未就绪" : "线上存档存储未就绪";
+      setConnection(localStorageLabel, "danger");
+      setStatus("存档服务可访问，但数据存储未就绪；同步结果不完整。", "mock");
+    } else if (state.archiveOffline) {
       setConnection(local ? "本机存档服务未连接" : "线上存档服务暂不可用", "danger");
       setStatus(local
         ? "本机存档服务未连接；今日待办、风险、回流和晨报状态未知。"

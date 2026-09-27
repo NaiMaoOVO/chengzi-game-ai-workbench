@@ -2073,6 +2073,17 @@ window.loadTodayTodos = async function loadTodayTodos() {
       window.renderTodayTodos([], { authRequired: true, platformSnapshot });
       return;
     }
+    const coreArchiveResults = [risk, publication, manual, done];
+    let archiveStorageUnavailable = false;
+    if (coreArchiveResults.every(({ response, payload }) => response?.status >= 500 && response.status < 600 && payload?.ok === false)) {
+      try {
+        const readiness = await archiveJsonRequestWithTimeout(ARCHIVE_SERVICE_URL + "/ready", requestOptions, 3000);
+        archiveStorageUnavailable = readiness.response.status === 503
+          && readiness.payload.ready === false
+          && readiness.payload.error === "storage_unavailable";
+      } catch (_error) { /* 业务读取已失败；探针自身失败不覆盖原始错误状态。 */ }
+      if (!todayTodosRequestGuard.isCurrent(requestGeneration)) return;
+    }
     const todoUnavailable = !manual.response || !manual.response.ok || !manual.payload.ok || !Array.isArray(manual.payload.items);
     const doneUnavailable = !done.response || !done.response.ok || !done.payload.ok || !Array.isArray(done.payload.items);
     const riskUnavailable = !risk.response || !risk.response.ok || !risk.payload.ok || !Array.isArray(risk.payload.items);
@@ -2096,6 +2107,7 @@ window.loadTodayTodos = async function loadTodayTodos() {
       riskItems,
       publicationItems: publicationQueueItems,
       archiveOffline,
+      archiveStorageUnavailable,
       todoUnavailable,
       doneUnavailable,
       todoCount: manualItems.length,
