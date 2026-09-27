@@ -63,8 +63,17 @@ if (!/^[A-Za-z0-9._-]{3,40}$/.test(archiveAdminUsername)) {
 }
 
 const archiveAdminPassword = String(process.env.ARCHIVE_ADMIN_PASSWORD || "");
-if (archiveAdminPassword.length < 12 || archiveAdminPassword.length > 200) {
-  throw new Error("ARCHIVE_ADMIN_PASSWORD 必须是 12-200 位");
+const placeholderPasswords = new Set([
+  "请使用至少 12 位的随机强密码",
+  "change-me",
+  "change_me",
+  "changeme",
+  "password",
+  "admin123"
+]);
+if (archiveAdminPassword.length < 12 || archiveAdminPassword.length > 200 ||
+    placeholderPasswords.has(archiveAdminPassword.trim().toLowerCase())) {
+  throw new Error("ARCHIVE_ADMIN_PASSWORD 必须是 12-200 位且不能使用示例或常见占位值");
 }
 
 if ((process.env.ARCHIVE_COOKIE_SECURE || "1") !== "1") {

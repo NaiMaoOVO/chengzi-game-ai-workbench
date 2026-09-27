@@ -55,6 +55,8 @@ test("deployment check validates production admin identity, password and secure 
   const invalidConfigs = [
     [{ ARCHIVE_ADMIN_USERNAME: "bad username" }, /ARCHIVE_ADMIN_USERNAME 必须是 3-40 位/],
     [{ ARCHIVE_ADMIN_PASSWORD: "x".repeat(201) }, /ARCHIVE_ADMIN_PASSWORD 必须是 12-200 位/],
+    [{ ARCHIVE_ADMIN_PASSWORD: "请使用至少 12 位的随机强密码" }, /不能使用示例或常见占位值/],
+    [{ ARCHIVE_ADMIN_PASSWORD: "change-me" }, /不能使用示例或常见占位值/],
     [{ ARCHIVE_COOKIE_SECURE: "0" }, /线上部署必须保持 ARCHIVE_COOKIE_SECURE=1/]
   ];
 
