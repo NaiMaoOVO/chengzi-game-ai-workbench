@@ -498,28 +498,45 @@ test("archive restore rechecks service status after preserving the live database
   const changed = new DatabaseSync(databasePath);
   changed.exec("INSERT INTO check_rows VALUES ('after backup');");
   changed.close();
+  if (process.platform !== "win32") fs.chmodSync(databasePath, 0o644);
   const originalDatabase = fs.readFileSync(databasePath);
   const readyFile = path.join(dir, "restore-ready");
   const continueFile = path.join(dir, "restore-continue");
-  const preload = path.join(dir, "pause-after-safety-copy.cjs");
+  const copyModesFile = path.join(dir, "restore-copy-modes");
+  const preload = path.join(dir, "observe-restore-copy.cjs");
   fs.writeFileSync(preload, [
     'const fs = require("node:fs");',
-    'const copyFileSync = fs.copyFileSync;',
-    'fs.copyFileSync = function (source, destination, ...args) {',
-    '  const result = copyFileSync.call(fs, source, destination, ...args);',
-    '  if (String(destination).includes(".pre-restore-")) {',
+    'const descriptors = new Map();',
+    'const openSync = fs.openSync;',
+    'fs.openSync = function (file, ...args) {',
+    '  const descriptor = openSync.call(fs, file, ...args);',
+    '  if (String(file).includes(".restore-stage-") || String(file).includes(".pre-restore-")) descriptors.set(descriptor, String(file));',
+    '  return descriptor;',
+    '};',
+    'const fchmodSync = fs.fchmodSync;',
+    'fs.fchmodSync = function (descriptor, mode) {',
+    '  const destination = descriptors.get(descriptor);',
+    '  if (destination) {',
+    '    const kind = destination.includes(".restore-stage-") ? "stage:" : "safety:";',
+    '    fs.appendFileSync(process.env.TEST_RESTORE_COPY_MODES_FILE, kind + (fs.fstatSync(descriptor).mode & 0o777) + String.fromCharCode(10));',
+    '  }',
+    '  if (destination && destination.includes(".pre-restore-")) {',
     '    fs.writeFileSync(process.env.TEST_RESTORE_READY_FILE, "ready");',
     '    const wait = new Int32Array(new SharedArrayBuffer(4));',
     '    const deadline = Date.now() + 5000;',
     '    while (!fs.existsSync(process.env.TEST_RESTORE_CONTINUE_FILE) && Date.now() < deadline) Atomics.wait(wait, 0, 0, 10);',
     '  }',
-    '  return result;',
+    '  return fchmodSync.call(fs, descriptor, mode);',
     '};'
   ].join("\n"));
   const child = spawn(process.execPath, [
     "--require", preload,
     path.join(root, "scripts", "restore-archive-backup.js"), backupFile, "--service-stopped"
-  ], { cwd: root, env: { ...env, TEST_RESTORE_READY_FILE: readyFile, TEST_RESTORE_CONTINUE_FILE: continueFile }, stdio: ["ignore", "ignore", "pipe"] });
+  ], {
+    cwd: root,
+    env: { ...env, TEST_RESTORE_READY_FILE: readyFile, TEST_RESTORE_CONTINUE_FILE: continueFile, TEST_RESTORE_COPY_MODES_FILE: copyModesFile },
+    stdio: ["ignore", "ignore", "pipe"]
+  });
   let stderr = "";
   child.stderr.setEncoding("utf8");
   child.stderr.on("data", (chunk) => { stderr += chunk; });
@@ -532,6 +549,8 @@ test("archive restore rechecks service status after preserving the live database
   const deadline = Date.now() + 5000;
   while (!fs.existsSync(readyFile) && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 10));
   assert.equal(fs.existsSync(readyFile), true, "restore should finish preflight and preserve the live database");
+  const copyModes = fs.readFileSync(copyModesFile, "utf8").trim().split("\n").map((line) => Number(line.split(":")[1]));
+  if (process.platform !== "win32") assert.deepEqual(copyModes, [0o600, 0o600], "restore files should be private before the post-copy chmod");
   const service = http.createServer((_request, response) => { response.writeHead(200); response.end("ok"); });
   await new Promise((resolve, reject) => {
     service.once("error", reject);

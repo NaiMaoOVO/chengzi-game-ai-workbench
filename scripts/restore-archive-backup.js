@@ -36,8 +36,56 @@ const stagePath = databasePath + ".restore-stage-" + stamp;
 const safetyPath = databasePath + ".pre-restore-" + stamp;
 
 function preserveFile(source, destination) {
-  fs.copyFileSync(source, destination, fs.constants.COPYFILE_EXCL);
-  fs.chmodSync(destination, 0o600);
+  const before = fs.lstatSync(source);
+  if (!before.isFile()) throw new Error("恢复副本来源必须是普通文件");
+  const sourceFlags = fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW || 0);
+  const sourceDescriptor = fs.openSync(source, sourceFlags);
+  let destinationDescriptor;
+  let createdFile;
+  let complete = false;
+  let copyError;
+  try {
+    const opened = fs.fstatSync(sourceDescriptor);
+    if (!opened.isFile() || opened.dev !== before.dev || opened.ino !== before.ino) {
+      throw new Error("恢复副本来源在复制期间发生变化");
+    }
+    destinationDescriptor = fs.openSync(destination, fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_EXCL, 0o600);
+    const created = fs.fstatSync(destinationDescriptor);
+    createdFile = { dev: created.dev, ino: created.ino };
+
+    const buffer = Buffer.allocUnsafe(1024 * 1024);
+    let bytesRead;
+    while ((bytesRead = fs.readSync(sourceDescriptor, buffer, 0, buffer.length, null)) > 0) {
+      let offset = 0;
+      while (offset < bytesRead) {
+        const bytesWritten = fs.writeSync(destinationDescriptor, buffer, offset, bytesRead - offset, null);
+        if (bytesWritten < 1) throw new Error("恢复副本写入未取得进展");
+        offset += bytesWritten;
+      }
+    }
+    fs.fchmodSync(destinationDescriptor, 0o600);
+    complete = true;
+  } catch (error) {
+    copyError = error;
+  }
+
+  for (const descriptor of [destinationDescriptor, sourceDescriptor]) {
+    if (descriptor === undefined) continue;
+    try {
+      fs.closeSync(descriptor);
+    } catch (error) {
+      copyError ||= error;
+    }
+  }
+  if (!complete && createdFile) {
+    try {
+      const current = fs.lstatSync(destination);
+      if (current.isFile() && current.dev === createdFile.dev && current.ino === createdFile.ino) fs.unlinkSync(destination);
+    } catch (error) {
+      if (error.code !== "ENOENT") copyError ||= error;
+    }
+  }
+  if (copyError) throw copyError;
 }
 
 function assertArchiveServiceStopped() {
@@ -97,8 +145,7 @@ async function restoreArchive() {
         const sidecar = databasePath + suffix;
         const preservedSidecar = safetyPath + suffix;
         if (!fs.existsSync(sidecar) && fs.existsSync(preservedSidecar)) {
-          fs.copyFileSync(preservedSidecar, sidecar);
-          fs.chmodSync(sidecar, 0o600);
+          preserveFile(preservedSidecar, sidecar);
         }
       }
       throw error;
