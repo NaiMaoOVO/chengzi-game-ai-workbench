@@ -376,6 +376,54 @@ test("archive restore requires a stopped-service acknowledgement and preserves t
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
+test("archive restore preserves the live database and sidecars when final replacement fails", (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "gameops-backup-restore-rollback-test-"));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const databasePath = path.join(dir, "archive.db");
+  const backupDir = path.join(dir, "backups");
+  const db = new DatabaseSync(databasePath);
+  db.exec("CREATE TABLE check_rows (value TEXT NOT NULL); INSERT INTO check_rows VALUES ('before backup');");
+  db.close();
+  const env = { ...process.env, ARCHIVE_DB_PATH: databasePath, ARCHIVE_BACKUP_DIR: backupDir, ARCHIVE_PORT: "19721" };
+  const backup = spawnSync(process.execPath, [path.join(root, "scripts", "backup-archive.js")], { cwd: root, env, encoding: "utf8" });
+  assert.equal(backup.status, 0, backup.stderr || backup.stdout);
+  const backupFile = path.join(backupDir, fs.readdirSync(backupDir).find((name) => /^archive-.*\.db$/.test(name)));
+
+  const live = new DatabaseSync(databasePath);
+  live.exec("INSERT INTO check_rows VALUES ('after backup');");
+  live.close();
+  const originalDatabase = fs.readFileSync(databasePath);
+  const originalSidecars = new Map([
+    ["-wal", "preserve wal bytes"],
+    ["-shm", "preserve shm bytes"]
+  ]);
+  for (const [suffix, contents] of originalSidecars) fs.writeFileSync(databasePath + suffix, contents);
+
+  const preload = path.join(dir, "fail-restore-rename.cjs");
+  fs.writeFileSync(preload, [
+    'const fs = require("node:fs");',
+    'const renameSync = fs.renameSync;',
+    'fs.renameSync = function (source, destination, ...args) {',
+    '  if (String(source).includes(".restore-stage-")) {',
+    '    const error = new Error("forced restore-stage rename failure");',
+    '    error.code = "EIO";',
+    '    throw error;',
+    '  }',
+    '  return renameSync.call(fs, source, destination, ...args);',
+    '};'
+  ].join("\n"));
+  const restored = spawnSync(process.execPath, [
+    "--require", preload,
+    path.join(root, "scripts", "restore-archive-backup.js"), backupFile, "--service-stopped"
+  ], { cwd: root, env, encoding: "utf8" });
+
+  assert.equal(restored.status, 1, restored.stdout);
+  assert.match(restored.stderr, /forced restore-stage rename failure/);
+  assert.deepEqual(fs.readFileSync(databasePath), originalDatabase);
+  for (const [suffix, contents] of originalSidecars) assert.equal(fs.readFileSync(databasePath + suffix, "utf8"), contents);
+  assert.equal(fs.readdirSync(dir).some((name) => name.includes("restore-stage")), false);
+});
+
 test("archive restore refuses to replace the database while the archive service is responding", async (t) => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "gameops-backup-restore-running-test-"));
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
