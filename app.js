@@ -6052,10 +6052,12 @@ function getCreatorBriefInput() {
 
 let creatorLibraryStorageIssue = "";
 let creatorLibraryStorageCorrupt = false;
+let creatorLibraryStorageRawSnapshot;
 
 function readCreatorLibrary() {
   creatorLibraryStorageIssue = "";
   creatorLibraryStorageCorrupt = false;
+  creatorLibraryStorageRawSnapshot = undefined;
   try {
     const storage = window.localStorage;
     if (!storage) {
@@ -6063,6 +6065,7 @@ function readCreatorLibrary() {
       return {};
     }
     const raw = storage.getItem(creatorLibraryStorageKey());
+    creatorLibraryStorageRawSnapshot = raw;
     if (raw === null || raw === undefined) return {};
     const parsed = JSON.parse(raw);
     if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
@@ -6084,7 +6087,7 @@ function readCreatorLibrary() {
   }
 }
 
-function writeCreatorLibrary(library, { replaceCorrupt = false } = {}) {
+function writeCreatorLibrary(library, { replaceCorrupt = false, expectedCorruptRaw } = {}) {
   const previousIssue = creatorLibraryStorageIssue;
   const previousCorrupt = creatorLibraryStorageCorrupt;
   creatorLibraryStorageIssue = "";
@@ -6108,6 +6111,12 @@ function writeCreatorLibrary(library, { replaceCorrupt = false } = {}) {
     if (!storage) throw new Error("浏览器存储不可用");
     const key = creatorLibraryStorageKey();
     const raw = storage.getItem(key);
+    if (replaceCorrupt && (typeof expectedCorruptRaw !== "string" || raw !== expectedCorruptRaw)) {
+      readCreatorLibrary();
+      const latestIssue = creatorLibraryStorageIssue;
+      creatorLibraryStorageIssue = `个人库在确认期间发生变化，已取消旧备份导入。${latestIssue ? ` ${latestIssue}` : "请重新读取后再试。"}`;
+      return false;
+    }
     if (raw !== null && !replaceCorrupt) {
       let existing;
       try {
@@ -6495,6 +6504,7 @@ function importCreatorLibrary(event) {
       const invalidHistoryCount = invalidCreatorCollaborationEntries(incoming).length;
       if (invalidHistoryCount) throw new Error(`合作历史有 ${invalidHistoryCount} 条损坏档案，已阻止导入；原数据未更改`);
       const existingLibrary = readCreatorLibrary();
+      const expectedCorruptRaw = creatorLibraryStorageRawSnapshot;
       const replaceCorrupt = creatorLibraryStorageCorrupt;
       if (creatorLibraryStorageIssue && !replaceCorrupt) throw new Error(creatorLibraryStorageIssue);
       if (replaceCorrupt && !window.confirm("本机个人库数据损坏。导入将替换当前无法读取的数据；请先备份原始数据。确定使用所选有效备份恢复吗？")) {
@@ -6523,7 +6533,7 @@ function importCreatorLibrary(event) {
         imported += 1;
       });
       if (!imported) throw new Error("没有识别到有效创作者");
-      const persisted = writeCreatorLibrary(library, { replaceCorrupt });
+      const persisted = writeCreatorLibrary(library, { replaceCorrupt, expectedCorruptRaw });
       if (!persisted) throw new Error(creatorLibraryStorageIssue || "浏览器存储空间不足，无法导入个人库");
       renderCreatorLibrary();
       renderCreatorTable(currentCreatorRows, document.querySelector("#creator-goal")?.value || "launch", document.querySelector("#creator-activity")?.value || "newLaunch");

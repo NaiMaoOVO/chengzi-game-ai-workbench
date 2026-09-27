@@ -2011,7 +2011,7 @@ test("creator library import confirms browser storage persistence", () => {
   const end = app.indexOf("function mergeCreatorLibraries", start);
   assert.ok(start >= 0 && end > start);
   const source = app.slice(start, end);
-  assert.match(source, /const persisted = writeCreatorLibrary\(library, \{ replaceCorrupt \}\)/);
+  assert.match(source, /const persisted = writeCreatorLibrary\(library, \{ replaceCorrupt, expectedCorruptRaw \}\)/);
   assert.match(source, /存储空间不足/);
 });
 

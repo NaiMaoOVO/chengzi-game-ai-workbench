@@ -34,16 +34,19 @@ function createStorage(initialValue, options = {}) {
     let archiveSessionUser = null;
     let creatorLibraryStorageIssue = "";
     let creatorLibraryStorageCorrupt = false;
+    let creatorLibraryStorageRawSnapshot;
     ${validators}
     ${source}
     return {
       read: readCreatorLibrary,
       write: writeCreatorLibrary,
       issue: () => creatorLibraryStorageIssue,
+      corrupt: () => creatorLibraryStorageCorrupt,
+      rawSnapshot: () => creatorLibraryStorageRawSnapshot,
       key: creatorLibraryStorageKey
     };
   })()`, { window: { localStorage } });
-  return { storage, value: () => value, writes: () => writes };
+  return { storage, value: () => value, setExternally: (next) => { value = next; }, writes: () => writes };
 }
 
 test("corrupted local creator JSON is read-only and cannot be overwritten by normal saves", () => {
@@ -83,7 +86,10 @@ test("valid JSON with damaged creator profiles or collaboration history is read-
 test("writer rejects malformed replacement data even when explicit recovery is allowed", () => {
   const harness = createStorage("{broken");
   harness.storage.read();
-  assert.equal(harness.storage.write({ broken: { name: "", platform: "B站" } }, { replaceCorrupt: true }), false);
+  assert.equal(harness.storage.write({ broken: { name: "", platform: "B站" } }, {
+    replaceCorrupt: true,
+    expectedCorruptRaw: harness.storage.rawSnapshot()
+  }), false);
   assert.equal(harness.value(), "{broken");
   assert.equal(harness.writes(), 0);
 });
@@ -101,8 +107,9 @@ test("replacing corrupt creator data is reserved for an explicit backup import c
   const raw = "{broken";
   const harness = createStorage(raw);
   harness.storage.read();
+  const expectedCorruptRaw = harness.storage.rawSnapshot();
   const backup = { safe: { name: "备份达人", platform: "B站" } };
-  assert.equal(harness.storage.write(backup, { replaceCorrupt: true }), true);
+  assert.equal(harness.storage.write(backup, { replaceCorrupt: true, expectedCorruptRaw }), true);
   assert.equal(JSON.parse(harness.value()).safe.name, "备份达人");
 
   const importStart = app.indexOf("function importCreatorLibrary(event)");
@@ -110,8 +117,27 @@ test("replacing corrupt creator data is reserved for an explicit backup import c
   const importSource = app.slice(importStart, importEnd);
   const confirmIndex = importSource.indexOf("window.confirm(");
   const freshLibraryIndex = importSource.indexOf("const library = replaceCorrupt ? {} : existingLibrary");
-  const replaceIndex = importSource.indexOf("writeCreatorLibrary(library, { replaceCorrupt })");
-  assert.ok(confirmIndex >= 0 && freshLibraryIndex > confirmIndex && replaceIndex > freshLibraryIndex, "confirmed recovery must replace damaged entries from a clean library before writing");
+  const replaceIndex = importSource.indexOf("writeCreatorLibrary(library, { replaceCorrupt, expectedCorruptRaw })");
+  const snapshotIndex = importSource.indexOf("const expectedCorruptRaw = creatorLibraryStorageRawSnapshot");
+  assert.ok(snapshotIndex >= 0 && confirmIndex > snapshotIndex && freshLibraryIndex > confirmIndex && replaceIndex > freshLibraryIndex, "confirmed recovery must bind the confirmation to the original corrupt snapshot before writing");
+});
+
+test("backup restore is cancelled when another tab changes the corrupt library after confirmation", () => {
+  const raw = "{broken";
+  const harness = createStorage(raw);
+  harness.storage.read();
+  const expectedCorruptRaw = harness.storage.rawSnapshot();
+  const newerLibrary = JSON.stringify({ newer: { name: "其他标签页已恢复", platform: "B站" } });
+  harness.setExternally(newerLibrary);
+
+  assert.equal(harness.storage.write({ backup: { name: "旧备份", platform: "小红书" } }, {
+    replaceCorrupt: true,
+    expectedCorruptRaw
+  }), false);
+  assert.equal(harness.value(), newerLibrary);
+  assert.equal(harness.writes(), 0);
+  assert.equal(harness.storage.corrupt(), false);
+  assert.match(harness.storage.issue(), /确认期间.*变化/);
 });
 
 test("cloud creator sync stops before writing remotely when the local library is damaged", () => {
