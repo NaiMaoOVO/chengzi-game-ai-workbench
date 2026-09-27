@@ -653,7 +653,8 @@ const server = http.createServer((request, response) => {
   });
 });
 
-server.requestTimeout = Math.max(LLM_TIMEOUT_MS + 5000, 60000);
+server.requestTimeout = 60000;
+server.headersTimeout = 10000;
 
 server.listen(PORT, "127.0.0.1", () => {
   const status = providerStatus();
