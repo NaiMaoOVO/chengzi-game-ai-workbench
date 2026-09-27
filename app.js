@@ -733,7 +733,11 @@ function archiveSnapshot(kind, game, payload) {
     },
     body
   }).then(({ response, payload: result }) => {
-    if (!response.ok || !result.ok) throw new Error(result.error || `HTTP ${response.status}`);
+    if (!response.ok || !result.ok) {
+      const error = new Error(result.error || `HTTP ${response.status}`);
+      error.status = response.status;
+      throw error;
+    }
     if (sessionKeyAtStart === archivePanelSessionKey) {
       archiveSnapshotRetries = archiveSnapshotRetries.filter((item) => item.requestId !== snapshot.requestId);
       if (archiveSnapshotRetries.length) {
@@ -745,6 +749,11 @@ function archiveSnapshot(kind, game, payload) {
     return result;
   }).catch((error) => {
     if (sessionKeyAtStart !== archivePanelSessionKey) return null;
+    if (error?.status === 400 || error?.status === 422) {
+      const pendingText = archiveSnapshotRetries.length ? `另有 ${archiveSnapshotRetries.length} 项存档待重试。` : "";
+      setArchiveSyncStatus(`存档失败：${label}请求被拒绝，本次数据未保存（HTTP ${error.status}）；请修正数据后重新生成。${pendingText}`, "mock", archiveSnapshotRetries.length > 0);
+      return null;
+    }
     if (!archiveSnapshotRetries.some((item) => item.requestId === snapshot.requestId)) archiveSnapshotRetries.push(snapshot);
     if (error?.name === "AbortError" || error?.name === "TimeoutError" || isArchiveServiceUnavailable(error)) {
       const reason = error?.name === "AbortError" || error?.name === "TimeoutError" ? "请求超时" : "服务连接中断";

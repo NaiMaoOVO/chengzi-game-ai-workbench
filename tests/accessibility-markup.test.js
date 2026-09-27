@@ -1795,7 +1795,7 @@ test("background snapshot writes expose success and failure instead of swallowin
   assert.doesNotMatch(source, /存档失败不影响主流程/);
 });
 
-test("overlapping background snapshots retain the failed snapshot as the retry target", async () => {
+test("background snapshot races preserve retry targets and distinguish definitive rejection", async () => {
   const start = app.indexOf("let lastArchiveSnapshot = null;");
   const end = app.indexOf("\nlet llmServiceState =", start);
   assert.ok(start >= 0 && end > start);
@@ -1831,6 +1831,10 @@ test("overlapping background snapshots retain the failed snapshot as the retry t
   assert.equal(retryButton.hidden, false, "the later success must not erase an earlier failed write");
   retryButton.handler();
   assert.equal(JSON.parse(pending[2].options.body).kind, "feedback", "retry must resend the failed snapshot, not the latest attempted one");
+  pending[2].resolve({ response: { ok: false, status: 400 }, payload: { ok: false, error: "字段不合法" } });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.match(status.textContent, /本次数据未保存/, "HTTP 400 must report a definite rejection instead of an unknown result");
+  assert.equal(retryButton.hidden, true, "a deterministic validation rejection must not offer the same retry again");
 });
 
 test("background snapshots use a stable daily idempotency key", () => {
