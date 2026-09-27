@@ -470,3 +470,14 @@ test("archive file hashing streams large files through a bounded buffer", () => 
   assert.equal(sha256File(file), expected);
   fs.rmSync(dir, { recursive: true, force: true });
 });
+
+test("archive file hashing rejects symlink targets", (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "gameops-backup-hash-symlink-test-"));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const target = path.join(dir, "private.db");
+  const link = path.join(dir, "archive-linked.db");
+  fs.writeFileSync(target, "not a backup");
+  fs.symlinkSync(target, link);
+
+  assert.throws(() => sha256File(link), /普通文件/);
+});
