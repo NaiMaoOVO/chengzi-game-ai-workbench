@@ -56,6 +56,16 @@ function setArchiveSession(payload) {
   return { required: archiveAuthRequired, user: archiveSessionUser };
 }
 
+function hasValidAuthenticatedArchiveSession(payload) {
+  const user = payload?.user;
+  return payload?.auth_required === true
+    && user && typeof user === "object" && !Array.isArray(user)
+    && Number.isSafeInteger(user.id) && user.id > 0
+    && typeof user.username === "string" && user.username.trim().length > 0
+    && ["admin", "member"].includes(user.role)
+    && typeof payload.csrf_token === "string" && payload.csrf_token.length > 0;
+}
+
 function archiveRequest(url, options = {}) {
   const headers = new Headers(options.headers || {});
   const method = String(options.method || "GET").toUpperCase();
@@ -79,6 +89,10 @@ async function refreshArchiveSession() {
     if (generation !== archiveSessionRefreshGeneration || contextGeneration !== archiveSessionContextGeneration) return currentSession();
     if (response.status === 401) return setArchiveSession({ auth_required: true });
     if (!response.ok) return currentSession();
+    const authenticationDisabled = payload?.auth_required === false
+      && payload.user === null
+      && (payload.csrf_token === undefined || payload.csrf_token === "");
+    if (!hasValidAuthenticatedArchiveSession(payload) && !authenticationDisabled) return currentSession();
     return setArchiveSession(payload);
   } catch (_error) {
     return currentSession();
@@ -95,7 +109,9 @@ async function loginArchiveUser(username, password) {
   const payload = await response.json().catch(() => ({}));
   if (contextGeneration !== archiveSessionContextGeneration) throw new Error("登录状态已变化，登录结果未应用，请重试");
   if (!response.ok || !payload.ok) throw new Error(payload.error || "登录失败");
-  const session = setArchiveSession({ auth_required: true, ...payload });
+  const sessionPayload = { auth_required: true, ...payload };
+  if (!hasValidAuthenticatedArchiveSession(sessionPayload)) throw new Error("登录响应无效，请重试");
+  const session = setArchiveSession(sessionPayload);
   notifyArchiveSessionChanged();
   return session;
 }

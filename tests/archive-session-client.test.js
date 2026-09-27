@@ -87,6 +87,27 @@ test("transient archive session HTTP errors preserve the last verified account a
   assert.equal(current.csrfToken, "verified-csrf-token");
 });
 
+test("malformed successful archive session responses preserve the last verified account", async () => {
+  const responses = [
+    { json: async () => { throw new Error("invalid JSON"); } },
+    { json: async () => ({ ok: true }) },
+    { json: async () => ({ ok: true, auth_required: true, user: null }) },
+    { json: async () => ({ ok: true, auth_required: true, user: { id: 7, username: "ops-user", role: "member" } }) }
+  ];
+  for (const response of responses) {
+    const context = createArchiveSessionClient();
+    seedVerifiedLogin(context);
+    context.fetch = async () => ({ ok: true, status: 200, ...response });
+
+    await context.archiveSessionClient.refreshArchiveSession();
+    const current = context.archiveSessionClient.current();
+
+    assert.equal(current.required, true);
+    assert.equal(current.user.username, "ops-user");
+    assert.equal(current.csrfToken, "verified-csrf-token");
+  }
+});
+
 test("archive session network failures preserve the last verified account and CSRF token", async () => {
   const context = createArchiveSessionClient();
   seedVerifiedLogin(context);
@@ -113,6 +134,23 @@ test("an explicit unauthorized archive session response clears the account and C
   assert.equal(result.required, true);
   assert.equal(result.user, null);
   assert.equal(current.required, true);
+  assert.equal(current.user, null);
+  assert.equal(current.csrfToken, "");
+});
+
+test("a valid unauthenticated-mode session response clears prior account state", async () => {
+  const context = createArchiveSessionClient();
+  seedVerifiedLogin(context);
+  context.fetch = async () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({ ok: true, auth_required: false, user: null })
+  });
+
+  await context.archiveSessionClient.refreshArchiveSession();
+  const current = context.archiveSessionClient.current();
+
+  assert.equal(current.required, false);
   assert.equal(current.user, null);
   assert.equal(current.csrfToken, "");
 });
@@ -209,6 +247,21 @@ test("a login response from the previous service mode cannot restore its account
   assert.equal(current.csrfToken, "");
 });
 
+test("malformed successful login responses cannot install an incomplete session", async () => {
+  const context = createArchiveSessionClient();
+  context.fetch = async () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({ ok: true, user: { id: 7, username: "ops-user", role: "member" } })
+  });
+
+  await assert.rejects(context.archiveSessionClient.loginArchiveUser("ops-user", "password"), /登录响应无效/);
+  const current = context.archiveSessionClient.current();
+  assert.equal(current.user, null);
+  assert.equal(current.csrfToken, "");
+  assert.equal(context.localStorageWrites.length, 0);
+});
+
 test("a logout response from the previous service mode cannot mutate the new mode session", async () => {
   const context = createArchiveSessionClient();
   seedVerifiedLogin(context);
@@ -285,7 +338,7 @@ test("a service mode change in another tab applies the new endpoint before reval
   let requestedUrl = "";
   context.fetch = async (url) => {
     requestedUrl = url;
-    return { ok: true, status: 200, json: async () => ({ ok: true, auth_required: true, user: null }) };
+    return { ok: false, status: 401, json: async () => ({ ok: false, error: "unauthorized" }) };
   };
 
   await context.archiveSessionListeners.storage({ key: "gameops-service-mode-v1", newValue: "online" });
