@@ -721,7 +721,7 @@ function archiveSnapshot(kind, game, payload) {
   lastArchiveSnapshot = snapshot;
   const body = JSON.stringify({ kind, game, source: payload.source || "sample", payload });
   if (archiveSnapshotRetries.length) {
-    setArchiveSyncStatus(`存档：正在保存${label}数据；另有 ${archiveSnapshotRetries.length} 项待重试。`, "mock");
+    setArchiveSyncStatus(`存档：正在保存${label}数据；另有 ${archiveSnapshotRetries.length} 项待重试，可在当前页点击“重试存档”。`, "mock");
   } else {
     setArchiveSyncStatus(`存档：正在保存${label}数据…`);
   }
@@ -741,7 +741,7 @@ function archiveSnapshot(kind, game, payload) {
     if (sessionKeyAtStart === archivePanelSessionKey) {
       archiveSnapshotRetries = archiveSnapshotRetries.filter((item) => item.requestId !== snapshot.requestId);
       if (archiveSnapshotRetries.length) {
-        setArchiveSyncStatus(`存档：${label}数据已保存；仍有 ${archiveSnapshotRetries.length} 项待重试。`, "mock");
+        setArchiveSyncStatus(`存档：${label}数据已保存；仍有 ${archiveSnapshotRetries.length} 项待重试，可在当前页点击“重试存档”。`, "mock");
       } else {
         setArchiveSyncStatus(`存档：${label}数据已保存（编号 #${result.id}）。`, "real");
       }
@@ -757,10 +757,10 @@ function archiveSnapshot(kind, game, payload) {
     if (!archiveSnapshotRetries.some((item) => item.requestId === snapshot.requestId)) archiveSnapshotRetries.push(snapshot);
     if (error?.name === "AbortError" || error?.name === "TimeoutError" || isArchiveServiceUnavailable(error)) {
       const reason = error?.name === "AbortError" || error?.name === "TimeoutError" ? "请求超时" : "服务连接中断";
-      setArchiveSyncStatus(`存档结果未确认：${label}${reason}，数据可能已保存；当前有 ${archiveSnapshotRetries.length} 项待重试。刷新确认后可点击“重试存档”。`, "mock");
+      setArchiveSyncStatus(`存档结果未确认：${label}${reason}，数据可能已保存；当前有 ${archiveSnapshotRetries.length} 项待重试。请留在当前页点击“重试存档”；幂等键会避免重复新增。`, "mock");
       return null;
     }
-    setArchiveSyncStatus(`存档结果未确认：服务暂不可用，${label}数据状态未知；当前有 ${archiveSnapshotRetries.length} 项待重试，主流程已继续。`, "mock");
+    setArchiveSyncStatus(`存档结果未确认：服务暂不可用，${label}数据状态未知；当前有 ${archiveSnapshotRetries.length} 项待重试。请留在当前页点击“重试存档”；幂等键会避免重复新增。主流程已继续。`, "mock");
     return null;
   });
 }

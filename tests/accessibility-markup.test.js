@@ -1825,6 +1825,9 @@ test("background snapshot races preserve retry targets and distinguish definitiv
   sandbox.archiveSnapshot("trending", "鸣潮", { source: "sample" });
   pending[0].reject(new Error("Failed to fetch"));
   await new Promise((resolve) => setImmediate(resolve));
+  assert.match(status.textContent, /当前有 1 项待重试/);
+  assert.match(status.textContent, /留在当前页/);
+  assert.doesNotMatch(status.textContent, /刷新确认后/);
   pending[1].resolve({ response: { ok: true, status: 201 }, payload: { ok: true, id: 2 } });
   await new Promise((resolve) => setImmediate(resolve));
 
