@@ -1042,20 +1042,43 @@ const server = http.createServer((request, response) => {
     });
     request.on("end", () => {
       if (rejectedTodoUpd) return;
+      let body;
       try {
-        const body = JSON.parse(Buffer.concat(chunksTodoUpd).toString("utf8"));
+        body = JSON.parse(Buffer.concat(chunksTodoUpd).toString("utf8"));
         if (!body || typeof body !== "object" || Array.isArray(body)) throw new Error("请求体必须是 JSON 对象");
-        const id = dailyTodoIdOf(url.pathname);
-        const current = getDailyTodoStatement.get(id, ownerKey);
-        if (!current) {
-          sendJson(request, response, 404, { ok: false, error: "待办不存在" });
-          return;
-        }
-        const next = validateDailyTodo(body, current);
-        updateDailyTodoStatement.run(next.title, next.priority, next.status, next.dueDate, next.completedAt, next.notes, new Date().toISOString(), id, ownerKey);
-        sendJson(request, response, 200, { ok: true, daily_todo: getDailyTodoStatement.get(id, ownerKey) });
       } catch (error) {
         sendJson(request, response, 400, { ok: false, error: error.message });
+        return;
+      }
+      const id = dailyTodoIdOf(url.pathname);
+      let current;
+      try {
+        current = getDailyTodoStatement.get(id, ownerKey);
+      } catch (_error) {
+        sendJson(request, response, 500, { ok: false, error: "待办暂时无法读取，请稍后重试" });
+        return;
+      }
+      if (!current) {
+        sendJson(request, response, 404, { ok: false, error: "待办不存在" });
+        return;
+      }
+      let next;
+      try {
+        next = validateDailyTodo(body, current);
+      } catch (error) {
+        sendJson(request, response, 400, { ok: false, error: error.message });
+        return;
+      }
+      try {
+        updateDailyTodoStatement.run(next.title, next.priority, next.status, next.dueDate, next.completedAt, next.notes, new Date().toISOString(), id, ownerKey);
+      } catch (_error) {
+        sendJson(request, response, 500, { ok: false, error: "待办暂时无法更新，请稍后重试" });
+        return;
+      }
+      try {
+        sendJson(request, response, 200, { ok: true, daily_todo: getDailyTodoStatement.get(id, ownerKey) });
+      } catch (_error) {
+        sendJson(request, response, 500, { ok: false, error: "待办已更新，但暂时无法读取，请稍后重试" });
       }
     });
     return;

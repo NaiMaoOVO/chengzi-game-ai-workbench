@@ -228,3 +228,26 @@ test("daily todo create storage errors return 500 without leaking database detai
   const after = JSON.parse((await httpRequest("/daily-todos?game=" + encodeURIComponent("数据库写故障样本"))).text);
   assert.equal(after.items.length, 0, "失败的创建不应留下待办");
 });
+
+test("daily todo update storage errors return 500 and preserve the existing row", async () => {
+  const db = new DatabaseSync(databasePath);
+  db.exec("DROP TRIGGER IF EXISTS reject_daily_todo_insert;");
+  db.close();
+
+  const created = JSON.parse((await postDailyTodo({ game: "鸣潮", title: "待办更新故障保护" })).text).daily_todo;
+  const triggerDb = new DatabaseSync(databasePath);
+  triggerDb.exec("CREATE TRIGGER reject_daily_todo_update BEFORE UPDATE ON daily_todos BEGIN SELECT RAISE(ABORT, 'blocked'); END;");
+  triggerDb.close();
+
+  const response = await httpRequest("/daily-todos/" + created.id, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ status: "done" })
+  });
+  assert.equal(response.status, 500);
+  assert.deepEqual(JSON.parse(response.text), { ok: false, error: "待办暂时无法更新，请稍后重试" });
+  assert.doesNotMatch(response.text, /blocked|sqlite/i);
+  assert.equal((await httpRequest("/health")).status, 200);
+  const after = JSON.parse((await httpRequest("/daily-todos?game=" + encodeURIComponent("鸣潮"))).text);
+  assert.equal(after.items.find((item) => item.id === created.id).status, "open");
+});
