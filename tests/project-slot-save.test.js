@@ -15,7 +15,7 @@ const storageSource = app.slice(storageStart, storageEnd);
 const saveSource = app.slice(saveStart, saveEnd);
 const loadSource = app.slice(saveEnd, loadEnd);
 
-function createHarness(initial, confirmResult, changedDuringConfirm = null) {
+function createHarness(initial, confirmResult, changedDuringConfirm = null, changedDuringCollect = null) {
   let raw = initial;
   let writes = 0;
   let confirmations = 0;
@@ -36,7 +36,10 @@ function createHarness(initial, confirmResult, changedDuringConfirm = null) {
       }
     },
     document: { querySelector: () => status },
-    collectProjectState: () => ({ controls: { "trending-game": "新项目" } }),
+    collectProjectState: () => {
+      if (changedDuringCollect !== null) raw = changedDuringCollect;
+      return { controls: { "trending-game": "新项目" } };
+    },
     updateSlotName: () => {},
     isProjectStateRestorable: (state) => Boolean(state && state.controls && !Array.isArray(state.controls)
       && (state.streamers === undefined || Array.isArray(state.streamers) && state.streamers.every((item) => item && typeof item === "object" && !Array.isArray(item)))
@@ -79,6 +82,31 @@ test("project slot overwrite preserves a snapshot changed during confirmation", 
   const harness = createHarness(original, true, newer);
   harness.save(1);
   assert.equal(harness.confirmations(), 1);
+  assert.equal(harness.writes(), 0);
+  assert.equal(harness.raw(), newer);
+  assert.match(harness.status.textContent, /其他标签页已更新/);
+});
+
+test("project slot overwrite preserves an update that arrives after confirmation", () => {
+  const original = JSON.stringify([{ controls: { "trending-game": "旧项目" } }]);
+  const newer = JSON.stringify([
+    { controls: { "trending-game": "另一标签页的新项目" } },
+    { controls: { "trending-game": "新建项目" } }
+  ]);
+  const harness = createHarness(original, true, null, newer);
+  harness.save(1);
+  assert.equal(harness.confirmations(), 1);
+  assert.equal(harness.writes(), 0);
+  assert.equal(harness.raw(), newer);
+  assert.match(harness.status.textContent, /其他标签页已更新/);
+});
+
+test("saving to an empty slot preserves slots added by another tab during state collection", () => {
+  const original = JSON.stringify([]);
+  const newer = JSON.stringify([null, { controls: { "trending-game": "另一标签页新增" } }]);
+  const harness = createHarness(original, false, null, newer);
+  harness.save(1);
+  assert.equal(harness.confirmations(), 0);
   assert.equal(harness.writes(), 0);
   assert.equal(harness.raw(), newer);
   assert.match(harness.status.textContent, /其他标签页已更新/);

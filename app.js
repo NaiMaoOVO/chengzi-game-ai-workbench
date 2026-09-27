@@ -8915,6 +8915,14 @@ function saveProjectToSlot(slotIndex) {
   const data = collectProjectState();
   stateList[slotIndex - 1] = data;
   try {
+    if (window.localStorage.getItem(PROJECT_SLOTS_KEY) !== projectSlotStorageRaw) {
+      const status = document.querySelector("#overview-status");
+      if (status) {
+        status.textContent = "总览状态：其他标签页已更新项目槽位，本次保存已取消；请刷新槽位后重试。";
+        status.className = "source-status source-mock";
+      }
+      return;
+    }
     window.localStorage.setItem(PROJECT_SLOTS_KEY, JSON.stringify(stateList));
   } catch (_error) {
     const status = document.querySelector("#overview-status");
