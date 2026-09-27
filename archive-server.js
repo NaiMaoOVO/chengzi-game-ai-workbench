@@ -1465,7 +1465,13 @@ const server = http.createServer((request, response) => {
       return;
     }
     if (requestId) {
-      const existing = findSnapshotByRequestStatement.get(ownerKey, requestId);
+      let existing;
+      try {
+        existing = findSnapshotByRequestStatement.get(ownerKey, requestId);
+      } catch (_error) {
+        sendJson(request, response, 500, { ok: false, error: "快照暂时无法保存，请稍后重试" });
+        return;
+      }
       if (existing) {
         sendJson(request, response, 200, { ok: true, id: Number(existing.id), idempotent: true });
         return;
@@ -1474,9 +1480,17 @@ const server = http.createServer((request, response) => {
     try {
       const info = insertStatement.run(ownerKey, kind, game, source, serialized, requestId, new Date().toISOString());
       sendJson(request, response, 201, { ok: true, id: Number(info.lastInsertRowid) });
-    } catch (error) {
-      const existing = requestId ? findSnapshotByRequestStatement.get(ownerKey, requestId) : null;
-      if (!existing) throw error;
+    } catch (_error) {
+      let existing = null;
+      try {
+        if (requestId) existing = findSnapshotByRequestStatement.get(ownerKey, requestId);
+      } catch (_lookupError) {
+        // The write outcome cannot be confirmed; report storage failure rather than crashing or guessing.
+      }
+      if (!existing) {
+        sendJson(request, response, 500, { ok: false, error: "快照暂时无法保存，请稍后重试" });
+        return;
+      }
       sendJson(request, response, 200, { ok: true, id: Number(existing.id), idempotent: true });
     }
   });

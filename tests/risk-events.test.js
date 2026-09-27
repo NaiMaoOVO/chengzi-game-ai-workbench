@@ -433,6 +433,24 @@ test("risk event update storage errors return 500 and preserve the existing reco
   assert.equal(after.items.find((item) => item.id === created.id).status, "open");
 });
 
+test("snapshot storage errors return 500 without stopping the archive service", async () => {
+  const db = new DatabaseSync(databasePath);
+  db.exec("CREATE TRIGGER reject_snapshot_insert BEFORE INSERT ON snapshots BEGIN SELECT RAISE(ABORT, 'blocked'); END;");
+  db.close();
+
+  const response = await httpRequest("/snapshots", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "Idempotency-Key": "snapshot-storage-failure-20260927" },
+    body: JSON.stringify({ kind: "feedback", game: "数据库写故障样本", source: "real", payload: { items: [{ id: "one" }] } })
+  });
+  assert.equal(response.status, 500);
+  assert.deepEqual(JSON.parse(response.text), { ok: false, error: "快照暂时无法保存，请稍后重试" });
+  assert.doesNotMatch(response.text, /blocked|sqlite/i);
+  assert.equal((await httpRequest("/health")).status, 200);
+  const after = JSON.parse((await httpRequest("/snapshots?kind=feedback&game=" + encodeURIComponent("数据库写故障样本"))).text);
+  assert.equal(after.items.length, 0, "失败的快照存档不应留下记录");
+});
+
 test("project profile read errors return 500 without stopping the archive service", async () => {
   const missingGame = await httpRequest("/profile");
   assert.equal(missingGame.status, 400);
