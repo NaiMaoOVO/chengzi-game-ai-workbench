@@ -102,14 +102,17 @@ test("deployment check never prints configured archive credentials", () => {
 test("PM2 archive process receives the configured auth settings without printing the password", () => {
   const password = "archive-config-canary-123";
   const inspectConfig = [
-    'const archive = require("./ecosystem.config.js").apps.find((app) => app.name === "gameops-archive");',
+    'const apps = require("./ecosystem.config.js").apps;',
+    'const archive = apps.find((app) => app.name === "gameops-archive");',
+    'const otherApps = apps.filter((app) => app.name !== "gameops-archive");',
     'const env = archive.env;',
     'console.log(JSON.stringify({',
     '  authEnabled: env.ARCHIVE_AUTH_ENABLED === "1",',
     '  usernameMatches: env.ARCHIVE_ADMIN_USERNAME === process.env.ARCHIVE_ADMIN_USERNAME,',
     '  passwordMatches: env.ARCHIVE_ADMIN_PASSWORD === process.env.ARCHIVE_ADMIN_PASSWORD,',
     '  secureCookie: env.ARCHIVE_COOKIE_SECURE === "1",',
-    '  sessionHours: env.ARCHIVE_SESSION_HOURS === "8"',
+    '  sessionHours: env.ARCHIVE_SESSION_HOURS === "8",',
+    '  otherAppsHaveNoAuthSecrets: otherApps.every((app) => !Object.hasOwn(app.env, "ARCHIVE_ADMIN_PASSWORD") && !Object.hasOwn(app.env, "ARCHIVE_AUTH_ENABLED"))',
     '}));'
   ].join("\n");
   const result = spawnSync(process.execPath, ["-e", inspectConfig], {
@@ -130,7 +133,8 @@ test("PM2 archive process receives the configured auth settings without printing
     usernameMatches: true,
     passwordMatches: true,
     secureCookie: true,
-    sessionHours: true
+    sessionHours: true,
+    otherAppsHaveNoAuthSecrets: true
   });
   assert.doesNotMatch(result.stdout + result.stderr, new RegExp(password));
 });
