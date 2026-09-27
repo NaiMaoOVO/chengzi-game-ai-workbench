@@ -807,7 +807,13 @@ const server = http.createServer((request, response) => {
     return;
   }
   if (request.method === "DELETE" && publicationIdOf(url.pathname) !== null) {
-    const info = deletePublicationStatement.run(publicationIdOf(url.pathname), ownerKey);
+    let info;
+    try {
+      info = deletePublicationStatement.run(publicationIdOf(url.pathname), ownerKey);
+    } catch (_error) {
+      sendJson(request, response, 500, { ok: false, error: "发布记录暂时无法删除，请稍后重试" });
+      return;
+    }
     if (Number(info.changes) === 0) {
       sendJson(request, response, 404, { ok: false, error: "发布记录不存在" });
       return;
@@ -969,7 +975,13 @@ const server = http.createServer((request, response) => {
     return;
   }
   if (request.method === "DELETE" && dailyTodoIdOf(url.pathname) !== null) {
-    const info = deleteDailyTodoStatement.run(dailyTodoIdOf(url.pathname), ownerKey);
+    let info;
+    try {
+      info = deleteDailyTodoStatement.run(dailyTodoIdOf(url.pathname), ownerKey);
+    } catch (_error) {
+      sendJson(request, response, 500, { ok: false, error: "待办暂时无法删除，请稍后重试" });
+      return;
+    }
     if (Number(info.changes) === 0) {
       sendJson(request, response, 404, { ok: false, error: "待办不存在" });
       return;
@@ -1064,7 +1076,13 @@ const server = http.createServer((request, response) => {
     return;
   }
   if (request.method === "DELETE" && riskEventIdOf(url.pathname) !== null) {
-    const info = deleteRiskEventStatement.run(riskEventIdOf(url.pathname), ownerKey);
+    let info;
+    try {
+      info = deleteRiskEventStatement.run(riskEventIdOf(url.pathname), ownerKey);
+    } catch (_error) {
+      sendJson(request, response, 500, { ok: false, error: "风险事件暂时无法删除，请稍后重试" });
+      return;
+    }
     if (Number(info.changes) === 0) {
       sendJson(request, response, 404, { ok: false, error: "风险事件不存在" });
       return;

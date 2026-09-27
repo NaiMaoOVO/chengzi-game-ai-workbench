@@ -4,9 +4,11 @@ const { spawn } = require("node:child_process");
 const http = require("node:http");
 const os = require("node:os");
 const path = require("node:path");
+const { DatabaseSync } = require("node:sqlite");
 
 const projectRoot = path.resolve(__dirname, "..");
 const PORT = 19713;
+const databasePath = path.join(os.tmpdir(), "gameops-risk-events-" + process.pid + "-" + Date.now() + ".db");
 
 function httpRequest(requestPath, options) {
   const { method = "GET", headers = {}, body = null } = options || {};
@@ -46,7 +48,7 @@ const child = spawn(process.execPath, [path.join(projectRoot, "archive-server.js
   env: {
     ...process.env,
     ARCHIVE_PORT: String(PORT),
-    ARCHIVE_DB_PATH: path.join(os.tmpdir(), "gameops-risk-events-" + process.pid + "-" + Date.now() + ".db"),
+    ARCHIVE_DB_PATH: databasePath,
     MORNING_GAMES: ""
   },
   stdio: ["ignore", "pipe", "pipe"]
@@ -327,4 +329,49 @@ test("delete removes the record; subsequent reads no longer see it", async () =>
     body: JSON.stringify({ status: "dropped" })
   });
   assert.equal(gone.status, 404);
+});
+
+test("database delete errors return 500 without stopping the archive service", async () => {
+  const publication = await httpRequest("/publications", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ game: "鸣潮", title: "数据库错误保护", channel: "B站" })
+  });
+  assert.equal(publication.status, 201);
+  const publicationId = JSON.parse(publication.text).publication.id;
+
+  const todo = await httpRequest("/daily-todos", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ game: "鸣潮", title: "数据库错误保护" })
+  });
+  assert.equal(todo.status, 201);
+  const todoId = JSON.parse(todo.text).daily_todo.id;
+
+  const risk = JSON.parse((await postRiskEvent({ game: "鸣潮", title: "数据库错误保护" })).text).risk_event;
+  const db = new DatabaseSync(databasePath);
+  db.exec(`
+    CREATE TRIGGER reject_publication_delete BEFORE DELETE ON publications BEGIN SELECT RAISE(ABORT, 'blocked'); END;
+    CREATE TRIGGER reject_daily_todo_delete BEFORE DELETE ON daily_todos BEGIN SELECT RAISE(ABORT, 'blocked'); END;
+    CREATE TRIGGER reject_risk_event_delete BEFORE DELETE ON risk_events BEGIN SELECT RAISE(ABORT, 'blocked'); END;
+  `);
+  db.close();
+
+  for (const [requestPath, expectedError] of [
+    ["/publications/" + publicationId, "发布记录暂时无法删除，请稍后重试"],
+    ["/daily-todos/" + todoId, "待办暂时无法删除，请稍后重试"],
+    ["/risk-events/" + risk.id, "风险事件暂时无法删除，请稍后重试"]
+  ]) {
+    const response = await httpRequest(requestPath, { method: "DELETE" });
+    assert.equal(response.status, 500);
+    assert.deepEqual(JSON.parse(response.text), { ok: false, error: expectedError });
+    assert.equal((await httpRequest("/health")).status, 200);
+  }
+
+  const publications = JSON.parse((await httpRequest("/publications?game=" + encodeURIComponent("鸣潮"))).text);
+  const todos = JSON.parse((await httpRequest("/daily-todos?game=" + encodeURIComponent("鸣潮"))).text);
+  const risks = JSON.parse((await httpRequest("/risk-events?game=" + encodeURIComponent("鸣潮"))).text);
+  assert.ok(publications.items.some((item) => item.id === publicationId), "失败的删除不应移除发布记录");
+  assert.ok(todos.items.some((item) => item.id === todoId), "失败的删除不应移除待办");
+  assert.ok(risks.items.some((item) => item.id === risk.id), "失败的删除不应移除风险事件");
 });
