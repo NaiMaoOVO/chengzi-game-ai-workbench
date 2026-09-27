@@ -7799,6 +7799,24 @@ function saveProjectState() {
   try {
     const storage = window.localStorage;
     if (!storage) throw new Error("浏览器存储不可用");
+    const existing = storage.getItem(PROJECT_STORAGE_KEY);
+    if (existing) {
+      let state;
+      try {
+        state = JSON.parse(existing);
+      } catch {
+        state = null;
+      }
+      const readable = state && typeof state === "object" && !Array.isArray(state)
+        && state.controls && typeof state.controls === "object" && !Array.isArray(state.controls);
+      if (!readable && !window.confirm("现有项目快照损坏或无法载入。覆盖前请先备份原始数据；仍要用当前页面状态替换吗？")) {
+        if (status) {
+          status.textContent = "总览状态：已取消覆盖，原始快照未修改。";
+          status.className = "source-status source-mock";
+        }
+        return;
+      }
+    }
     storage.setItem(PROJECT_STORAGE_KEY, JSON.stringify(collectProjectState()));
   } catch (_error) {
     if (status) {
