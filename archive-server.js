@@ -8,7 +8,7 @@ const { parseRequestUrl } = require("./lib/safe-request-url");
 const { parseIntegerConfig, createRateLimiter } = require("./lib/http-guards");
 const { createCors } = require("./lib/cors");
 const { createArchiveAuth } = require("./lib/archive-auth");
-const { businessDate, businessTime, isValidBusinessTime } = require("./lib/business-date");
+const { businessDate, businessDateStart, businessTime, isValidBusinessTime } = require("./lib/business-date");
 const { SUPPORTED_PLATFORMS, isSupportedPlatform } = require("./lib/platform-provider");
 
 const PORT = parseIntegerConfig(process.env.ARCHIVE_PORT, { name: "ARCHIVE_PORT", min: 1, max: 65535, defaultValue: 8796 });
@@ -42,7 +42,7 @@ function dayKey(iso) {
 }
 
 function computeStats(kind, days, game, ownerKey) {
-  const since = new Date(Date.now() - days * 86400000).toISOString();
+  const since = businessDateStart(new Date(), days - 1).toISOString();
   const rows = game
     ? db.prepare("SELECT payload, source, created_at FROM snapshots WHERE owner_key = ? AND kind = ? AND game = ? AND created_at >= ? ORDER BY created_at ASC").all(ownerKey, kind, game, since)
     : db.prepare("SELECT payload, source, created_at FROM snapshots WHERE owner_key = ? AND kind = ? AND created_at >= ? ORDER BY created_at ASC").all(ownerKey, kind, since);

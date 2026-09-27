@@ -6,6 +6,8 @@ const http = require("node:http");
 const net = require("node:net");
 const os = require("node:os");
 const path = require("node:path");
+const { DatabaseSync } = require("node:sqlite");
+const { businessDate, businessDateStart } = require("../lib/business-date");
 const { parseRequestUrl } = require("../lib/safe-request-url");
 
 const projectRoot = path.resolve(__dirname, "..");
@@ -712,6 +714,34 @@ test("archive list endpoints reject partially parsed or unsafe numeric query par
     }
 
     assert.equal((await httpRequest(port, "/health")).status, 200, "bad list query parameters must not stop the archive service");
+  });
+});
+
+test("archive stats honor Shanghai calendar window bounds", async () => {
+  const databasePath = path.join(os.tmpdir(), `gameops-archive-stats-window-${process.pid}-${Date.now()}.db`);
+  const seededAt = new Date();
+  const start = businessDateStart(seededAt, 13);
+  const middleDay = new Date(start.getTime() + 86400000);
+  const db = new DatabaseSync(databasePath);
+  db.exec("CREATE TABLE snapshots (id INTEGER PRIMARY KEY AUTOINCREMENT, owner_key TEXT NOT NULL DEFAULT 'default', kind TEXT NOT NULL, game TEXT NOT NULL DEFAULT '', source TEXT NOT NULL DEFAULT 'sample', payload TEXT NOT NULL, request_id TEXT, created_at TEXT NOT NULL)");
+  const insert = db.prepare("INSERT INTO snapshots (owner_key, kind, game, source, payload, created_at) VALUES (?, ?, ?, ?, ?, ?)");
+  const payload = JSON.stringify({ sentiment: { "负向": 1 }, risk: {} });
+  insert.run("default", "feedback", "边界测试", "real", payload, new Date(start.getTime() - 1).toISOString());
+  insert.run("default", "feedback", "边界测试", "real", payload, middleDay.toISOString());
+  insert.run("default", "feedback", "边界测试", "real", payload, seededAt.toISOString());
+  db.close();
+
+  await withGuardedService("archive-server.js", "ARCHIVE_PORT", {
+    ARCHIVE_DB_PATH: databasePath,
+    MORNING_GAMES: ""
+  }, async (port) => {
+    const response = await httpRequest(port, "/stats?kind=feedback&days=14&game=" + encodeURIComponent("边界测试"));
+    assert.equal(response.status, 200);
+    const stats = JSON.parse(response.text);
+    const dates = stats.series.map((entry) => entry.date).sort();
+    assert.ok(dates.includes(businessDate(middleDay)), "a snapshot well inside the calendar window should be included");
+    assert.ok(dates.includes(businessDate(seededAt)), "a snapshot from the current business date should be included");
+    assert.equal(dates.includes(businessDate(new Date(start.getTime() - 1))), false, "a snapshot before the window must be excluded");
   });
 });
 

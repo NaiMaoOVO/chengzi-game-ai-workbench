@@ -19,5 +19,6 @@ test("morning fetch uses Shanghai business time and persistent per-game run reco
 
 test("archive statistics group snapshots by the Shanghai business date", () => {
   assert.match(archive, /function dayKey\(iso\) \{\s+return businessDate\(new Date\(iso\)\);/);
+  assert.match(archive, /businessDateStart\(new Date\(\), days - 1\)\.toISOString\(\)/);
   assert.doesNotMatch(archive, /function dayKey\(iso\) \{\s+return String\(iso\)\.slice\(0, 10\);/);
 });

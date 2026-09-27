@@ -1,11 +1,18 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 
-const { businessDate, businessTime, isValidBusinessTime } = require("../lib/business-date");
+const { businessDate, businessDateStart, businessTime, isValidBusinessTime } = require("../lib/business-date");
 
 test("business date uses Shanghai day boundaries", () => {
   assert.equal(businessDate(new Date("2026-09-16T15:59:59.000Z")), "2026-09-16");
   assert.equal(businessDate(new Date("2026-09-16T16:00:00.000Z")), "2026-09-17");
+});
+
+test("business date window starts at midnight on the oldest included Shanghai day", () => {
+  const beforeMorning = new Date("2026-09-27T00:15:00.000Z");
+  assert.equal(businessDateStart(beforeMorning, 13).toISOString(), "2026-09-13T16:00:00.000Z");
+  assert.equal(businessDateStart(new Date("2026-09-16T15:59:59.000Z"), 1).toISOString(), "2026-09-14T16:00:00.000Z");
+  assert.equal(businessDateStart(new Date("2026-09-16T16:00:00.000Z"), 1).toISOString(), "2026-09-15T16:00:00.000Z");
 });
 
 test("business time uses Shanghai clock boundaries", () => {
