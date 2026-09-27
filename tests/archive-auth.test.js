@@ -67,6 +67,7 @@ const child = spawn(process.execPath, [path.join(projectRoot, "archive-server.js
     ARCHIVE_ADMIN_USERNAME: "ops-admin",
     ARCHIVE_ADMIN_PASSWORD: "admin-password-2026",
     ARCHIVE_COOKIE_SECURE: "0",
+    ARCHIVE_AUTH_RATE_LIMIT_MAX: "100",
     MORNING_GAMES: ""
   },
   stdio: ["ignore", "pipe", "pipe"]
@@ -285,6 +286,34 @@ test("admin user creation storage errors return a sanitized 500 without creating
   assert.equal(check.prepare("SELECT COUNT(*) AS count FROM archive_users WHERE username = ?").get("storage-failure").count, 0);
   check.close();
   assert.equal((await request("/health")).status, 200);
+});
+
+test("archive login storage errors are distinct from invalid credentials", async () => {
+  const setup = new DatabaseSync(databasePath);
+  setup.exec("CREATE TRIGGER reject_session_insert BEFORE INSERT ON archive_sessions BEGIN SELECT RAISE(ABORT, 'blocked'); END;");
+  setup.close();
+
+  let response;
+  const cleanup = new DatabaseSync(databasePath);
+  try {
+    response = await request("/auth/login", {
+      method: "POST",
+      headers: jsonHeaders(),
+      body: JSON.stringify({ username: "ops-admin", password: "admin-password-2026" })
+    });
+  } finally {
+    cleanup.exec("DROP TRIGGER IF EXISTS reject_session_insert");
+    cleanup.close();
+  }
+
+  assert.equal(response.status, 500);
+  assert.deepEqual(response.payload, { ok: false, error: "登录服务暂时不可用，请稍后重试" });
+  assert.doesNotMatch(JSON.stringify(response.payload), /blocked|sqlite/i);
+  assert.equal((await request("/auth/login", {
+    method: "POST",
+    headers: jsonHeaders(),
+    body: JSON.stringify({ username: "ops-admin", password: "admin-password-2026" })
+  })).status, 200);
 });
 
 test("admin user list storage errors return a sanitized 500 and keep the service alive", async () => {

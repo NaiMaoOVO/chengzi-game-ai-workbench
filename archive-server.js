@@ -633,7 +633,11 @@ const server = http.createServer((request, response) => {
           csrf_token: session.csrfToken,
           expires_at: session.expiresAt
         }, { "Set-Cookie": archiveAuth.sessionCookie(session.token, session.expiresAt) });
-      } catch (_error) {
+      } catch (error) {
+        if (error.code === "AUTH_STORAGE_FAILED") {
+          sendJson(request, response, 500, { ok: false, error: "登录服务暂时不可用，请稍后重试" });
+          return;
+        }
         sendJson(request, response, 401, { ok: false, error: "用户名或密码错误" });
       }
     });
