@@ -1,8 +1,9 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { spawnSync } = require("node:child_process");
+const { spawn, spawnSync } = require("node:child_process");
 const crypto = require("node:crypto");
 const fs = require("node:fs");
+const http = require("node:http");
 const os = require("node:os");
 const path = require("node:path");
 const { DatabaseSync } = require("node:sqlite");
@@ -239,6 +240,65 @@ test("archive restore requires a stopped-service acknowledgement and preserves t
   assert.equal(fs.readFileSync(path.join(dir, safetyMain + "-wal"), "utf8"), "old-wal-sidecar");
   assert.equal(fs.readFileSync(path.join(dir, safetyMain + "-shm"), "utf8"), "old-shm-sidecar");
   fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test("archive restore refuses to replace the database while the archive service is responding", async (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "gameops-backup-restore-running-test-"));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const databasePath = path.join(dir, "archive.db");
+  const backupDir = path.join(dir, "backups");
+  const backupDatabase = new DatabaseSync(databasePath);
+  backupDatabase.exec("CREATE TABLE check_rows (value TEXT NOT NULL); INSERT INTO check_rows VALUES ('before backup');");
+  backupDatabase.close();
+  const env = { ...process.env, ARCHIVE_DB_PATH: databasePath, ARCHIVE_BACKUP_DIR: backupDir, ARCHIVE_PORT: "19717", MORNING_GAMES: "" };
+  const backup = spawnSync(process.execPath, [path.join(root, "scripts", "backup-archive.js")], { cwd: root, env, encoding: "utf8" });
+  assert.equal(backup.status, 0, backup.stderr || backup.stdout);
+  const backupFile = path.join(backupDir, fs.readdirSync(backupDir).find((name) => /^archive-.*\.db$/.test(name)));
+  const changed = new DatabaseSync(databasePath);
+  changed.exec("INSERT INTO check_rows VALUES ('after backup');");
+  changed.close();
+
+  const archiveService = spawn(process.execPath, [path.join(root, "archive-server.js")], {
+    cwd: root,
+    env: { ...env, ARCHIVE_AUTH_ENABLED: "0", ARCHIVE_COOKIE_SECURE: "0" },
+    stdio: "ignore"
+  });
+  t.after(async () => {
+    if (archiveService.exitCode === null) {
+      archiveService.kill("SIGTERM");
+      await Promise.race([
+        new Promise((resolve) => archiveService.once("exit", resolve)),
+        new Promise((resolve) => setTimeout(resolve, 3000))
+      ]);
+    }
+  });
+
+  const deadline = Date.now() + 10000;
+  let ready = false;
+  while (Date.now() < deadline && !ready) {
+    try {
+      ready = await new Promise((resolve, reject) => {
+        const request = http.get({ host: "127.0.0.1", port: 19717, path: "/health" }, (response) => {
+          response.resume();
+          response.on("end", () => resolve(response.statusCode === 200));
+        });
+        request.on("error", reject);
+      });
+    } catch (_error) { /* 等待隔离测试服务启动 */ }
+    if (!ready) await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  assert.equal(ready, true, "archive 测试服务应在 10 秒内启动");
+
+  const restore = spawnSync(process.execPath, [path.join(root, "scripts", "restore-archive-backup.js"), backupFile, "--service-stopped"], {
+    cwd: root,
+    env,
+    encoding: "utf8"
+  });
+  assert.equal(restore.status, 1);
+  assert.match(restore.stderr, /仍有服务响应，已拒绝恢复/);
+  const stillLive = new DatabaseSync(databasePath, { readOnly: true });
+  assert.deepEqual(stillLive.prepare("SELECT value FROM check_rows ORDER BY rowid").all().map((row) => row.value), ["before backup", "after backup"]);
+  stillLive.close();
 });
 
 test("archive restore rejects a checksum-valid non-SQLite backup without touching the live database", () => {
