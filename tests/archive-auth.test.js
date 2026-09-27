@@ -11,6 +11,8 @@ const { DatabaseSync } = require("node:sqlite");
 const projectRoot = path.resolve(__dirname, "..");
 const PORT = 19714;
 const databasePath = path.join(os.tmpdir(), "gameops-archive-auth-" + process.pid + "-" + Date.now() + ".db");
+const backupPathFixture = databasePath + ".backup-dir-is-a-file";
+fs.writeFileSync(backupPathFixture, "test fixture");
 
 // 认证开启前可能已经在个人模式写入创作者库，启动服务前构造一条 legacy default 记录，验证它会迁移给管理员。
 const seedDb = new DatabaseSync(databasePath);
@@ -74,6 +76,8 @@ const child = spawn(process.execPath, [path.join(projectRoot, "archive-server.js
     ARCHIVE_AUTH_ENABLED: "1",
     ARCHIVE_ADMIN_USERNAME: "ops-admin",
     ARCHIVE_ADMIN_PASSWORD: "admin-password-2026",
+    ARCHIVE_AUTO_BACKUP_ENABLED: "1",
+    ARCHIVE_BACKUP_DIR: backupPathFixture,
     ARCHIVE_COOKIE_SECURE: "0",
     ARCHIVE_AUTH_RATE_LIMIT_MAX: "100",
     MORNING_GAMES: ""
@@ -88,6 +92,7 @@ test.after(async () => {
     new Promise((resolve) => child.once("exit", resolve)),
     new Promise((resolve) => setTimeout(resolve, 3000))
   ]);
+  fs.rmSync(backupPathFixture, { force: true });
 });
 
 test("archive startup restricts permissions on an existing database", () => {
@@ -119,7 +124,7 @@ test("archive auth requires login, CSRF, and keeps each account's data private",
   const adminCsrf = adminLogin.payload.csrf_token;
   const adminBackupStatus = await request("/backup/status", { headers: { Cookie: adminCookie } });
   assert.equal(adminBackupStatus.status, 200);
-  assert.equal(adminBackupStatus.payload.backup.status, "disabled", "测试环境应默认关闭后台备份");
+  assert.equal(adminBackupStatus.payload.backup.status, "pending", "只读状态查询不应运行备份目录校验");
   assert.deepEqual(Object.keys(adminBackupStatus.payload.backup).sort(), [
     "business_date", "enabled", "last_success_date", "retry_interval_minutes", "status"
   ]);

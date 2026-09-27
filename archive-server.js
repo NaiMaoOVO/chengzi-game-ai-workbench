@@ -728,7 +728,6 @@ const server = http.createServer((request, response) => {
       sendJson(request, response, 403, { ok: false, error: "admin_required" });
       return;
     }
-    backupScheduler.check();
     sendJson(request, response, 200, { ok: true, service: "gameops-archive", backup: backupScheduler.getStatus() });
     return;
   }
