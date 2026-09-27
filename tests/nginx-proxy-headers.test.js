@@ -38,7 +38,7 @@ test("HTTPS API proxy routes inherit the server-level Basic Auth gate", () => {
   const httpsServerStart = config.indexOf("listen 443 ssl");
   assert.notEqual(httpsServerStart, -1, "expected an HTTPS server block");
 
-  const firstLocation = config.indexOf("location", httpsServerStart);
+  const firstLocation = config.indexOf("\n    location ", httpsServerStart);
   assert.notEqual(firstLocation, -1, "expected locations in the HTTPS server block");
   const serverDirectives = config.slice(httpsServerStart, firstLocation);
   assert.match(serverDirectives, /^\s*auth_basic\s+"[^"]+"\s*;/m);
@@ -51,4 +51,26 @@ test("HTTPS API proxy routes inherit the server-level Basic Auth gate", () => {
   for (const block of proxyLocations) {
     assert.doesNotMatch(block, /^\s*auth_basic\s+off\s*;/im);
   }
+});
+
+test("HTTPS cache locations keep inheriting the server-level security headers", () => {
+  const config = fs.readFileSync(path.join(root, "nginx-https.conf.example"), "utf8");
+  const httpsServerStart = config.indexOf("listen 443 ssl");
+  const firstLocation = config.indexOf("\n    location ", httpsServerStart);
+  const serverDirectives = config.slice(httpsServerStart, firstLocation);
+  assert.match(serverDirectives, /^\s*add_header\s+Content-Security-Policy\b/m);
+  assert.match(serverDirectives, /^\s*add_header\s+Strict-Transport-Security\b/m);
+
+  const locations = [...config.matchAll(/location\s+([^{}]+)\{([^{}]*)\}/g)];
+  assert.ok(locations.length > 0);
+  for (const [, , block] of locations) {
+    assert.doesNotMatch(block, /^\s*add_header\b/im);
+  }
+
+  const staticAssets = locations.find(([, selector]) => selector.includes("(js|css)"))?.[2];
+  const indexHtml = locations.find(([, selector]) => selector.includes("= /index.html"))?.[2];
+  assert.ok(staticAssets, "expected a fingerprinted static asset location");
+  assert.ok(indexHtml, "expected an explicit HTML cache location");
+  assert.match(staticAssets, /^\s*expires\s+30d\s*;/m);
+  assert.match(indexHtml, /^\s*expires\s+-1\s*;/m);
 });
