@@ -551,6 +551,24 @@ test("archive: invalid morning schedule or platform exits before the service lis
   }
 });
 
+test("hotspot and comment services reject invalid cache and upstream settings before listening", () => {
+  const invalidConfigs = [
+    ["hotspot-server.js", { CACHE_TTL_MS: "abc" }, /CACHE_TTL_MS must be an integer/],
+    ["comment-server.js", { UPSTREAM_RETRIES: "abc" }, /UPSTREAM_RETRIES must be an integer/]
+  ];
+
+  for (const [script, extraEnv, message] of invalidConfigs) {
+    const result = spawnSync(process.execPath, [path.join(projectRoot, script)], {
+      cwd: projectRoot,
+      env: { ...process.env, ...extraEnv },
+      encoding: "utf8",
+      timeout: 3000
+    });
+    assert.equal(result.status, 1, `${script} unexpectedly started with invalid config`);
+    assert.match(result.stderr, message);
+  }
+});
+
 test("archive: identity, malformed Host -> 400, disallowed Origin -> 403, wrong method/bad JSON guards", async () => {
   await withGuardedService("archive-server.js", "ARCHIVE_PORT", {
     ARCHIVE_DB_PATH: path.join(require("node:os").tmpdir(), `gameops-archive-guard-${Date.now()}.db`),

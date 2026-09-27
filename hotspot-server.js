@@ -4,7 +4,7 @@ require("./lib/env-file").loadProjectEnv(__dirname);
 const { calculateHeatScore, rankHotspots } = require("./lib/hotspot-ranking");
 const { fetchPlatformProvider, isSupportedPlatform } = require("./lib/platform-provider");
 const { parseRequestUrl } = require("./lib/safe-request-url");
-const { createRateLimiter, createRetryBudget } = require("./lib/http-guards");
+const { parseIntegerConfig, createRateLimiter, createRetryBudget } = require("./lib/http-guards");
 const { createFetchWithRetry } = require("./lib/fetch-with-retry");
 const { createCors } = require("./lib/cors");
 const { businessDate } = require("./lib/business-date");
@@ -20,9 +20,9 @@ const PLATFORM_PROVIDER_TIMEOUT_MS = Math.max(1000, Number(process.env.PLATFORM_
 const cors = createCors({ allowedOrigins: process.env.ALLOWED_ORIGIN, methods: "GET, OPTIONS", allowFileOrigin: process.env.ALLOW_FILE_ORIGIN === "1" || process.env.NODE_ENV !== "production" });
 const RATE_LIMIT_WINDOW_MS = Math.max(1000, Number(process.env.RATE_LIMIT_WINDOW_MS || 60000));
 const RATE_LIMIT_MAX = Math.max(1, Number(process.env.RATE_LIMIT_MAX || 60));
-const CACHE_TTL_MS = Math.max(0, Number(process.env.CACHE_TTL_MS || 30000));
-const UPSTREAM_TIMEOUT_MS = Math.max(1000, Number(process.env.UPSTREAM_TIMEOUT_MS || 8000));
-const UPSTREAM_RETRIES = Math.max(0, Math.min(3, Number(process.env.UPSTREAM_RETRIES || 2)));
+const CACHE_TTL_MS = parseIntegerConfig(process.env.CACHE_TTL_MS, { name: "CACHE_TTL_MS", min: 0, defaultValue: 30000 });
+const UPSTREAM_TIMEOUT_MS = parseIntegerConfig(process.env.UPSTREAM_TIMEOUT_MS, { name: "UPSTREAM_TIMEOUT_MS", min: 1000, max: 2147483647, defaultValue: 8000 });
+const UPSTREAM_RETRIES = parseIntegerConfig(process.env.UPSTREAM_RETRIES, { name: "UPSTREAM_RETRIES", min: 0, max: 3, defaultValue: 2 });
 const upstreamRetryBudget = createRetryBudget({ capacity: 3, refillIntervalMs: 1000 });
 const fetchWithRetry = createFetchWithRetry({
   retries: UPSTREAM_RETRIES,

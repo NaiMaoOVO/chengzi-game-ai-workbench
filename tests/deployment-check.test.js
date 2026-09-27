@@ -98,6 +98,25 @@ test("deployment check rejects malformed rate limit settings before PM2 starts s
   }
 });
 
+test("deployment check validates upstream timeout, retry count, and cache TTL settings", () => {
+  const invalidSettings = [
+    ["UPSTREAM_TIMEOUT_MS", "abc", /UPSTREAM_TIMEOUT_MS 必须是 1000-2147483647 之间的整数/],
+    ["UPSTREAM_RETRIES", "abc", /UPSTREAM_RETRIES 必须是 0-3 的整数/],
+    ["UPSTREAM_RETRIES", "4", /UPSTREAM_RETRIES 必须是 0-3 的整数/],
+    ["CACHE_TTL_MS", "abc", /CACHE_TTL_MS 必须是非负整数/],
+    ["CACHE_TTL_MS", "-1", /CACHE_TTL_MS 必须是非负整数/]
+  ];
+
+  for (const [name, value, message] of invalidSettings) {
+    const result = runCheck("https://gameops.test", { [name]: value });
+    assert.equal(result.status, 1, `${name}=${value} unexpectedly passed deployment checks`);
+    assert.match(result.stderr, message);
+  }
+
+  const disabledCache = runCheck("https://gameops.test", { CACHE_TTL_MS: "0", UPSTREAM_RETRIES: "0" });
+  assert.equal(disabledCache.status, 0, disabledCache.stderr);
+});
+
 test("deployment check validates the scheduled morning time and normalizes whitespace", () => {
   for (const value of ["9:00", "24:00", "12:60", "09:00x"]) {
     const result = runCheck("https://gameops.test", { MORNING_SCHEDULE: value });

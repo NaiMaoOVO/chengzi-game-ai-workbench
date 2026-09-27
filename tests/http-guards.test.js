@@ -23,6 +23,14 @@ test("rate limiter rejects invalid bounds instead of silently allowing requests"
   assert.throws(() => createRateLimiter({ windowMs: 60000, max: 1, maxKeys: 0 }), /maxKeys/);
 });
 
+test("single-flight cache rejects invalid TTL and capacity instead of caching entries forever", () => {
+  assert.throws(() => createSingleFlightCache({ ttlMs: Number.NaN }), /ttlMs/);
+  assert.throws(() => createSingleFlightCache({ ttlMs: Infinity }), /ttlMs/);
+  assert.throws(() => createSingleFlightCache({ ttlMs: 1000, maxEntries: Number.NaN }), /maxEntries/);
+  assert.throws(() => createSingleFlightCache({ ttlMs: 1000, maxEntries: 0 }), /maxEntries/);
+  assert.doesNotThrow(() => createSingleFlightCache({ ttlMs: 0 }));
+});
+
 test("single-flight cache shares an in-flight producer and stable serializes keys", async () => {
   assert.equal(stableSerialize({ b: 2, a: 1 }), stableSerialize({ a: 1, b: 2 }));
   const cache = createSingleFlightCache({ ttlMs: 1000, maxEntries: 2 });

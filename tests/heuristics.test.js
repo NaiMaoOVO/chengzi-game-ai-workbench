@@ -182,6 +182,15 @@ test("createFetchWithRetry maps upstream TimeoutError to a friendly message", as
   await assert.rejects(fetchWithRetry("https://upstream.example/api"), /上游请求超时/);
 });
 
+test("createFetchWithRetry rejects invalid retry and timeout settings before a request", () => {
+  assert.throws(() => createFetchWithRetry({ retries: Number.NaN }), /retries/);
+  assert.throws(() => createFetchWithRetry({ retries: -1 }), /retries/);
+  assert.throws(() => createFetchWithRetry({ retries: 1.5 }), /retries/);
+  assert.throws(() => createFetchWithRetry({ timeoutMs: Number.NaN }), /timeoutMs/);
+  assert.throws(() => createFetchWithRetry({ timeoutMs: 0 }), /timeoutMs/);
+  assert.doesNotThrow(() => createFetchWithRetry({ retries: 0, timeoutMs: 1000 }));
+});
+
 test("createFetchWithRetry returns non-retryable responses immediately with abort signal wired", async () => {
   const fetchImpl = stubFetch([404]);
   const fetchWithRetry = createFetchWithRetry({

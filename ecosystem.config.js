@@ -1,6 +1,7 @@
 const path = require("node:path");
 const { isIP } = require("node:net");
 require("./lib/env-file").loadProjectEnv(__dirname);
+const { parseIntegerConfig } = require("./lib/http-guards");
 const { assertSafeProviderUrl, SUPPORTED_PLATFORMS, isSupportedPlatform } = require("./lib/platform-provider");
 const { isValidBusinessTime } = require("./lib/business-date");
 
@@ -32,6 +33,20 @@ for (const name of [
   if (rawValue === undefined || !String(rawValue).trim()) continue;
   const value = Number(rawValue);
   if (!Number.isSafeInteger(value) || value < 1) throw new Error(`${name} 必须是正整数`);
+}
+
+for (const [name, options, message] of [
+  ["UPSTREAM_TIMEOUT_MS", { min: 1000, max: 2147483647 }, "UPSTREAM_TIMEOUT_MS 必须是 1000-2147483647 之间的整数"],
+  ["UPSTREAM_RETRIES", { min: 0, max: 3 }, "UPSTREAM_RETRIES 必须是 0-3 的整数"],
+  ["CACHE_TTL_MS", { min: 0 }, "CACHE_TTL_MS 必须是非负整数"]
+]) {
+  const rawValue = process.env[name];
+  if (rawValue === undefined || !String(rawValue).trim()) continue;
+  try {
+    parseIntegerConfig(rawValue, { name, ...options });
+  } catch (_error) {
+    throw new Error(message);
+  }
 }
 
 function hasExampleHost(value) {
