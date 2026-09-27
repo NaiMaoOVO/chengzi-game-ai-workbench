@@ -161,6 +161,20 @@ test("daily todo validation rejects invalid fields and missing records", async (
   assert.equal(missingUpdate.status, 404);
 });
 
+test("daily todo updates reject explicit non-string text instead of reporting a no-op as success", async () => {
+  const created = JSON.parse((await postDailyTodo({ game: "鸣潮", title: "修复待办" })).text).daily_todo;
+  const updated = await httpRequest("/daily-todos/" + created.id, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ title: { text: "被静默丢弃" } })
+  });
+  assert.equal(updated.status, 400);
+  assert.match(JSON.parse(updated.text).error, /title/);
+
+  const listed = JSON.parse((await httpRequest("/daily-todos?game=" + encodeURIComponent("鸣潮"))).text);
+  assert.equal(listed.items.find((item) => item.id === created.id).title, "修复待办");
+});
+
 test("daily todo retries with one idempotency key create only one row", async () => {
   const headers = { "Content-Type": "application/json", "Idempotency-Key": "daily-retry-20260916" };
   const body = JSON.stringify({ game: "鸣潮", title: "网络重试不能重复创建" });

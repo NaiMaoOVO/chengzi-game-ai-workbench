@@ -170,6 +170,36 @@ test("update accepts metrics object, persists string storage, returns parsed obj
   assert.deepEqual(row.metrics_json, { views: 3400 });
 });
 
+test("publication updates reject explicit non-string fields instead of silently keeping old values", async () => {
+  const created = JSON.parse((await postPublication({
+    game: "鸣潮",
+    title: "发布前瞻",
+    channel: "B站",
+    url: "https://example.com/post"
+  })).text).publication;
+
+  const invalidTitle = await httpRequest("/publications/" + created.id, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ title: 123 })
+  });
+  assert.equal(invalidTitle.status, 400);
+  assert.match(JSON.parse(invalidTitle.text).error, /title/);
+
+  const invalidUrl = await httpRequest("/publications/" + created.id, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ url: { value: "https://evil.example" } })
+  });
+  assert.equal(invalidUrl.status, 400);
+  assert.match(JSON.parse(invalidUrl.text).error, /url/);
+
+  const current = JSON.parse((await httpRequest("/publications?game=" + encodeURIComponent("鸣潮"))).text).items
+    .find((item) => item.id === created.id);
+  assert.equal(current.title, "发布前瞻");
+  assert.equal(current.url, "https://example.com/post");
+});
+
 test("missing required fields return per-field 400 messages", async () => {
   const missingAll = await postPublication({});
   assert.equal(missingAll.status, 400);

@@ -100,7 +100,8 @@ function readJsonBody(request, response, onBody) {
 }
 
 function textValue(value, field, maxLength, fallback = "") {
-  if (typeof value !== "string") return fallback;
+  if (value === undefined) return fallback;
+  if (typeof value !== "string") throw new Error(field + " 必须为字符串");
   const text = value.trim();
   if (text.length > maxLength) throw new Error(field + " 不能超过 " + maxLength + " 个字符");
   return text;
