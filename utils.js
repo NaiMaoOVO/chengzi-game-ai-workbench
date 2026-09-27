@@ -39,8 +39,10 @@ let XHS_SERVICE_URL = SERVICE_URL_PRESETS.local.xiaohongshu;
 let archiveCsrfToken = "";
 let archiveSessionUser = null;
 let archiveAuthRequired = false;
+let archiveSessionRefreshGeneration = 0;
 
 function setArchiveSession(payload) {
+  archiveSessionRefreshGeneration += 1;
   archiveAuthRequired = payload?.auth_required === true || Boolean(payload?.user);
   archiveSessionUser = payload?.user || null;
   archiveCsrfToken = typeof payload?.csrf_token === "string" ? payload.csrf_token : "";
@@ -60,14 +62,17 @@ function archiveRequest(url, options = {}) {
 }
 
 async function refreshArchiveSession() {
+  const generation = ++archiveSessionRefreshGeneration;
+  const currentSession = () => ({ required: archiveAuthRequired, user: archiveSessionUser });
   try {
     const response = await archiveRequest(ARCHIVE_SERVICE_URL + "/auth/session", { cache: "no-store" });
     const payload = await response.json().catch(() => ({}));
+    if (generation !== archiveSessionRefreshGeneration) return currentSession();
     if (response.status === 401) return setArchiveSession({ auth_required: true });
-    if (!response.ok) return { required: archiveAuthRequired, user: archiveSessionUser };
+    if (!response.ok) return currentSession();
     return setArchiveSession(payload);
   } catch (_error) {
-    return { required: archiveAuthRequired, user: archiveSessionUser };
+    return currentSession();
   }
 }
 
@@ -114,12 +119,15 @@ function getServiceMode() {
 
 function setServiceMode(mode) {
   const nextMode = mode === "online" ? "online" : "local";
+  const modeChanged = getServiceMode() !== nextMode;
   try {
     window.localStorage?.setItem(SERVICE_MODE_STORAGE_KEY, nextMode);
   } catch (_error) {
     /* localStorage may be unavailable in private contexts. */
   }
-  return applyServiceMode(nextMode);
+  const appliedMode = applyServiceMode(nextMode);
+  if (modeChanged) setArchiveSession({});
+  return appliedMode;
 }
 
 function isOnlineServiceMode() {
