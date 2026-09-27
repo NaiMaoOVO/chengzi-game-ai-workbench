@@ -66,6 +66,31 @@ test("generic provider accepts data as a direct array", () => {
   assert.equal(items[0].title, "数组结果");
 });
 
+test("malformed provider rows do not discard valid rows from the same response", async () => {
+  const result = await fetchPlatformProvider({
+    providerUrl: "https://provider.example/search",
+    platform: "抖音",
+    game: "鸣潮",
+    range: "24h",
+    limit: 10,
+    fetchImpl: async () => ({
+      ok: true,
+      async json() {
+        return {
+          items: [
+            null,
+            [],
+            { title: "无效时间", publishedAt: 1e30 },
+            { title: "有效内容", publishedAt: new Date().toISOString() }
+          ]
+        };
+      }
+    })
+  });
+
+  assert.deepEqual(result.items.map((item) => item.title), ["有效内容"]);
+});
+
 test("provider results are filtered locally by the requested time range", async () => {
   const now = Date.now();
   const result = await fetchPlatformProvider({
