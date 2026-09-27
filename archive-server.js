@@ -1231,6 +1231,17 @@ const server = http.createServer((request, response) => {
         sendJson(request, response, 400, { ok: false, error: "status 不合法（允许：open、processing、resolved、dropped）" });
         return;
       }
+      let source;
+      let link;
+      let detail;
+      try {
+        source = textValue(body?.source, "source", 60, "评论分析") || "评论分析";
+        link = textValue(body?.url, "url", 2048);
+        detail = textValue(body?.detail, "detail", 4000);
+      } catch (error) {
+        sendJson(request, response, 400, { ok: false, error: error.message });
+        return;
+      }
       let requestId;
       try {
         requestId = requestIdOf(request, body);
@@ -1239,7 +1250,13 @@ const server = http.createServer((request, response) => {
         return;
       }
       if (requestId) {
-        const existing = findRiskEventByRequestStatement.get(ownerKey, requestId);
+        let existing;
+        try {
+          existing = findRiskEventByRequestStatement.get(ownerKey, requestId);
+        } catch (_error) {
+          sendJson(request, response, 500, { ok: false, error: "风险工单暂时无法保存，请稍后重试" });
+          return;
+        }
         if (existing) {
           sendJson(request, response, 200, { ok: true, risk_event: existing, idempotent: true });
           return;
@@ -1252,18 +1269,26 @@ const server = http.createServer((request, response) => {
           ownerKey,
           game,
           title,
-          textValue(body?.source, "source", 60, "评论分析") || "评论分析",
-          textValue(body?.url, "url", 2048),
-          textValue(body?.detail, "detail", 4000),
+          source,
+          link,
+          detail,
           level || "中",
           status || "open",
           requestId,
           now,
           now
         );
-      } catch (error) {
-        const existing = requestId ? findRiskEventByRequestStatement.get(ownerKey, requestId) : null;
-        if (!existing) throw error;
+      } catch (_error) {
+        let existing = null;
+        try {
+          if (requestId) existing = findRiskEventByRequestStatement.get(ownerKey, requestId);
+        } catch (_lookupError) {
+          // The write outcome cannot be confirmed; report storage failure rather than crashing or guessing.
+        }
+        if (!existing) {
+          sendJson(request, response, 500, { ok: false, error: "风险工单暂时无法保存，请稍后重试" });
+          return;
+        }
         sendJson(request, response, 200, { ok: true, risk_event: existing, idempotent: true });
         return;
       }

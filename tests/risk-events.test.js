@@ -392,6 +392,24 @@ test("project profile storage errors return 500 without exposing database detail
   assert.equal((await httpRequest("/health")).status, 200);
 });
 
+test("risk event create storage errors return 500 without stopping the service", async () => {
+  const db = new DatabaseSync(databasePath);
+  db.exec("CREATE TRIGGER reject_risk_insert BEFORE INSERT ON risk_events BEGIN SELECT RAISE(ABORT, 'blocked'); END;");
+  db.close();
+
+  const response = await httpRequest("/risk-events", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "Idempotency-Key": "risk-storage-failure-20260927" },
+    body: JSON.stringify({ game: "数据库写故障样本", title: "存储异常保护" })
+  });
+  assert.equal(response.status, 500);
+  assert.deepEqual(JSON.parse(response.text), { ok: false, error: "风险工单暂时无法保存，请稍后重试" });
+  assert.doesNotMatch(response.text, /blocked|sqlite/i);
+  assert.equal((await httpRequest("/health")).status, 200);
+  const after = JSON.parse((await httpRequest("/risk-events?game=" + encodeURIComponent("数据库写故障样本"))).text);
+  assert.equal(after.items.length, 0, "失败的创建不应留下风险工单");
+});
+
 test("project profile read errors return 500 without stopping the archive service", async () => {
   const missingGame = await httpRequest("/profile");
   assert.equal(missingGame.status, 400);
