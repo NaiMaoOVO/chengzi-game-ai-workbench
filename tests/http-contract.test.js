@@ -140,6 +140,13 @@ for (const [index, item] of serviceCases.entries()) {
       assert.equal(cors.ok, true, `${item.script} 应接受 file:// 页面的 null Origin`);
       assert.equal(cors.headers.get("access-control-allow-origin"), "null");
       if (item.extraCheck) await item.extraCheck(port);
+      if (item.script === "archive-server.js") {
+        const stopped = new Promise((resolve) => child.once("exit", (code, signal) => resolve({ code, signal })));
+        child.kill("SIGTERM");
+        const result = await stopped;
+        exited = true;
+        assert.deepEqual(result, { code: 0, signal: null }, "archive should stop its backup scheduler and exit cleanly on SIGTERM");
+      }
     } catch (error) {
       assert.fail(`${error.message}\nstderr: ${stderrText.slice(-800)}`);
     } finally {

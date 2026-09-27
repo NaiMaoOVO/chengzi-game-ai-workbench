@@ -1627,6 +1627,19 @@ server.on("error", (error) => {
 server.requestTimeout = 30000;
 server.headersTimeout = 10000;
 
+let shuttingDown = false;
+function shutdownArchiveServer() {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  backupScheduler.stop();
+  const forceCloseTimer = setTimeout(() => server.closeAllConnections?.(), 3000);
+  forceCloseTimer.unref?.();
+  server.close(() => clearTimeout(forceCloseTimer));
+}
+
+process.once("SIGINT", shutdownArchiveServer);
+process.once("SIGTERM", shutdownArchiveServer);
+
 server.listen(PORT, "127.0.0.1", () => {
   console.log("🗄 存档服务已启动 → http://127.0.0.1:" + PORT);
   console.log("   数据文件: " + dbPath);
