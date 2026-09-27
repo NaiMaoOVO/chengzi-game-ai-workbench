@@ -17,6 +17,7 @@ const CACHE_TTL_MS = Math.max(0, Number(process.env.LLM_CACHE_TTL_MS) || 600000)
 const RATE_LIMIT_WINDOW_MS = 60 * 1000;
 const RATE_LIMIT_MAX = Number(process.env.LLM_RATE_LIMIT_MAX) || 20;
 const MAX_REQUEST_BYTES = 256 * 1024;
+const MAX_UPSTREAM_RESPONSE_BYTES = 1024 * 1024;
 
 const cors = createCors({ allowedOrigins: process.env.ALLOWED_ORIGIN, methods: "GET, POST, OPTIONS", allowFileOrigin: process.env.ALLOW_FILE_ORIGIN === "1" || process.env.NODE_ENV !== "production" });
 const checkRateLimit = createRateLimiter({
@@ -242,7 +243,15 @@ function callUpstream(prompt, task = {}, options = {}) {
       }
     }, (response) => {
       const chunks = [];
-      response.on("data", (chunk) => chunks.push(chunk));
+      let receivedBytes = 0;
+      response.on("data", (chunk) => {
+        receivedBytes += chunk.length;
+        if (receivedBytes > MAX_UPSTREAM_RESPONSE_BYTES) {
+          response.destroy(new Error("LLM 上游响应超过大小限制"));
+          return;
+        }
+        chunks.push(chunk);
+      });
       response.on("end", () => {
         removeAbortListener();
         const body = Buffer.concat(chunks).toString("utf8");
@@ -339,7 +348,15 @@ function streamUpstreamText(prompt, task, onDelta, options = {}) {
     }, (response) => {
       if (response.statusCode < 200 || response.statusCode >= 300) {
         const chunks = [];
-        response.on("data", (chunk) => chunks.push(chunk));
+        let receivedBytes = 0;
+        response.on("data", (chunk) => {
+          receivedBytes += chunk.length;
+          if (receivedBytes > MAX_UPSTREAM_RESPONSE_BYTES) {
+            response.destroy(new Error("LLM 上游响应超过大小限制"));
+            return;
+          }
+          chunks.push(chunk);
+        });
         response.on("end", () => {
           const body = Buffer.concat(chunks).toString("utf8");
           let detail = "上游 HTTP " + response.statusCode;
@@ -354,6 +371,7 @@ function streamUpstreamText(prompt, task, onDelta, options = {}) {
       }
       let buffer = "";
       let assembled = "";
+      let receivedBytes = 0;
       const consumeLine = (rawLine) => {
         const line = rawLine.replace(/\r$/, "");
         if (!line.startsWith("data:")) return;
@@ -373,6 +391,11 @@ function streamUpstreamText(prompt, task, onDelta, options = {}) {
       };
       response.setEncoding("utf8");
       response.on("data", (chunk) => {
+        receivedBytes += Buffer.byteLength(chunk, "utf8");
+        if (receivedBytes > MAX_UPSTREAM_RESPONSE_BYTES) {
+          response.destroy(new Error("LLM 上游响应超过大小限制"));
+          return;
+        }
         buffer += chunk;
         let newlineAt = buffer.indexOf("\n");
         while (newlineAt >= 0) {

@@ -113,6 +113,15 @@ function createFakeOpenAiUpstream(port, behavior = {}) {
         res.end(JSON.stringify({ error: { message: "response_format unsupported" } }));
         return;
       }
+      if (typeof behavior.oversizedContent === "string") {
+        res.writeHead(200, { "Content-Type": body.stream === true ? "text/event-stream" : "application/json" });
+        if (body.stream === true) {
+          res.end("data: " + JSON.stringify({ choices: [{ delta: { content: behavior.oversizedContent } }] }) + "\n\ndata: [DONE]\n\n");
+        } else {
+          res.end(JSON.stringify({ choices: [{ message: { content: behavior.oversizedContent } }] }));
+        }
+        return;
+      }
       if (body.stream !== true) {
         // 非流式请求按 OpenAI 兼容协议返回一次性 JSON 补全
         res.writeHead(200, { "Content-Type": "application/json" });
@@ -319,6 +328,34 @@ test("llm hides upstream implementation errors from non-stream browser responses
       const payload = JSON.parse(res.text);
       assert.equal(payload.error, "AI 服务暂不可用，请稍后重试");
       assert.doesNotMatch(res.text, /internal-gateway|tenant secret/);
+    });
+  } finally {
+    await upstream.close();
+  }
+});
+
+test("llm rejects oversized upstream responses in both JSON and SSE modes", async () => {
+  const llmPort = 19540;
+  const upstreamPort = 19640;
+  const oversizedContent = JSON.stringify({ announcement: "x".repeat(1024 * 1024) });
+  const upstream = await createFakeOpenAiUpstream(upstreamPort, { oversizedContent });
+  try {
+    await withLlmService({
+      LLM_PORT: String(llmPort),
+      LLM_API_KEY: "size-limit-test-key",
+      LLM_BASE_URL: "http://127.0.0.1:" + upstreamPort + "/v1",
+      LLM_MODEL: "test-model",
+      LLM_RATE_LIMIT_MAX: "100"
+    }, async () => {
+      const jsonResponse = await postStream(llmPort, VERSION_COPY_BODY);
+      assert.equal(jsonResponse.status, 502);
+      assert.equal(JSON.parse(jsonResponse.text).error, "AI 服务暂不可用，请稍后重试");
+
+      const streamResponse = await postStream(llmPort, { ...VERSION_COPY_BODY, stream: true });
+      assert.equal(streamResponse.status, 200);
+      const events = parseSseEvents(streamResponse.text);
+      assert.equal(events.at(-1)?.event, "error");
+      assert.equal(events.some((event) => event.event === "done"), false);
     });
   } finally {
     await upstream.close();
