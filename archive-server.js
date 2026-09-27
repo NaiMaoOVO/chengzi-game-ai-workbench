@@ -359,8 +359,15 @@ function recordOwner(session) {
 
 if (archiveAuth.enabled && archiveAuth.adminUserId) {
   const legacyOwner = `user:${archiveAuth.adminUserId}`;
-  for (const table of ["snapshots", "project_profiles", "publications", "risk_events", "daily_todos", "creator_libraries", "morning_runs"]) {
-    db.prepare("UPDATE " + table + " SET owner_key = ? WHERE owner_key = 'default'").run(legacyOwner);
+  db.exec("BEGIN IMMEDIATE");
+  try {
+    for (const table of ["snapshots", "project_profiles", "publications", "risk_events", "daily_todos", "creator_libraries", "morning_runs"]) {
+      db.prepare("UPDATE " + table + " SET owner_key = ? WHERE owner_key = 'default'").run(legacyOwner);
+    }
+    db.exec("COMMIT");
+  } catch (error) {
+    db.exec("ROLLBACK");
+    throw error;
   }
 }
 
