@@ -46,6 +46,7 @@ for (const [name, options, message] of [
   ["LLM_MAX_CONCURRENCY", { min: 1 }, "LLM_MAX_CONCURRENCY 必须是正整数"],
   ["LLM_CACHE_TTL_MS", { min: 0 }, "LLM_CACHE_TTL_MS 必须是非负整数"],
   ["PLATFORM_PROVIDER_TIMEOUT_MS", { min: 1000, max: 2147483647 }, "PLATFORM_PROVIDER_TIMEOUT_MS 必须是 1000-2147483647 之间的整数"],
+  ["XHS_BRIDGE_TIMEOUT_MS", { min: 1000, max: 2147483647 }, "XHS_BRIDGE_TIMEOUT_MS 必须是 1000-2147483647 之间的整数"],
   ["ARCHIVE_SESSION_HOURS", { min: 1, max: 744 }, "ARCHIVE_SESSION_HOURS 必须是 1-744 小时的整数"]
 ]) {
   const rawValue = process.env[name];

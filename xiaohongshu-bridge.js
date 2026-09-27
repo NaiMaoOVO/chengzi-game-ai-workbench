@@ -14,7 +14,7 @@ const PORT = parseIntegerConfig(process.env.XHS_BRIDGE_PORT, { name: "XHS_BRIDGE
 const MCP_SERVER = process.env.XHS_MCP_SERVER || "xiaohongshu";
 const BRIDGE_TOKEN = process.env.XHS_BRIDGE_TOKEN || "";
 const MAX_OUTPUT_BYTES = 2 * 1024 * 1024;
-const BRIDGE_TIMEOUT_MS = Math.max(1000, Number(process.env.XHS_BRIDGE_TIMEOUT_MS) || 125000);
+const BRIDGE_TIMEOUT_MS = parseIntegerConfig(process.env.XHS_BRIDGE_TIMEOUT_MS, { name: "XHS_BRIDGE_TIMEOUT_MS", min: 1000, max: 2147483647, defaultValue: 125000 });
 
 function createSearchGate() {
   let active = false;

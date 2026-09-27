@@ -626,6 +626,17 @@ test("all service entry points reject out-of-range ports before binding", () => 
   }
 });
 
+test("XHS bridge rejects invalid child timeout before listening", () => {
+  const result = spawnSync(process.execPath, [path.join(projectRoot, "xiaohongshu-bridge.js")], {
+    cwd: projectRoot,
+    env: { ...process.env, XHS_BRIDGE_PORT: "65534", XHS_BRIDGE_TIMEOUT_MS: "Infinity" },
+    encoding: "utf8",
+    timeout: 3000
+  });
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /XHS_BRIDGE_TIMEOUT_MS must be an integer/);
+});
+
 test("archive: identity, malformed Host -> 400, disallowed Origin -> 403, wrong method/bad JSON guards", async () => {
   await withGuardedService("archive-server.js", "ARCHIVE_PORT", {
     ARCHIVE_DB_PATH: path.join(require("node:os").tmpdir(), `gameops-archive-guard-${Date.now()}.db`),

@@ -112,6 +112,7 @@ test("deployment check validates numeric service resource bounds", () => {
     ["LLM_MAX_CONCURRENCY", "Infinity", /LLM_MAX_CONCURRENCY 必须是正整数/],
     ["LLM_CACHE_TTL_MS", "-1", /LLM_CACHE_TTL_MS 必须是非负整数/],
     ["PLATFORM_PROVIDER_TIMEOUT_MS", "Infinity", /PLATFORM_PROVIDER_TIMEOUT_MS 必须是 1000-2147483647 之间的整数/],
+    ["XHS_BRIDGE_TIMEOUT_MS", "Infinity", /XHS_BRIDGE_TIMEOUT_MS 必须是 1000-2147483647 之间的整数/],
     ["ARCHIVE_SESSION_HOURS", "0", /ARCHIVE_SESSION_HOURS 必须是 1-744 小时的整数/],
     ["ARCHIVE_SESSION_HOURS", "745", /ARCHIVE_SESSION_HOURS 必须是 1-744 小时的整数/]
   ];
@@ -127,6 +128,7 @@ test("deployment check validates numeric service resource bounds", () => {
     LLM_CACHE_TTL_MS: "0",
     UPSTREAM_RETRIES: "0",
     PLATFORM_PROVIDER_TIMEOUT_MS: "1000",
+    XHS_BRIDGE_TIMEOUT_MS: "1000",
     ARCHIVE_SESSION_HOURS: "744"
   });
   assert.equal(boundaryValues.status, 0, boundaryValues.stderr);
