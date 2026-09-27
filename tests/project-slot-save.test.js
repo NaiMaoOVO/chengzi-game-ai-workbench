@@ -9,14 +9,17 @@ const storageStart = app.indexOf("let projectSlotStorageIssue = \"\";");
 const storageEnd = app.indexOf("function renderOverviewConclusion", storageStart);
 const saveStart = app.indexOf("function saveProjectToSlot", storageEnd);
 const saveEnd = app.indexOf("function loadProjectFromSlot", saveStart);
-assert.ok(storageStart >= 0 && storageEnd > storageStart && saveStart > storageEnd && saveEnd > saveStart);
+const loadEnd = app.indexOf("function updateSlotName", saveEnd);
+assert.ok(storageStart >= 0 && storageEnd > storageStart && saveStart > storageEnd && saveEnd > saveStart && loadEnd > saveEnd);
 const storageSource = app.slice(storageStart, storageEnd);
 const saveSource = app.slice(saveStart, saveEnd);
+const loadSource = app.slice(saveEnd, loadEnd);
 
 function createHarness(initial, confirmResult, changedDuringConfirm = null) {
   let raw = initial;
   let writes = 0;
   let confirmations = 0;
+  const restored = [];
   const status = { textContent: "", className: "", classList: { add: () => {} } };
   const context = {
     PROJECT_STORAGE_KEY: "project-state",
@@ -34,15 +37,21 @@ function createHarness(initial, confirmResult, changedDuringConfirm = null) {
     },
     document: { querySelector: () => status },
     collectProjectState: () => ({ controls: { "trending-game": "新项目" } }),
-    updateSlotName: () => {}
+    updateSlotName: () => {},
+    isProjectStateRestorable: (state) => Boolean(state && state.controls && !Array.isArray(state.controls)
+      && (state.streamers === undefined || Array.isArray(state.streamers) && state.streamers.every((item) => item && typeof item === "object" && !Array.isArray(item)))
+      && (state.currentTrendingTopics === undefined || Array.isArray(state.currentTrendingTopics)
+        && state.currentTrendingTopics.every((item) => item && typeof item === "object" && !Array.isArray(item)))),
+    restoreProjectState: (state) => restored.push(state)
   };
   const save = vm.runInNewContext(`(() => {
     const PROJECT_SLOTS_KEY = "gameops-project-slots-v2";
     ${storageSource}
     ${saveSource}
-    return saveProjectToSlot;
+    ${loadSource}
+    return { save: saveProjectToSlot, load: loadProjectFromSlot };
   })()`, context);
-  return { save, status, raw: () => raw, writes: () => writes, confirmations: () => confirmations };
+  return { save: save.save, load: save.load, status, raw: () => raw, writes: () => writes, confirmations: () => confirmations, restored };
 }
 
 test("saving over an occupied project slot requires confirmation", () => {
@@ -73,4 +82,13 @@ test("project slot overwrite preserves a snapshot changed during confirmation", 
   assert.equal(harness.writes(), 0);
   assert.equal(harness.raw(), newer);
   assert.match(harness.status.textContent, /其他标签页已更新/);
+});
+
+test("loading a malformed project slot rejects it before restoring any data", () => {
+  const original = JSON.stringify([{ controls: { "trending-game": "旧项目" }, streamers: [null] }]);
+  const harness = createHarness(original, false);
+  harness.load(1);
+  assert.equal(harness.restored.length, 0);
+  assert.equal(harness.raw(), original);
+  assert.match(harness.status.textContent, /结构异常/);
 });

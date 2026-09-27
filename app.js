@@ -8904,10 +8904,12 @@ function loadProjectFromSlot(slotIndex) {
     return;
   }
   const data = stateList[slotIndex - 1];
-  if (!data || typeof data !== "object" || !data.controls || typeof data.controls !== "object") {
+  if (!isProjectStateRestorable(data)) {
     const status = document.querySelector("#overview-status");
     if (status) {
-      status.textContent = "总览状态：槽位 " + slotIndex + " 为空，请先保存项目。";
+      status.textContent = data
+        ? `总览状态：槽位 ${slotIndex} 结构异常，原始内容未修改，未载入任何项目内容。`
+        : "总览状态：槽位 " + slotIndex + " 为空，请先保存项目。";
       status.className = "source-status source-mock";
     }
     return;
