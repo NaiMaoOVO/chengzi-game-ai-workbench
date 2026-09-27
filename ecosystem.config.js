@@ -113,8 +113,11 @@ module.exports = {
   apps: [
     app("gameops-hotspot", "hotspot-server.js", {
       HOTSPOT_PORT: process.env.HOTSPOT_PORT || "8790",
+      BILIBILI_COOKIE: process.env.BILIBILI_COOKIE || "",
       DOUYIN_PROVIDER_URL: process.env.DOUYIN_PROVIDER_URL || "",
+      DOUYIN_PROVIDER_TOKEN: process.env.DOUYIN_PROVIDER_TOKEN || "",
       XIAOHONGSHU_PROVIDER_URL: process.env.XIAOHONGSHU_PROVIDER_URL || "",
+      XIAOHONGSHU_PROVIDER_TOKEN: process.env.XIAOHONGSHU_PROVIDER_TOKEN || "",
       PLATFORM_PROVIDER_TIMEOUT_MS: process.env.PLATFORM_PROVIDER_TIMEOUT_MS || "15000",
       RATE_LIMIT_MAX: process.env.RATE_LIMIT_MAX || "60",
       RATE_LIMIT_WINDOW_MS: process.env.RATE_LIMIT_WINDOW_MS || "60000",
@@ -124,6 +127,8 @@ module.exports = {
     }),
     app("gameops-comment", "comment-server.js", {
       COMMENT_PORT: process.env.COMMENT_PORT || "8791",
+      BILIBILI_VIDEO_INFO_URL: process.env.BILIBILI_VIDEO_INFO_URL || "",
+      BILIBILI_COOKIE: process.env.BILIBILI_COOKIE || "",
       RATE_LIMIT_MAX: process.env.RATE_LIMIT_MAX || "60",
       RATE_LIMIT_WINDOW_MS: process.env.RATE_LIMIT_WINDOW_MS || "60000",
       CACHE_TTL_MS: process.env.CACHE_TTL_MS || "60000",
@@ -134,6 +139,7 @@ module.exports = {
       PORT: process.env.OCR_PORT || process.env.PORT || "8787",
       OCR_PROVIDER: ocrProvider,
       OCR_REMOTE_URL: process.env.OCR_REMOTE_URL || "",
+      OCR_REMOTE_API_KEY: process.env.OCR_REMOTE_API_KEY || "",
       OCR_TIMEOUT_MS: process.env.OCR_TIMEOUT_MS || "15000",
       OCR_READINESS_TIMEOUT_MS: process.env.OCR_READINESS_TIMEOUT_MS || "90000",
       OCR_RATE_LIMIT_MAX: process.env.OCR_RATE_LIMIT_MAX || "30",
@@ -142,8 +148,10 @@ module.exports = {
     }),
     app("gameops-llm", "llm-server.js", {
       LLM_PORT: process.env.LLM_PORT || "8794",
+      LLM_API_KEY: process.env.LLM_API_KEY || "",
       LLM_BASE_URL: process.env.LLM_BASE_URL || "https://api.deepseek.com/v1",
       LLM_MODEL: process.env.LLM_MODEL || "deepseek-chat",
+      LLM_JSON_MODE: process.env.LLM_JSON_MODE || "auto",
       LLM_TIMEOUT_MS: process.env.LLM_TIMEOUT_MS || "45000",
       LLM_CACHE_TTL_MS: process.env.LLM_CACHE_TTL_MS || "600000",
       LLM_RATE_LIMIT_MAX: process.env.LLM_RATE_LIMIT_MAX || "20",
@@ -153,11 +161,17 @@ module.exports = {
       ARCHIVE_PORT: process.env.ARCHIVE_PORT || "8796",
       ARCHIVE_DB_PATH: process.env.ARCHIVE_DB_PATH || "",
       ARCHIVE_RATE_LIMIT_MAX: process.env.ARCHIVE_RATE_LIMIT_MAX || "120",
+      ARCHIVE_AUTH_RATE_LIMIT_MAX: process.env.ARCHIVE_AUTH_RATE_LIMIT_MAX || "8",
+      RATE_LIMIT_WINDOW_MS: process.env.RATE_LIMIT_WINDOW_MS || "60000",
       ARCHIVE_AUTH_ENABLED: process.env.ARCHIVE_AUTH_ENABLED || "0",
       ARCHIVE_ADMIN_USERNAME: process.env.ARCHIVE_ADMIN_USERNAME || "admin",
       ARCHIVE_ADMIN_PASSWORD: process.env.ARCHIVE_ADMIN_PASSWORD || "",
       ARCHIVE_COOKIE_SECURE: process.env.ARCHIVE_COOKIE_SECURE || "1",
-      ARCHIVE_SESSION_HOURS: process.env.ARCHIVE_SESSION_HOURS || "12"
+      ARCHIVE_SESSION_HOURS: process.env.ARCHIVE_SESSION_HOURS || "12",
+      MORNING_SCHEDULE: process.env.MORNING_SCHEDULE || "09:00",
+      MORNING_GAMES: process.env.MORNING_GAMES || "",
+      MORNING_PLATFORM: process.env.MORNING_PLATFORM || "B站",
+      HOTSPOT_SOURCE_URL: process.env.HOTSPOT_SOURCE_URL || "http://127.0.0.1:8790"
     })
   ]
 };

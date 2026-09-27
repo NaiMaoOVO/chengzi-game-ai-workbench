@@ -140,3 +140,80 @@ test("PM2 archive process receives the configured auth settings without printing
   });
   assert.doesNotMatch(result.stdout + result.stderr, new RegExp(password));
 });
+
+test("PM2 forwards integration settings only to the services that use them", () => {
+  const secrets = [
+    "bilibili-cookie-canary",
+    "douyin-token-canary",
+    "xhs-token-canary",
+    "ocr-key-canary",
+    "llm-key-canary"
+  ];
+  const inspectConfig = [
+    'const configs = Object.fromEntries(require("./ecosystem.config.js").apps.map((app) => [app.name, app.env]));',
+    'const hotspot = configs["gameops-hotspot"];',
+    'const comment = configs["gameops-comment"];',
+    'const ocr = configs["gameops-ocr"];',
+    'const llm = configs["gameops-llm"];',
+    'const archive = configs["gameops-archive"];',
+    'const has = (env, key) => Object.hasOwn(env, key);',
+    'console.log(JSON.stringify({',
+    '  hotspotCookie: hotspot.BILIBILI_COOKIE === process.env.BILIBILI_COOKIE,',
+    '  commentCookie: comment.BILIBILI_COOKIE === process.env.BILIBILI_COOKIE,',
+    '  douyinToken: hotspot.DOUYIN_PROVIDER_TOKEN === process.env.DOUYIN_PROVIDER_TOKEN,',
+    '  xhsToken: hotspot.XIAOHONGSHU_PROVIDER_TOKEN === process.env.XIAOHONGSHU_PROVIDER_TOKEN,',
+    '  commentInfoUrl: comment.BILIBILI_VIDEO_INFO_URL === process.env.BILIBILI_VIDEO_INFO_URL,',
+    '  ocrApiKey: ocr.OCR_REMOTE_API_KEY === process.env.OCR_REMOTE_API_KEY,',
+    '  llmApiKey: llm.LLM_API_KEY === process.env.LLM_API_KEY,',
+    '  llmJsonMode: llm.LLM_JSON_MODE === process.env.LLM_JSON_MODE,',
+    '  morningSchedule: archive.MORNING_SCHEDULE === process.env.MORNING_SCHEDULE,',
+    '  morningGames: archive.MORNING_GAMES === process.env.MORNING_GAMES,',
+    '  morningPlatform: archive.MORNING_PLATFORM === process.env.MORNING_PLATFORM,',
+    '  hotspotSource: archive.HOTSPOT_SOURCE_URL === process.env.HOTSPOT_SOURCE_URL,',
+    '  providerTokensScoped: !has(comment, "DOUYIN_PROVIDER_TOKEN") && !has(ocr, "DOUYIN_PROVIDER_TOKEN") && !has(llm, "DOUYIN_PROVIDER_TOKEN") && !has(archive, "DOUYIN_PROVIDER_TOKEN"),',
+    '  ocrKeyScoped: !has(hotspot, "OCR_REMOTE_API_KEY") && !has(comment, "OCR_REMOTE_API_KEY") && !has(llm, "OCR_REMOTE_API_KEY") && !has(archive, "OCR_REMOTE_API_KEY"),',
+    '  llmKeyScoped: !has(hotspot, "LLM_API_KEY") && !has(comment, "LLM_API_KEY") && !has(ocr, "LLM_API_KEY") && !has(archive, "LLM_API_KEY"),',
+    '  bilibiliCookieScoped: !has(ocr, "BILIBILI_COOKIE") && !has(llm, "BILIBILI_COOKIE") && !has(archive, "BILIBILI_COOKIE")',
+    '}));'
+  ].join("\n");
+  const result = spawnSync(process.execPath, ["-e", inspectConfig], {
+    cwd: projectRoot,
+    env: deploymentEnv("https://gameops.test", {
+      BILIBILI_COOKIE: secrets[0],
+      DOUYIN_PROVIDER_TOKEN: secrets[1],
+      XIAOHONGSHU_PROVIDER_TOKEN: secrets[2],
+      BILIBILI_VIDEO_INFO_URL: "https://video-info.test/api",
+      OCR_PROVIDER: "remote",
+      OCR_REMOTE_URL: "https://ocr.test/api",
+      OCR_REMOTE_API_KEY: secrets[3],
+      LLM_API_KEY: secrets[4],
+      LLM_JSON_MODE: "force",
+      MORNING_SCHEDULE: "07:35",
+      MORNING_GAMES: "鸣潮,绝区零",
+      MORNING_PLATFORM: "B站",
+      HOTSPOT_SOURCE_URL: "http://127.0.0.1:8790"
+    }),
+    encoding: "utf8"
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(JSON.parse(result.stdout.trim()), {
+    hotspotCookie: true,
+    commentCookie: true,
+    douyinToken: true,
+    xhsToken: true,
+    commentInfoUrl: true,
+    ocrApiKey: true,
+    llmApiKey: true,
+    llmJsonMode: true,
+    morningSchedule: true,
+    morningGames: true,
+    morningPlatform: true,
+    hotspotSource: true,
+    providerTokensScoped: true,
+    ocrKeyScoped: true,
+    llmKeyScoped: true,
+    bilibiliCookieScoped: true
+  });
+  for (const secret of secrets) assert.doesNotMatch(result.stdout + result.stderr, new RegExp(secret));
+});
