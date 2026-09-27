@@ -8,7 +8,7 @@ server {
 
     # 线上部署只允许 HTTP 跳转到 HTTPS；不要以本配置直接暴露页面或 API。
     # 完整的受保护站点请使用 nginx-https.conf.example。
-    return 301 https://$host$request_uri;
+    return 301 https://$server_name$request_uri;
 
     root /var/www/game-content-ops-ai-workbench/public;
     index index.html;

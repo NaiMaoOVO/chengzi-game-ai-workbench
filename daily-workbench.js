@@ -34,8 +34,8 @@
     if (element) element.textContent = String(value);
   }
 
-  function setStats({ todoCount = 0, todoTotal = todoCount, riskCount = 0, publicationCount = 0, doneItems = [], doneTotal = doneItems.length, loading = false, error = false, authRequired = false, staleSnapshot = false, todoUnavailable = false, doneUnavailable = false, riskUnavailable = false, publicationUnavailable = false, publicationTruncated = false } = {}) {
-    const serviceUnavailable = loading || error || authRequired;
+  function setStats({ todoCount = 0, todoTotal = todoCount, riskCount = 0, publicationCount = 0, doneItems = [], doneTotal = doneItems.length, loading = false, error = false, authRequired = false, archiveOffline = false, staleSnapshot = false, todoUnavailable = false, doneUnavailable = false, riskUnavailable = false, publicationUnavailable = false, publicationTruncated = false } = {}) {
+    const serviceUnavailable = loading || error || authRequired || archiveOffline && !staleSnapshot;
     setText("#daily-stat-todo", serviceUnavailable || todoUnavailable ? "—" : todoCount);
     setText("#daily-stat-risk", serviceUnavailable || riskUnavailable ? "—" : riskCount);
     setText("#daily-stat-publish", serviceUnavailable || publicationUnavailable || publicationTruncated && !publicationCount
@@ -482,14 +482,18 @@
       actionHandler = localFile
         ? openLocalServiceRecovery
         : () => document.querySelector("#archive-login-username")?.focus();
-    } else if (state.error) {
+    } else if (state.error || state.archiveOffline) {
       const local = !isOnlineServiceMode();
-      summary.textContent = "暂时无法读取完整运营信号；先恢复服务连接，再决定下一步。";
+      summary.textContent = state.archiveOffline
+        ? local ? "本机存档服务未连接；今日运营记录暂不可读取。" : "线上存档服务暂不可用；账号运营记录暂不可读取。"
+        : "暂时无法读取完整运营信号；先恢复服务连接，再决定下一步。";
       if (knownTopics.length) {
         summary.textContent = `待办、风险与回流暂不可同步；当前仍保留 ${Math.max(knownTopics.length, Number(platformSnapshot.topicCount) || 0)} 条${hotspotSourceLabel}热点。`;
         recommendations.push(`先核对${hotspotSourceLabel}热点「${knownHotspot.title || "未命名话题"}」的原始页面和更新时间，不把它当作已确认结论。`);
       }
-      recommendations.push("检查服务连接状态，恢复后再确认风险与发布回流。");
+      recommendations.push(state.archiveOffline
+        ? local ? "启动本机服务后，再核对待办、风险和发布回流。" : "确认线上存档服务状态后，再重试同步。"
+        : "检查服务连接状态，恢复后再确认风险与发布回流。");
       actionLabel = local ? "查看本机服务" : "重新连接";
       actionHandler = () => local ? openLocalServiceRecovery() : window.loadTodayTodos?.();
     } else {
@@ -552,7 +556,7 @@
   }
 
   function renderDailyInsightSignalCounts(manualItems = [], state = {}) {
-    const serviceUnavailable = Boolean(state.loading || state.error || state.authRequired);
+    const serviceUnavailable = Boolean(state.loading || state.error || state.authRequired || state.archiveOffline && !state.staleSnapshot);
     const unavailable = (key) => serviceUnavailable || Boolean(state[key]);
     setText("#daily-ai-todo-count", unavailable("todoUnavailable") ? "—" : Number(state.todoCount) || manualItems.length || 0);
     setText("#daily-ai-risk-count", unavailable("riskUnavailable") ? "—" : Number(state.riskCount) || 0);
@@ -1094,8 +1098,27 @@
       }
       return;
     }
-    if (hasCurrentUserSnapshot && state.error) {
-      const staleState = { ...lastDailyQueueSnapshot.state, ...state, loading: false, staleSnapshot: true };
+    if (hasCurrentUserSnapshot && (state.error || state.archiveOffline)) {
+      const previousState = lastDailyQueueSnapshot.state;
+      const unavailable = (key) => Boolean(state.error || state[key]);
+      const staleState = {
+        ...previousState,
+        ...state,
+        loading: false,
+        staleSnapshot: true,
+        todoCount: unavailable("todoUnavailable") ? previousState.todoCount : state.todoCount,
+        todoTotal: unavailable("todoUnavailable") ? previousState.todoTotal : state.todoTotal,
+        doneItems: unavailable("doneUnavailable") ? previousState.doneItems : state.doneItems,
+        doneTotal: unavailable("doneUnavailable") ? previousState.doneTotal : state.doneTotal,
+        riskCount: unavailable("riskUnavailable") ? previousState.riskCount : state.riskCount,
+        riskTotal: unavailable("riskUnavailable") ? previousState.riskTotal : state.riskTotal,
+        riskItems: unavailable("riskUnavailable") ? previousState.riskItems : state.riskItems,
+        publicationCount: unavailable("publicationUnavailable") ? previousState.publicationCount : state.publicationCount,
+        publicationTotal: unavailable("publicationUnavailable") ? previousState.publicationTotal : state.publicationTotal,
+        publicationItems: unavailable("publicationUnavailable") ? previousState.publicationItems : state.publicationItems,
+        morningRuns: unavailable("morningUnavailable") ? previousState.morningRuns : state.morningRuns,
+        platformSnapshots: unavailable("platformHistoryUnavailable") ? previousState.platformSnapshots : state.platformSnapshots
+      };
       setStats(staleState);
       renderDailyInsight(lastDailyQueueSnapshot.manualItems, staleState);
       renderDailyPlatformOverview(staleState);
@@ -1103,6 +1126,13 @@
       const local = !isOnlineServiceMode();
       setConnection(local ? "本机服务未连接 · 显示最近同步数据" : "线上存档服务暂不可用 · 显示最近同步数据", "warning");
       setStatus(`同步失败；仍显示上次成功同步于 ${formatMorningTime(lastDailyQueueSnapshot.capturedAt)} 的工作队列。点击“刷新”重试。`, "mock");
+      if (state.archiveOffline) {
+        renderEmptyState(
+          local ? "本机服务未连接；下方保留上次成功同步的队列。" : "线上存档服务暂不可用；下方保留上次同步的队列。",
+          local ? "打开并启动本地服务" : "重新连接",
+          local ? openLocalServiceRecovery : () => window.loadTodayTodos?.()
+        );
+      }
       return;
     }
     const doneList = doneListEl();
@@ -1144,11 +1174,20 @@
     }) }));
     [...manualItems].sort(manualSort).forEach((item) => rows.push({ kind: "manual", item, node: buildManualRow(item, false) }));
     rows.filter(matchesActiveFilter).forEach((row) => container.append(row.node));
-    if (!rows.length) renderEmptyState(
-      state.todoUnavailable ? "个人待办暂不可用，无法确认今日队列是否已清空。" : "今日队列已清空，安排一件最重要的事吧。",
-      state.todoUnavailable ? "重试同步" : "添加待办",
-      state.todoUnavailable ? () => window.loadTodayTodos?.() : () => titleEl()?.focus()
-    );
+    if (!rows.length) {
+      const local = !isOnlineServiceMode();
+      renderEmptyState(
+        state.archiveOffline
+          ? local ? "本机存档服务未连接，无法确认今日队列状态。" : "线上存档服务暂不可用，无法确认账号工作队列状态。"
+          : state.todoUnavailable ? "个人待办暂不可用，无法确认今日队列是否已清空。" : "今日队列已清空，安排一件最重要的事吧。",
+        state.archiveOffline
+          ? local ? "打开并启动本地服务" : "重新连接"
+          : state.todoUnavailable ? "重试同步" : "添加待办",
+        state.archiveOffline
+          ? local ? openLocalServiceRecovery : () => window.loadTodayTodos?.()
+          : state.todoUnavailable ? () => window.loadTodayTodos?.() : () => titleEl()?.focus()
+      );
+    }
     if (rows.length && !container.children.length) renderEmptyState("当前筛选下没有事项。", "查看全部", () => {
       activeFilter = "all";
       updateFilterControls();
@@ -1180,9 +1219,19 @@
     if (state.publicationTruncated) truncations.push("发布台账仅扫描最近 200 条，待回流数为下限");
     if (Number(state.todoTotal) > manualItems.length) truncations.push(`手动待办仅加载最近 ${manualItems.length}/${state.todoTotal} 条`);
     if (Number(state.doneTotal) > doneItems.length) truncations.push(`已完成仅加载最近 ${doneItems.length}/${state.doneTotal} 条`);
-    setConnection(unavailable.length ? "部分数据不可用 · 其余来源仍可用" : "已连接 · 队列实时汇总中", unavailable.length ? "warning" : "success");
-    setStatus(`已汇总 ${rows.length} 条行动事项${doneItems.length ? `，另有 ${doneItems.length} 条已完成` : ""}${unavailable.length ? `；${unavailable.join("、")}暂不可用` : ""}${truncations.length ? `；${truncations.join("；")}` : ""}。`, unavailable.length || truncations.length ? "mock" : "real");
-    lastDailyQueueSnapshot = captureDailyQueueSnapshot(manualItems, state);
+    const local = !isOnlineServiceMode();
+    if (state.archiveOffline) {
+      setConnection(local ? "本机存档服务未连接" : "线上存档服务暂不可用", "danger");
+      setStatus(local
+        ? "本机存档服务未连接；今日待办、风险、回流和晨报状态未知。"
+        : "线上存档服务未连接；账号待办、风险和发布回流状态未知。", "mock");
+    } else {
+      setConnection(unavailable.length ? "部分数据不可用 · 其余来源仍可用" : "已连接 · 队列实时汇总中", unavailable.length ? "warning" : "success");
+      setStatus(`已汇总 ${rows.length} 条行动事项${doneItems.length ? `，另有 ${doneItems.length} 条已完成` : ""}${unavailable.length ? `；${unavailable.join("、")}暂不可用` : ""}${truncations.length ? `；${truncations.join("；")}` : ""}。`, unavailable.length || truncations.length ? "mock" : "real");
+    }
+    if (!state.todoUnavailable && !state.doneUnavailable && !state.riskUnavailable && !state.publicationUnavailable) {
+      lastDailyQueueSnapshot = captureDailyQueueSnapshot(manualItems, state);
+    }
   };
 
   async function request(path, options) {

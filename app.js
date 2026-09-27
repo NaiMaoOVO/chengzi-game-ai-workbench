@@ -2062,6 +2062,7 @@ window.loadTodayTodos = async function loadTodayTodos() {
       readArchive(ARCHIVE_SERVICE_URL + "/morning-runs?limit=20"),
       readArchive(ARCHIVE_SERVICE_URL + "/snapshots?" + platformHistoryParams)
     ]);
+    const archiveOffline = results.every((result) => result.status === "rejected");
     const readResult = (result) => {
       if (result.status !== "fulfilled") return { response: null, payload: { ok: false, error: result.reason?.message || "请求失败" } };
       return result.value;
@@ -2094,6 +2095,7 @@ window.loadTodayTodos = async function loadTodayTodos() {
       publicationTruncated,
       riskItems,
       publicationItems: publicationQueueItems,
+      archiveOffline,
       todoUnavailable,
       doneUnavailable,
       todoCount: manualItems.length,

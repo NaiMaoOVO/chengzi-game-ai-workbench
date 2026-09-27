@@ -1101,7 +1101,7 @@ test("daily queue retains same-user snapshots on refresh but clears first-load p
   const errorIndex = source.indexOf("if (renderConnectionState(state)) return;");
   const populateIndex = source.indexOf("doneList.hidden = !doneItems.length && !state.doneUnavailable;");
   const cachedLoadingIndex = source.indexOf("if (hasCurrentUserSnapshot && state.loading)");
-  const cachedErrorIndex = source.indexOf("if (hasCurrentUserSnapshot && state.error)");
+  const cachedErrorIndex = source.indexOf("if (hasCurrentUserSnapshot && (state.error || state.archiveOffline))");
   assert.ok(source.indexOf("if (state.authRequired) lastDailyQueueSnapshot = null;") < cachedLoadingIndex);
   assert.ok(cachedLoadingIndex >= 0 && cachedLoadingIndex < clearIndex);
   assert.ok(cachedErrorIndex >= 0 && cachedErrorIndex < clearIndex);
@@ -1656,8 +1656,47 @@ test("daily insight recovery action matches authentication and service mode", ()
   assert.match(dailyWorkbench, /const localFile = window\.location\.protocol === "file:"/);
   assert.match(dailyWorkbench, /actionLabel = localFile \? "查看本机服务" : "去登录"/);
   assert.match(dailyWorkbench, /#archive-login-username/);
+  assert.match(dailyWorkbench, /state\.error \|\| state\.archiveOffline/);
   assert.match(dailyWorkbench, /const local = !isOnlineServiceMode\(\)/);
   assert.match(dailyWorkbench, /actionLabel = local \? "查看本机服务" : "重新连接"/);
+});
+
+test("daily AI insight links to service recovery when the archive API is offline", () => {
+  const start = dailyWorkbench.indexOf("function renderDailyInsight(");
+  const end = dailyWorkbench.indexOf("function renderDailyInsightSignalCounts", start);
+  assert.ok(start >= 0 && end > start);
+  const summary = { textContent: "" };
+  const list = { innerHTML: "", items: [], append(item) { this.items.push(item); } };
+  const action = { hidden: true, textContent: "", onclick: null };
+  let recoveryCount = 0;
+  const sandbox = {
+    document: {
+      querySelector: (selector) => ({
+        "#daily-insight-summary": summary,
+        "#daily-insight-recommendations": list,
+        "#daily-insight-action": action
+      })[selector] || null,
+      createElement: () => ({ textContent: "" })
+    },
+    window: { loadTodayTodos() {} },
+    renderDailyInsightSignalCounts() {},
+    syncDailyAiInsight() {},
+    isOnlineServiceMode: () => false,
+    openLocalServiceRecovery: () => { recoveryCount += 1; },
+    titleEl: () => null
+  };
+  vm.runInNewContext(["let latestDailyInsightContext = {};", dailyWorkbench.slice(start, end)].join("\n"), sandbox);
+  sandbox.renderDailyInsight([], {
+    archiveOffline: true,
+    todoUnavailable: true,
+    riskUnavailable: true,
+    publicationUnavailable: true
+  });
+  assert.equal(action.hidden, false);
+  assert.equal(action.textContent, "查看本机服务");
+  assert.match(summary.textContent, /本机存档服务未连接/);
+  action.onclick();
+  assert.equal(recoveryCount, 1);
 });
 
 test("non-daily operational tools share the product workspace visual system", () => {
@@ -2778,6 +2817,7 @@ test("daily queue preserves available signals when optional endpoints fail", asy
   assert.equal(captured[0].state.loading, true);
   const { items, state } = captured[1];
   assert.equal(state.error, undefined);
+  assert.equal(state.archiveOffline, false);
   assert.equal(state.todoUnavailable, true);
   assert.equal(state.todoCount, 0);
   assert.equal(state.riskItems[0].title, "风险信号");
@@ -2804,34 +2844,82 @@ test("daily queue preserves available signals when optional endpoints fail", asy
   assert.equal(done401[1].items[0].title, "保留的待办");
 });
 
+test("daily queue distinguishes a total archive network outage from partial endpoint failures", async () => {
+  const start = app.indexOf("window.loadTodayTodos = async function loadTodayTodos");
+  const end = app.indexOf("let llmModelName", start);
+  assert.ok(start >= 0 && end > start);
+  const captured = [];
+  const controller = {
+    next: () => 1,
+    isCurrent: (generation) => generation === 1
+  };
+  const sandbox = {
+    ARCHIVE_SERVICE_URL: "http://127.0.0.1:8796",
+    todayTodosController: null,
+    todayTodosRequestGuard: controller,
+    AbortController,
+    URLSearchParams,
+    document: { querySelector: () => null },
+    readDailyPlatformSnapshot: () => ({ game: "鸣潮", platform: "B站", topics: [] }),
+    archiveJsonRequestWithTimeout: async () => { throw new Error("Failed to fetch"); },
+    publicationNeedsEffectBackfill: () => true,
+    window: { renderTodayTodos: (items, state) => captured.push({ items, state }) }
+  };
+  vm.runInNewContext(app.slice(start, end), sandbox);
+  await sandbox.window.loadTodayTodos();
+
+  assert.equal(captured.length, 2);
+  assert.equal(captured[1].state.archiveOffline, true);
+  assert.equal(captured[1].state.todoUnavailable, true);
+  assert.equal(captured[1].state.riskUnavailable, true);
+  assert.equal(captured[1].state.publicationUnavailable, true);
+  assert.equal(captured[1].state.todoCount, 0);
+  assert.equal(captured[1].items.length, 0);
+});
+
 test("daily queue retains the last successful rows during refresh and full outages", () => {
   const start = dailyWorkbench.indexOf("window.renderTodayTodos = function renderTodayTodos");
   const end = dailyWorkbench.indexOf("async function request(path", start);
   assert.ok(start >= 0 && end > start);
   const container = { innerHTML: "<li>最近成功的待办</li>" };
-  const calls = { insight: [], connection: [], status: [], stats: [] };
+  const calls = { insight: [], connection: [], status: [], stats: [], platform: [], empty: [], recovery: 0, snapshots: 0 };
   const sandbox = {
-    window: {},
+    window: { loadTodayTodos: () => { calls.recovery += 1; } },
     document: {
       querySelector: (selector) => selector === "#daily-platform-status" ? { dataset: {}, textContent: "" } : null
     },
     listEl: () => container,
+    doneListEl: () => null,
+    doneContainerEl: () => null,
     dailyQueueSessionKey: () => "user-1",
     renderDailyInsight: (items, state) => calls.insight.push({ items, state }),
     setConnection: (...args) => calls.connection.push(args),
     setStatus: (...args) => calls.status.push(args),
     setStats: (state) => calls.stats.push(state),
-    renderDailyPlatformOverview: () => {},
+    renderDailyPlatformOverview: (state) => calls.platform.push(state),
     renderMorningStatus: () => {},
     isOnlineServiceMode: () => true,
+    renderConnectionState: () => false,
+    renderEmptyState: (...args) => calls.empty.push(args),
+    sortRiskItems: (items) => items,
+    manualSort: () => 0,
+    matchesActiveFilter: () => true,
+    captureDailyQueueSnapshot: () => { calls.snapshots += 1; return {}; },
+    openLocalServiceRecovery: () => { calls.recovery += 1; },
     formatMorningTime: () => "9月27日 01:00"
   };
   const savedSnapshot = {
     userKey: "user-1",
     manualItems: [{ title: "最近成功的待办" }],
-    state: { todoCount: 1, morningRuns: [] }
+    state: {
+      todoCount: 1,
+      morningRuns: [],
+      riskItems: [{ id: 3, title: "最近成功的风险" }],
+      publicationItems: [{ id: 4, title: "最近成功的回流" }],
+      platformSnapshots: [{ id: 5, title: "最近成功的平台快照" }]
+    }
   };
-  vm.runInNewContext(`let lastDailyQueueSnapshot = ${JSON.stringify(savedSnapshot)};\n${dailyWorkbench.slice(start, end)}`, sandbox);
+  vm.runInNewContext(["let lastDailyQueueSnapshot = " + JSON.stringify(savedSnapshot) + ";", dailyWorkbench.slice(start, end)].join("\n"), sandbox);
   sandbox.window.renderTodayTodos([], { loading: true });
   assert.match(container.innerHTML, /最近成功的待办/);
   assert.equal(calls.insight.at(-1).state.loading, true);
@@ -2841,6 +2929,72 @@ test("daily queue retains the last successful rows during refresh and full outag
   assert.match(container.innerHTML, /最近成功的待办/);
   assert.equal(calls.stats.at(-1).error, true);
   assert.match(calls.status.at(-1)[0], /同步失败；仍显示上次成功同步于 9月27日 01:00/);
+
+  sandbox.window.renderTodayTodos([], {
+    archiveOffline: true,
+    todoUnavailable: true,
+    doneUnavailable: true,
+    riskUnavailable: true,
+    publicationUnavailable: true,
+    morningUnavailable: true,
+    platformHistoryUnavailable: true
+  });
+  assert.match(container.innerHTML, /最近成功的待办/);
+  assert.equal(calls.platform.at(-1).riskItems[0].title, "最近成功的风险");
+  assert.equal(calls.platform.at(-1).publicationItems[0].title, "最近成功的回流");
+  assert.equal(calls.platform.at(-1).platformSnapshots[0].title, "最近成功的平台快照");
+  assert.equal(calls.empty.at(-1)[1], "重新连接");
+  calls.empty.at(-1)[2]();
+  assert.equal(calls.recovery, 1);
+  assert.equal(calls.snapshots, 0);
+});
+
+test("daily queue offers local service recovery without saving an empty outage as fresh data", () => {
+  const start = dailyWorkbench.indexOf("window.renderTodayTodos = function renderTodayTodos");
+  const end = dailyWorkbench.indexOf("async function request(path", start);
+  assert.ok(start >= 0 && end > start);
+  const container = { innerHTML: "", children: [] };
+  const calls = { connection: [], status: [], empty: [], recovery: 0, snapshots: 0 };
+  const sandbox = {
+    window: { loadTodayTodos() {} },
+    document: { querySelector: (selector) => selector === "#daily-platform-status" ? { dataset: {}, textContent: "" } : null },
+    listEl: () => container,
+    doneListEl: () => null,
+    doneContainerEl: () => null,
+    dailyQueueSessionKey: () => "user-1",
+    renderDailyInsight() {},
+    setConnection: (...args) => calls.connection.push(args),
+    setStatus: (...args) => calls.status.push(args),
+    setStats() {},
+    renderDailyPlatformOverview() {},
+    renderMorningStatus() {},
+    isOnlineServiceMode: () => false,
+    renderConnectionState: () => false,
+    renderEmptyState: (...args) => { calls.empty = args; },
+    sortRiskItems: (items) => items,
+    manualSort: () => 0,
+    matchesActiveFilter: () => true,
+    captureDailyQueueSnapshot: () => { calls.snapshots += 1; return {}; },
+    openLocalServiceRecovery: () => { calls.recovery += 1; }
+  };
+  const source = dailyWorkbench.slice(start, end);
+  vm.runInNewContext(["let lastDailyQueueSnapshot = null;", source].join("\n"), sandbox);
+  sandbox.window.renderTodayTodos([], {
+    archiveOffline: true,
+    todoUnavailable: true,
+    doneUnavailable: true,
+    riskUnavailable: true,
+    publicationUnavailable: true,
+    morningUnavailable: true,
+    platformHistoryUnavailable: true
+  });
+  assert.deepEqual(calls.connection.at(-1), ["本机存档服务未连接", "danger"]);
+  assert.match(calls.status.at(-1)[0], /状态未知/);
+  assert.equal(calls.empty[1], "打开并启动本地服务");
+  calls.empty[2]();
+  assert.equal(calls.recovery, 1);
+  assert.equal(calls.snapshots, 0);
+  assert.equal(vm.runInNewContext("lastDailyQueueSnapshot", sandbox), null);
 });
 
 test("daily queue stale snapshots are isolated by archive user", () => {

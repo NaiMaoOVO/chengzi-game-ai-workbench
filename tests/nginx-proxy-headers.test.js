@@ -113,6 +113,7 @@ test("HTTP Nginx template redirects at server scope before proxy locations", () 
   assert.notEqual(firstLocation, -1, "expected proxy locations after the HTTP redirect");
   const serverDirectives = httpServer.slice(0, firstLocation);
   assert.match(serverDirectives, /^\s*listen 80\s*;/m);
-  assert.match(serverDirectives, /^\s*return 301 https:\/\/\$host\$request_uri\s*;/m);
+  assert.match(serverDirectives, /^\s*return 301 https:\/\/\$server_name\$request_uri\s*;/m);
+  assert.doesNotMatch(serverDirectives, /\$host/);
   assert.doesNotMatch(serverDirectives, /^\s*proxy_pass\s+/m);
 });
