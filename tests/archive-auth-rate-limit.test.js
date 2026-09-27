@@ -20,7 +20,7 @@ const child = spawn(process.execPath, [path.join(projectRoot, "archive-server.js
     ARCHIVE_ADMIN_PASSWORD: "admin-password-2026",
     ARCHIVE_COOKIE_SECURE: "0",
     ARCHIVE_RATE_LIMIT_MAX: "100",
-    ARCHIVE_AUTH_RATE_LIMIT_MAX: "3",
+    ARCHIVE_AUTH_RATE_LIMIT_MAX: "4",
     RATE_LIMIT_WINDOW_MS: "60000",
     MORNING_GAMES: ""
   },
@@ -79,13 +79,17 @@ test.after(async () => {
   for (const suffix of ["", "-wal", "-shm"]) fs.rmSync(databasePath + suffix, { force: true });
 });
 
-test("archive login enforces its configured rate limit and returns Retry-After", async () => {
+test("archive login caps request bodies and enforces its configured rate limit", async () => {
+  const successful = await request("/auth/login", { username: "ops-admin", password: "admin-password-2026" });
+  assert.equal(successful.status, 200);
+
   const oversized = await request("/auth/login", {
     username: "ops-admin",
     password: "wrong-password-2026",
     extra: "x".repeat(5000)
   });
   assert.equal(oversized.status, 413);
+  assert.equal(oversized.payload.error, "请求内容过大（上限 4KB）");
 
   const attempts = [];
   for (let index = 0; index < 3; index += 1) {
