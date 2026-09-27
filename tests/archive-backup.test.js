@@ -84,7 +84,10 @@ test("archive backup rotation never deletes the newly verified copy due to a fut
   db.exec("CREATE TABLE check_rows (value TEXT NOT NULL); INSERT INTO check_rows VALUES ('current snapshot');");
   db.close();
   fs.mkdirSync(backupDir);
-  fs.writeFileSync(path.join(backupDir, "archive-99991231235959999.db"), "invalid future-dated backup");
+  const futureNamedBackup = path.join(backupDir, "archive-99991231235959999.db");
+  fs.writeFileSync(futureNamedBackup, "invalid future-dated backup");
+  const staleTime = new Date(Date.now() - 2 * 60 * 60 * 1000);
+  fs.utimesSync(futureNamedBackup, staleTime, staleTime);
 
   const result = spawnSync(process.execPath, [path.join(root, "scripts", "backup-archive.js")], {
     cwd: root,
@@ -98,10 +101,68 @@ test("archive backup rotation never deletes the newly verified copy due to a fut
   assert.doesNotThrow(() => verifyArchiveBackup(path.join(backupDir, databaseFiles[0])));
 });
 
+test("archive backup rotation does not let a newer corrupt file evict a verified recovery point", (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "gameops-backup-corrupt-retention-test-"));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const databasePath = path.join(dir, "archive.db");
+  const backupDir = path.join(dir, "backups");
+  const db = new DatabaseSync(databasePath);
+  db.exec("CREATE TABLE check_rows (value TEXT NOT NULL); INSERT INTO check_rows VALUES ('live');");
+  db.close();
+  const env = { ...process.env, ARCHIVE_DB_PATH: databasePath, ARCHIVE_BACKUP_DIR: backupDir, ARCHIVE_BACKUP_KEEP: "2" };
+  const first = spawnSync(process.execPath, [path.join(root, "scripts", "backup-archive.js")], { cwd: root, env, encoding: "utf8" });
+  assert.equal(first.status, 0, first.stderr || first.stdout);
+  const previousValid = fs.readdirSync(backupDir).find((name) => /^archive-.*\.db$/.test(name));
+  const olderValidTime = new Date("2020-01-01T00:00:00.000Z");
+  fs.utimesSync(path.join(backupDir, previousValid), olderValidTime, olderValidTime);
+  const corruptName = "archive-20991231235959999.db";
+  const corruptPath = path.join(backupDir, corruptName);
+  fs.writeFileSync(corruptPath, "not a recoverable SQLite backup");
+  fs.writeFileSync(corruptPath + ".sha256", "0".repeat(64) + "  " + corruptName + "\n");
+  const newerCorruptTime = new Date("2021-01-01T00:00:00.000Z");
+  fs.utimesSync(corruptPath, newerCorruptTime, newerCorruptTime);
+
+  const second = spawnSync(process.execPath, [path.join(root, "scripts", "backup-archive.js")], { cwd: root, env, encoding: "utf8" });
+  assert.equal(second.status, 0, second.stderr || second.stdout);
+  const databaseFiles = fs.readdirSync(backupDir).filter((name) => /^archive-.*\.db$/.test(name));
+  assert.equal(databaseFiles.length, 2);
+  assert.equal(fs.existsSync(corruptPath), false);
+  assert.equal(fs.existsSync(corruptPath + ".sha256"), false);
+  assert.doesNotThrow(() => verifyArchiveBackup(path.join(backupDir, previousValid)));
+  const currentBackup = databaseFiles.find((name) => name !== previousValid);
+  assert.ok(currentBackup);
+  assert.doesNotThrow(() => verifyArchiveBackup(path.join(backupDir, currentBackup)));
+});
+
+test("archive backup rotation leaves a recently changed unverified file for a concurrent writer", (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "gameops-backup-recent-candidate-test-"));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const databasePath = path.join(dir, "archive.db");
+  const backupDir = path.join(dir, "backups");
+  const db = new DatabaseSync(databasePath);
+  db.exec("CREATE TABLE check_rows (value TEXT NOT NULL); INSERT INTO check_rows VALUES ('live');");
+  db.close();
+  fs.mkdirSync(backupDir);
+  const recentPath = path.join(backupDir, "archive-20991231235959999.db");
+  fs.writeFileSync(recentPath, "possibly still being written");
+  fs.writeFileSync(recentPath + ".sha256", "incomplete");
+
+  const result = spawnSync(process.execPath, [path.join(root, "scripts", "backup-archive.js")], {
+    cwd: root,
+    env: { ...process.env, ARCHIVE_DB_PATH: databasePath, ARCHIVE_BACKUP_DIR: backupDir, ARCHIVE_BACKUP_KEEP: "1" },
+    encoding: "utf8"
+  });
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.equal(fs.existsSync(recentPath), true);
+  const verified = fs.readdirSync(backupDir).find((name) => /^archive-.*\.db$/.test(name) && name !== path.basename(recentPath));
+  assert.ok(verified);
+  assert.doesNotThrow(() => verifyArchiveBackup(path.join(backupDir, verified)));
+});
+
 test("archive backup verifies the new copy before pruning older recovery points", () => {
   const script = fs.readFileSync(path.join(root, "scripts", "backup-archive.js"), "utf8");
   const verifyPosition = script.indexOf("verifyArchiveBackup(destination)");
-  const prunePosition = script.indexOf("fs.rmSync(path.join(backupDir, backup.name), { force: true })");
+  const prunePosition = script.indexOf("removeBackupFiles(backupDir, backup.name)");
   assert.ok(verifyPosition >= 0, "new backup must pass checksum and SQLite integrity validation");
   assert.ok(prunePosition > verifyPosition, "retention must not run before the new copy is verified");
 });

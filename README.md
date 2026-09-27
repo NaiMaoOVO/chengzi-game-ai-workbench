@@ -209,7 +209,7 @@ PM2 线上配置会拒绝关闭归档认证、无效管理员账号/口令或关
 npm run archive:backup
 ```
 
-归档服务运行时会在启动约 10 秒后检查上海自然日备份；当天没有校验通过的副本时自动生成一份，失败后每小时重试。默认备份写入与 `archive.db` 同级的 `backups/`，可用 `ARCHIVE_BACKUP_DIR` 改位置；设置 `ARCHIVE_AUTO_BACKUP_ENABLED=0` 可关闭自动备份。请指定专用的嵌套目录，脚本会拒绝文件系统根目录、系统一级目录、用户主目录及其上级目录，并在改权限前解析符号链接。默认保留最近 7 份，可用 `ARCHIVE_BACKUP_KEEP` 调整（范围 1-100）；非整数或越界配置会被 `deploy:check` 提前发现，并在创建备份和清理旧副本前拒绝。每份备份同时生成 `.sha256` 校验文件；新备份会先通过校验和与 SQLite 完整性检查，再执行旧备份轮换。自动备份与手动备份共用此校验和轮换流程。此备份仍位于同一设备/存储环境中，不等于异地灾备；重要数据应另行安全复制到独立存储。可用 `npm run archive:verify -- /path/to/archive-*.db` 单独校验。恢复前先停止 archive 服务，然后运行 `npm run archive:restore -- /path/to/archive-*.db --service-stopped`；工具会检查 `ARCHIVE_PORT` 对应的本机端口，仍有服务响应或无法确认状态时拒绝覆盖；通过后再校验 SHA-256 与 SQLite 完整性，将当前数据库及 `-wal`、`-shm`、`-journal` 侧文件保留为旁边的 `*.pre-restore-*` 副本，再替换数据库。生产环境必须使用 HTTPS，并保持 `ARCHIVE_COOKIE_SECURE=1`。
+归档服务运行时会在启动约 10 秒后检查上海自然日备份；当天没有校验通过的副本时自动生成一份，失败后每小时重试。默认备份写入与 `archive.db` 同级的 `backups/`，可用 `ARCHIVE_BACKUP_DIR` 改位置；设置 `ARCHIVE_AUTO_BACKUP_ENABLED=0` 可关闭自动备份。请指定专用的嵌套目录，脚本会拒绝文件系统根目录、系统一级目录、用户主目录及其上级目录，并在改权限前解析符号链接。默认保留最近 7 份经过校验的恢复点，可用 `ARCHIVE_BACKUP_KEEP` 调整（范围 1-100）；非整数或越界配置会被 `deploy:check` 提前发现，并在创建备份和清理旧副本前拒绝。每份备份同时生成 `.sha256` 校验文件；新备份会先通过校验和与 SQLite 完整性检查，再执行旧备份轮换。损坏的旧副本不占保留名额；最近一小时内更新的无效文件会暂缓清理，以避开并发写入。自动备份与手动备份共用此校验和轮换流程。此备份仍位于同一设备/存储环境中，不等于异地灾备；重要数据应另行安全复制到独立存储。可用 `npm run archive:verify -- /path/to/archive-*.db` 单独校验。恢复前先停止 archive 服务，然后运行 `npm run archive:restore -- /path/to/archive-*.db --service-stopped`；工具会检查 `ARCHIVE_PORT` 对应的本机端口，仍有服务响应或无法确认状态时拒绝覆盖；通过后再校验 SHA-256 与 SQLite 完整性，将当前数据库及 `-wal`、`-shm`、`-journal` 侧文件保留为旁边的 `*.pre-restore-*` 副本，再替换数据库。生产环境必须使用 HTTPS，并保持 `ARCHIVE_COOKIE_SECURE=1`。
 
 ## 安全设计
 

@@ -3,6 +3,7 @@ const os = require("node:os");
 const path = require("node:path");
 const { DatabaseSync } = require("node:sqlite");
 const { assertSafeArchiveBackupDirectory, loadArchiveBackupEnv, parseArchiveBackupKeep, sha256File, verifyArchiveBackup } = require("../lib/archive-backup");
+const RECENT_BACKUP_GRACE_MS = 60 * 60 * 1000;
 
 const root = path.resolve(__dirname, "..");
 loadArchiveBackupEnv(root);
@@ -19,6 +20,19 @@ try {
 } catch (error) {
   console.error("存档备份失败：" + error.message);
   process.exit(1);
+}
+
+function removeBackupFiles(backupDir, name) {
+  for (const filePath of [path.join(backupDir, name), path.join(backupDir, name + ".sha256")]) {
+    let stats;
+    try {
+      stats = fs.lstatSync(filePath);
+    } catch (error) {
+      if (error.code === "ENOENT") continue;
+      throw error;
+    }
+    if (stats.isFile() || stats.isSymbolicLink()) fs.rmSync(filePath, { force: true });
+  }
 }
 
 if (!fs.existsSync(databasePath)) {
@@ -53,14 +67,35 @@ try {
   backupVerified = true;
 
   const currentBackupName = path.basename(destination);
-  const backups = fs.readdirSync(backupDir)
-    .filter((name) => /^archive-.*\.db$/.test(name))
-    .filter((name) => name !== currentBackupName)
-    .map((name) => ({ name, modifiedAt: fs.lstatSync(path.join(backupDir, name)).mtimeMs }))
-    .sort((a, b) => b.modifiedAt - a.modifiedAt || b.name.localeCompare(a.name));
+  const backups = [];
+  const invalidBackups = [];
+  for (const name of fs.readdirSync(backupDir).filter((entry) => /^archive-.*\.db$/.test(entry) && entry !== currentBackupName)) {
+    const filePath = path.join(backupDir, name);
+    let stats;
+    try {
+      stats = fs.lstatSync(filePath);
+    } catch (error) {
+      if (error.code === "ENOENT") continue;
+      throw error;
+    }
+    if (!stats.isFile() && !stats.isSymbolicLink()) continue;
+    const candidate = { name, modifiedAt: stats.mtimeMs };
+    try {
+      if (!stats.isFile()) throw new Error("备份文件不是普通文件");
+      verifyArchiveBackup(filePath);
+      backups.push(candidate);
+    } catch (_error) {
+      invalidBackups.push(candidate);
+    }
+  }
+  backups.sort((a, b) => b.modifiedAt - a.modifiedAt || b.name.localeCompare(a.name));
+  const staleBefore = Date.now() - RECENT_BACKUP_GRACE_MS;
+  for (const backup of invalidBackups) {
+    // A recent file may belong to another backup process that is still writing it.
+    if (backup.modifiedAt < staleBefore) removeBackupFiles(backupDir, backup.name);
+  }
   for (const backup of backups.slice(Math.max(keep - 1, 0))) {
-    fs.rmSync(path.join(backupDir, backup.name), { force: true });
-    fs.rmSync(path.join(backupDir, backup.name + ".sha256"), { force: true });
+    removeBackupFiles(backupDir, backup.name);
   }
   console.log("存档备份完成：" + destination + "（校验和已写入，保留 " + Math.min(keep, backups.length + 1) + " 份）");
 } catch (error) {
