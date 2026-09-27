@@ -53,15 +53,17 @@ try {
   verifyArchiveBackup(destination);
   backupVerified = true;
 
+  const currentBackupName = path.basename(destination);
   const backups = fs.readdirSync(backupDir)
     .filter((name) => /^archive-.*\.db$/.test(name))
-    .sort()
-    .reverse();
-  for (const name of backups.slice(keep)) {
-    fs.rmSync(path.join(backupDir, name), { force: true });
-    fs.rmSync(path.join(backupDir, name + ".sha256"), { force: true });
+    .filter((name) => name !== currentBackupName)
+    .map((name) => ({ name, modifiedAt: fs.lstatSync(path.join(backupDir, name)).mtimeMs }))
+    .sort((a, b) => b.modifiedAt - a.modifiedAt || b.name.localeCompare(a.name));
+  for (const backup of backups.slice(Math.max(keep - 1, 0))) {
+    fs.rmSync(path.join(backupDir, backup.name), { force: true });
+    fs.rmSync(path.join(backupDir, backup.name + ".sha256"), { force: true });
   }
-  console.log("存档备份完成：" + destination + "（校验和已写入，保留 " + Math.min(keep, backups.length) + " 份）");
+  console.log("存档备份完成：" + destination + "（校验和已写入，保留 " + Math.min(keep, backups.length + 1) + " 份）");
 } catch (error) {
   if (!backupVerified) {
     if (backupCreated) fs.rmSync(destination, { force: true });

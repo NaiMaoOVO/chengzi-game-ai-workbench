@@ -75,10 +75,33 @@ test("archive backup writes a checksum and prunes older copies by retention", ()
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
+test("archive backup rotation never deletes the newly verified copy due to a future filename", (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "gameops-backup-future-name-test-"));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const databasePath = path.join(dir, "archive.db");
+  const backupDir = path.join(dir, "backups");
+  const db = new DatabaseSync(databasePath);
+  db.exec("CREATE TABLE check_rows (value TEXT NOT NULL); INSERT INTO check_rows VALUES ('current snapshot');");
+  db.close();
+  fs.mkdirSync(backupDir);
+  fs.writeFileSync(path.join(backupDir, "archive-99991231235959999.db"), "invalid future-dated backup");
+
+  const result = spawnSync(process.execPath, [path.join(root, "scripts", "backup-archive.js")], {
+    cwd: root,
+    env: { ...process.env, ARCHIVE_DB_PATH: databasePath, ARCHIVE_BACKUP_DIR: backupDir, ARCHIVE_BACKUP_KEEP: "1" },
+    encoding: "utf8"
+  });
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+
+  const databaseFiles = fs.readdirSync(backupDir).filter((name) => /^archive-.*\.db$/.test(name));
+  assert.equal(databaseFiles.length, 1);
+  assert.doesNotThrow(() => verifyArchiveBackup(path.join(backupDir, databaseFiles[0])));
+});
+
 test("archive backup verifies the new copy before pruning older recovery points", () => {
   const script = fs.readFileSync(path.join(root, "scripts", "backup-archive.js"), "utf8");
   const verifyPosition = script.indexOf("verifyArchiveBackup(destination)");
-  const prunePosition = script.indexOf("fs.rmSync(path.join(backupDir, name), { force: true })");
+  const prunePosition = script.indexOf("fs.rmSync(path.join(backupDir, backup.name), { force: true })");
   assert.ok(verifyPosition >= 0, "new backup must pass checksum and SQLite integrity validation");
   assert.ok(prunePosition > verifyPosition, "retention must not run before the new copy is verified");
 });
