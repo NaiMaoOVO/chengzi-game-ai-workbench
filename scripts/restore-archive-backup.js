@@ -62,17 +62,24 @@ async function restoreArchive() {
       throw new Error("备份文件不能与当前数据库相同");
     }
 
+    const existingFiles = [];
+    for (const suffix of ["", ...sidecarSuffixes]) {
+      const source = databasePath + suffix;
+      try {
+        const stats = fs.lstatSync(source);
+        if (stats.isSymbolicLink()) throw new Error("存档恢复拒绝符号链接文件：" + path.basename(source));
+        if (!stats.isFile()) throw new Error("存档恢复拒绝非普通文件：" + path.basename(source));
+        existingFiles.push([source, suffix ? safetyPath + suffix : safetyPath]);
+      } catch (error) {
+        if (error.code !== "ENOENT") throw error;
+      }
+    }
+
     fs.mkdirSync(path.dirname(databasePath), { recursive: true, mode: 0o700 });
     preserveFile(backup.path, stagePath);
     if (sha256File(stagePath) !== backup.digest) throw new Error("备份在复制期间发生变化，已取消恢复");
     assertSqliteIntegrity(stagePath);
 
-    const existingFiles = [];
-    if (fs.existsSync(databasePath)) existingFiles.push([databasePath, safetyPath]);
-    for (const suffix of sidecarSuffixes) {
-      const sidecar = databasePath + suffix;
-      if (fs.existsSync(sidecar)) existingFiles.push([sidecar, safetyPath + suffix]);
-    }
     for (const [source, destination] of existingFiles) preserveFile(source, destination);
 
     const removedSidecars = [];

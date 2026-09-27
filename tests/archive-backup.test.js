@@ -459,6 +459,35 @@ test("archive restore rejects a checksum-valid non-SQLite backup without touchin
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
+test("archive restore refuses dangling SQLite sidecar symlinks before replacing the database", (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "gameops-backup-restore-sidecar-link-test-"));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const databasePath = path.join(dir, "archive.db");
+  const backupDir = path.join(dir, "backups");
+  const db = new DatabaseSync(databasePath);
+  db.exec("CREATE TABLE check_rows (value TEXT NOT NULL); INSERT INTO check_rows VALUES ('keep live data');");
+  db.close();
+  const env = { ...process.env, ARCHIVE_DB_PATH: databasePath, ARCHIVE_BACKUP_DIR: backupDir, ARCHIVE_PORT: "19719" };
+  const backup = spawnSync(process.execPath, [path.join(root, "scripts", "backup-archive.js")], { cwd: root, env, encoding: "utf8" });
+  assert.equal(backup.status, 0, backup.stderr || backup.stdout);
+  const backupFile = path.join(backupDir, fs.readdirSync(backupDir).find((name) => /^archive-.*\.db$/.test(name)));
+  const danglingSidecar = databasePath + "-wal";
+  fs.symlinkSync(path.join(dir, "missing-wal-target"), danglingSidecar);
+
+  const result = spawnSync(process.execPath, [path.join(root, "scripts", "restore-archive-backup.js"), backupFile, "--service-stopped"], {
+    cwd: root,
+    env,
+    encoding: "utf8"
+  });
+  assert.equal(result.status, 1, result.stdout);
+  assert.match(result.stderr, /符号链接|非普通/);
+  assert.equal(fs.lstatSync(danglingSidecar).isSymbolicLink(), true);
+  const stillLive = new DatabaseSync(databasePath, { readOnly: true });
+  assert.equal(stillLive.prepare("SELECT value FROM check_rows").get().value, "keep live data");
+  stillLive.close();
+  assert.equal(fs.readdirSync(dir).some((name) => name.includes("pre-restore")), false);
+});
+
 test("archive file hashing streams large files through a bounded buffer", () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "gameops-backup-hash-test-"));
   const file = path.join(dir, "large-backup.db");
