@@ -5,7 +5,11 @@ const { assertSafeProviderUrl } = require("./lib/platform-provider");
 
 const cwd = __dirname;
 const allowedOrigin = process.env.ALLOWED_ORIGIN || "";
-const ocrProvider = process.env.OCR_PROVIDER || "macos";
+const ocrProvider = String(process.env.OCR_PROVIDER || "macos").trim().toLowerCase();
+
+if (!new Set(["macos", "remote"]).has(ocrProvider)) {
+  throw new Error("OCR_PROVIDER 必须是 macos 或 remote");
+}
 
 function hasExampleHost(value) {
   try {

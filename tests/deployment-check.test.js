@@ -51,6 +51,36 @@ test("deployment check refuses online archive access without authentication", ()
   assert.match(result.stderr, /线上部署必须设置 ARCHIVE_AUTH_ENABLED=1/);
 });
 
+test("deployment check rejects unsupported OCR providers and normalizes remote provider names", () => {
+  const unsupported = runCheck("https://gameops.test", { OCR_PROVIDER: "unknown" });
+  assert.equal(unsupported.status, 1);
+  assert.match(unsupported.stderr, /OCR_PROVIDER 必须是 macos 或 remote/);
+
+  const missingRemoteUrl = runCheck("https://gameops.test", {
+    OCR_PROVIDER: " REMOTE ",
+    OCR_REMOTE_URL: ""
+  });
+  assert.equal(missingRemoteUrl.status, 1);
+  assert.match(missingRemoteUrl.stderr, /OCR_PROVIDER=remote 时必须设置真实的 OCR_REMOTE_URL/);
+
+  const normalizedRemoteUrl = runCheck("https://gameops.test", {
+    OCR_PROVIDER: " REMOTE ",
+    OCR_REMOTE_URL: "https://ocr-provider.test/api"
+  });
+  assert.equal(normalizedRemoteUrl.status, 0, normalizedRemoteUrl.stderr);
+
+  const config = spawnSync(process.execPath, ["-e", 'console.log(require("./ecosystem.config.js").apps.find((app) => app.name === "gameops-ocr").env.OCR_PROVIDER)'], {
+    cwd: projectRoot,
+    env: deploymentEnv("https://gameops.test", {
+      OCR_PROVIDER: " REMOTE ",
+      OCR_REMOTE_URL: "https://ocr-provider.test/api"
+    }),
+    encoding: "utf8"
+  });
+  assert.equal(config.status, 0, config.stderr);
+  assert.equal(config.stdout.trim(), "remote");
+});
+
 test("deployment check validates production admin and remote OCR transport", () => {
   const invalidConfigs = [
     [{ ARCHIVE_ADMIN_USERNAME: "bad username" }, /ARCHIVE_ADMIN_USERNAME 必须是 3-40 位/],
