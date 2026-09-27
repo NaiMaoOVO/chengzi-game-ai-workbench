@@ -2685,22 +2685,23 @@ function renderServiceCard(id, result, fallback) {
   }
 }
 
+function getLlmServiceStatus() {
+  return llmServiceState === "ready"
+    ? { online: true, detail: `AI 增强已启用（${llmModelName}）` }
+    : llmServiceState === "no_key" || llmServiceState === "not_ready"
+    ? { online: true, detail: "服务运行中 · 未配置 API Key，模块运行规则模式" }
+    : { online: false, detail: "未启动，模块自动使用规则模式" };
+}
+
 async function getLocalServiceStatus() {
   // 启动状态只查 /health：轻量且校验 service 身份。
   // 不要用 /probe（会真实请求 B站，常 >1.5s，容易被 2.4s 超时误判为“未启动”）。
-  // LLM 卡片状态由 checkLlmHealth 的 llmServiceState 决定（区分 ready/no_key），不在此重复探测。
   const [ocr, hotspot, comment] = await Promise.all([
     checkServiceEndpoint(OCR_SERVICE_URL, "/health", 2400, "gameops-ocr"),
     checkServiceEndpoint(HOTSPOT_SERVICE_URL, "/health", 2400, "gameops-hotspot"),
     checkServiceEndpoint(COMMENT_SERVICE_URL, "/health", 2400, "gameops-comments")
   ]);
-  const llm =
-    llmServiceState === "ready"
-      ? { online: true, detail: `AI 增强已启用（${llmModelName}）` }
-      : llmServiceState === "no_key" || llmServiceState === "not_ready"
-      ? { online: true, detail: "服务运行中 · 未配置 API Key，模块运行规则模式" }
-      : { online: false, detail: "未启动，模块自动使用规则模式" };
-  return { ocr, hotspot, comment, llm };
+  return { ocr, hotspot, comment };
 }
 
 async function refreshOverviewServiceStatus() {
@@ -2711,15 +2712,14 @@ async function refreshOverviewServiceStatus() {
   renderServiceCard("#service-status-comment", null, "检测中");
   renderServiceCard("#service-status-llm", null, "检测中");
   renderArchiveBackupStatus(null);
-  await checkLlmHealth(modeGeneration);
-  if (!serviceModeGuard.isCurrent(modeGeneration)) return null;
-
-  const [{ ocr, hotspot, comment, llm }, archiveBackup] = await Promise.all([
-    getLocalServiceStatus(),
+  const [serviceStatus, archiveBackup] = await Promise.all([
+    Promise.all([getLocalServiceStatus(), checkLlmHealth(modeGeneration)]).then(([status]) => status),
     checkArchiveBackupStatus()
   ]);
   if (!serviceModeGuard.isCurrent(modeGeneration)) return null;
 
+  const { ocr, hotspot, comment } = serviceStatus;
+  const llm = getLlmServiceStatus();
   renderServiceCard("#service-status-ocr", ocr);
   renderServiceCard("#service-status-hotspot", hotspot);
   renderServiceCard("#service-status-comment", comment);
