@@ -481,6 +481,7 @@ document.addEventListener("gameops:archive-session", (event) => {
   renderArchiveAuthPanel(detail);
   if (accountChanged) {
     lastArchiveSnapshot = null;
+    archiveSnapshotRetries = [];
     setArchiveSyncStatus("账号已切换，旧账号的存档重试数据已清除。", "");
     dailyBriefingGuard.next();
     dailyBriefingGenerating = false;
@@ -694,15 +695,16 @@ function gamePlatformLabel() {
 }
 
 let lastArchiveSnapshot = null;
+let archiveSnapshotRetries = [];
 
-function setArchiveSyncStatus(text, tone = "") {
+function setArchiveSyncStatus(text, tone = "", retryVisible = tone === "mock") {
   const status = document.querySelector("#archive-sync-status");
   const retry = document.querySelector("#retry-archive-sync");
   if (status) {
     status.textContent = text;
     status.className = "archive-sync-status source-status" + (tone === "real" ? " source-real" : tone === "mock" ? " source-mock" : "");
   }
-  if (retry) retry.hidden = tone !== "mock";
+  if (retry) retry.hidden = !retryVisible;
 }
 
 function snapshotRequestId(kind, game, payload) {
@@ -715,40 +717,55 @@ function snapshotRequestId(kind, game, payload) {
 function archiveSnapshot(kind, game, payload) {
   const sessionKeyAtStart = archivePanelSessionKey;
   const label = kind === "feedback" ? "反馈" : kind === "trending" ? "热点" : kind;
-  lastArchiveSnapshot = { kind, game, payload, sessionKey: sessionKeyAtStart };
+  const snapshot = { kind, game, payload, sessionKey: sessionKeyAtStart, requestId: snapshotRequestId(kind, game, payload) };
+  lastArchiveSnapshot = snapshot;
   const body = JSON.stringify({ kind, game, source: payload.source || "sample", payload });
-  setArchiveSyncStatus(`存档：正在保存${label}数据…`);
+  if (archiveSnapshotRetries.length) {
+    setArchiveSyncStatus(`存档：正在保存${label}数据；另有 ${archiveSnapshotRetries.length} 项待重试。`, "mock");
+  } else {
+    setArchiveSyncStatus(`存档：正在保存${label}数据…`);
+  }
   archiveJsonRequestWithTimeout(ARCHIVE_SERVICE_URL + "/snapshots", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "Idempotency-Key": snapshotRequestId(kind, game, payload)
+      "Idempotency-Key": snapshot.requestId
     },
     body
   }).then(({ response, payload: result }) => {
     if (!response.ok || !result.ok) throw new Error(result.error || `HTTP ${response.status}`);
-    if (sessionKeyAtStart === archivePanelSessionKey) setArchiveSyncStatus(`存档：${label}数据已保存（编号 #${result.id}）。`, "real");
+    if (sessionKeyAtStart === archivePanelSessionKey) {
+      archiveSnapshotRetries = archiveSnapshotRetries.filter((item) => item.requestId !== snapshot.requestId);
+      if (archiveSnapshotRetries.length) {
+        setArchiveSyncStatus(`存档：${label}数据已保存；仍有 ${archiveSnapshotRetries.length} 项待重试。`, "mock");
+      } else {
+        setArchiveSyncStatus(`存档：${label}数据已保存（编号 #${result.id}）。`, "real");
+      }
+    }
     return result;
   }).catch((error) => {
     if (sessionKeyAtStart !== archivePanelSessionKey) return null;
+    if (!archiveSnapshotRetries.some((item) => item.requestId === snapshot.requestId)) archiveSnapshotRetries.push(snapshot);
     if (error?.name === "AbortError" || error?.name === "TimeoutError" || isArchiveServiceUnavailable(error)) {
       const reason = error?.name === "AbortError" || error?.name === "TimeoutError" ? "请求超时" : "服务连接中断";
-      setArchiveSyncStatus(`存档结果未确认：${label}${reason}，数据可能已保存；主流程已继续。刷新确认后可点击“重试存档”。`, "mock");
+      setArchiveSyncStatus(`存档结果未确认：${label}${reason}，数据可能已保存；当前有 ${archiveSnapshotRetries.length} 项待重试。刷新确认后可点击“重试存档”。`, "mock");
       return null;
     }
-    setArchiveSyncStatus(`存档结果未确认：服务暂不可用，${label}数据状态未知；刷新确认后再重试。主流程已继续。`, "mock");
+    setArchiveSyncStatus(`存档结果未确认：服务暂不可用，${label}数据状态未知；当前有 ${archiveSnapshotRetries.length} 项待重试，主流程已继续。`, "mock");
     return null;
   });
 }
 
 document.querySelector("#retry-archive-sync")?.addEventListener("click", () => {
-  if (!lastArchiveSnapshot) return;
-  if (lastArchiveSnapshot.sessionKey !== archivePanelSessionKey) {
+  const snapshot = archiveSnapshotRetries.shift() || lastArchiveSnapshot;
+  if (!snapshot) return;
+  if (snapshot.sessionKey !== archivePanelSessionKey) {
     lastArchiveSnapshot = null;
+    archiveSnapshotRetries = [];
     setArchiveSyncStatus("账号已切换，旧账号的存档重试数据已清除；请重新生成当前账号数据。", "");
     return;
   }
-  archiveSnapshot(lastArchiveSnapshot.kind, lastArchiveSnapshot.game, lastArchiveSnapshot.payload);
+  archiveSnapshot(snapshot.kind, snapshot.game, snapshot.payload);
 });
 
 let llmServiceState = "down";

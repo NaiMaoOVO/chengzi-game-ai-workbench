@@ -1795,6 +1795,44 @@ test("background snapshot writes expose success and failure instead of swallowin
   assert.doesNotMatch(source, /存档失败不影响主流程/);
 });
 
+test("overlapping background snapshots retain the failed snapshot as the retry target", async () => {
+  const start = app.indexOf("let lastArchiveSnapshot = null;");
+  const end = app.indexOf("\nlet llmServiceState =", start);
+  assert.ok(start >= 0 && end > start);
+  const status = { textContent: "", className: "" };
+  const retryButton = {
+    hidden: true,
+    addEventListener(_eventName, handler) { this.handler = handler; }
+  };
+  const pending = [];
+  const sandbox = {
+    document: {
+      querySelector(selector) {
+        return selector === "#archive-sync-status" ? status : retryButton;
+      }
+    },
+    archivePanelSessionKey: "account-a",
+    ARCHIVE_SERVICE_URL: "http://127.0.0.1:8796",
+    businessDate: () => "2026-09-27",
+    archiveJsonRequestWithTimeout(url, options) {
+      return new Promise((resolve, reject) => pending.push({ url, options, resolve, reject }));
+    },
+    isArchiveServiceUnavailable: (error) => error?.message === "Failed to fetch"
+  };
+  vm.runInNewContext(`${app.slice(start, end)}\nthis.archiveSnapshot = archiveSnapshot;`, sandbox);
+
+  sandbox.archiveSnapshot("feedback", "鸣潮", { source: "real" });
+  sandbox.archiveSnapshot("trending", "鸣潮", { source: "sample" });
+  pending[0].reject(new Error("Failed to fetch"));
+  await new Promise((resolve) => setImmediate(resolve));
+  pending[1].resolve({ response: { ok: true, status: 201 }, payload: { ok: true, id: 2 } });
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.equal(retryButton.hidden, false, "the later success must not erase an earlier failed write");
+  retryButton.handler();
+  assert.equal(JSON.parse(pending[2].options.body).kind, "feedback", "retry must resend the failed snapshot, not the latest attempted one");
+});
+
 test("background snapshots use a stable daily idempotency key", () => {
   assert.match(app, /function snapshotRequestId/);
   assert.match(app, /archiveSnapshot[\s\S]{0,1200}Idempotency-Key/);
@@ -1896,8 +1934,10 @@ test("published dates use the Shanghai business date", () => {
 test("failed background snapshots can be retried without rerunning analysis", () => {
   assert.match(html, /id="retry-archive-sync"[^>]*hidden/);
   assert.match(app, /let lastArchiveSnapshot = null/);
+  assert.match(app, /let archiveSnapshotRetries = \[\]/);
   assert.match(app, /retry-archive-sync/);
-  assert.match(app, /archiveSnapshot\(lastArchiveSnapshot\.kind/);
+  assert.match(app, /const snapshot = archiveSnapshotRetries\.shift\(\) \|\| lastArchiveSnapshot/);
+  assert.match(app, /仍有 \$\{archiveSnapshotRetries\.length\} 项待重试/);
 });
 
 test("caliber guidance escapes dynamic text before rendering", () => {
