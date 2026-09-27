@@ -8664,14 +8664,17 @@ function purgeSensitiveProjectStateStorage() {
 }
 
 let projectSlotStorageIssue = "";
+let projectSlotStorageRaw = null;
 
 function readProjectSlotStorage() {
   projectSlotStorageIssue = "";
+  projectSlotStorageRaw = null;
   let raw;
   try {
     const storage = window.localStorage;
     if (!storage) throw new Error("local storage unavailable");
     raw = storage.getItem(PROJECT_SLOTS_KEY);
+    projectSlotStorageRaw = raw;
   } catch (_error) {
     projectSlotStorageIssue = "本机项目槽位存储不可用，原始数据未修改。";
     return [];
@@ -8841,6 +8844,33 @@ function saveProjectToSlot(slotIndex) {
       status.className = "source-status source-mock";
     }
     return;
+  }
+  if (stateList[slotIndex - 1]) {
+    if (!window.confirm(`槽位 ${slotIndex} 已有项目，覆盖后该槽位原内容将被替换。确定继续吗？`)) {
+      const status = document.querySelector("#overview-status");
+      if (status) {
+        status.textContent = `总览状态：已取消覆盖槽位 ${slotIndex}，原有内容未修改。`;
+        status.className = "source-status source-mock";
+      }
+      return;
+    }
+    try {
+      if (window.localStorage.getItem(PROJECT_SLOTS_KEY) !== projectSlotStorageRaw) {
+        const status = document.querySelector("#overview-status");
+        if (status) {
+          status.textContent = "总览状态：其他标签页已更新项目槽位，本次覆盖已取消；请重新载入后再保存。";
+          status.className = "source-status source-mock";
+        }
+        return;
+      }
+    } catch (_error) {
+      const status = document.querySelector("#overview-status");
+      if (status) {
+        status.textContent = "总览状态：无法核对项目槽位是否变化，本次覆盖已取消。";
+        status.className = "source-status source-mock";
+      }
+      return;
+    }
   }
   const data = collectProjectState();
   stateList[slotIndex - 1] = data;
