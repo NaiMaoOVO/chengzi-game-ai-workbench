@@ -8673,6 +8673,11 @@ function purgeSensitiveProjectStateStorage() {
   let storage = null;
   try {
     storage = window.localStorage;
+  } catch (_error) {
+    return;
+  }
+
+  try {
     const savedState = storage.getItem(PROJECT_STORAGE_KEY);
     if (savedState) {
       const state = JSON.parse(savedState);
@@ -8682,6 +8687,11 @@ function purgeSensitiveProjectStateStorage() {
         storage.setItem(PROJECT_STORAGE_KEY, serialized);
       }
     }
+  } catch (_error) {
+    /* Keep a damaged or unavailable project snapshot untouched; clean slots independently. */
+  }
+
+  try {
     const savedSlots = storage.getItem(PROJECT_SLOTS_KEY);
     if (savedSlots) {
       const slots = JSON.parse(savedSlots);
@@ -8699,7 +8709,7 @@ function purgeSensitiveProjectStateStorage() {
       }
     }
   } catch (_error) {
-    /* Private browsing, unavailable storage, and malformed legacy values stay untouched. */
+    /* Keep damaged or unavailable project slots untouched. */
   }
 }
 

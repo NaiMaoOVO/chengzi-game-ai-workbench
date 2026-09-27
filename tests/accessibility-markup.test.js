@@ -153,15 +153,16 @@ test("startup cleanup and slot saves leave damaged browser data untouched", () =
   const saveEnd = app.indexOf("function loadProjectFromSlot", saveStart);
   assert.ok(purgeStart >= 0 && purgeEnd > purgeStart && readEnd > readStart && saveEnd > saveStart);
   const { inspectProjectSlots, isValidProjectSlots, sanitizeProjectSlots, sanitizeProjectState } = require("../lib/project-slots");
-  const createHarness = (raw) => {
+  const createHarness = (raw, initialProjectState = null) => {
     let value = raw;
+    let projectValue = initialProjectState;
     let writes = 0;
     const status = { textContent: "", className: "" };
     const context = {
       PROJECT_STORAGE_KEY: "project-state",
       window: { localStorage: {
-        getItem: (key) => key === "gameops-project-slots-v2" ? value : null,
-        setItem: (_key, next) => { writes += 1; value = next; }
+        getItem: (key) => key === "gameops-project-slots-v2" ? value : projectValue,
+        setItem: (key, next) => { writes += 1; if (key === "gameops-project-slots-v2") value = next; else projectValue = next; }
       } },
       inspectProjectSlots,
       isValidProjectSlots,
@@ -181,7 +182,7 @@ test("startup cleanup and slot saves leave damaged browser data untouched", () =
       this.save = saveProjectToSlot;
       this.issue = () => projectSlotStorageIssue;
     `, context);
-    return { context, status, value: () => value, writes: () => writes };
+    return { context, status, value: () => value, projectValue: () => projectValue, writes: () => writes };
   };
 
   for (const raw of ["{broken", JSON.stringify([{ broken: true }])]) {
@@ -212,6 +213,12 @@ test("startup cleanup and slot saves leave damaged browser data untouched", () =
   assert.equal(mixed.value(), afterCleanup);
   assert.equal(mixed.writes(), 1);
   assert.match(mixed.status.textContent, /已取消保存/);
+  const slotsWithSecret = JSON.stringify([{ controls: { "archive-login-password": "secret", "trending-game": "鸣潮" } }]);
+  const harness = createHarness(slotsWithSecret, "{broken-json");
+  harness.context.purge();
+  assert.equal(harness.projectValue(), "{broken-json");
+  assert.deepEqual(JSON.parse(harness.value()), [{ controls: { "trending-game": "鸣潮" } }]);
+  assert.equal(harness.writes(), 1);
 });
 
 test("startup privacy cleanup does not overwrite project data changed in another tab", () => {
