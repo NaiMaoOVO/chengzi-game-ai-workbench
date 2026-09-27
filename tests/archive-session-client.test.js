@@ -52,6 +52,7 @@ function createArchiveSessionClient() {
     ${archiveSessionFunctions}
     this.archiveSessionClient = {
       setArchiveSession,
+      request: archiveRequest,
       refreshArchiveSession,
       loginArchiveUser,
       logoutArchiveUser,
@@ -136,6 +137,42 @@ test("an explicit unauthorized archive session response clears the account and C
   assert.equal(current.required, true);
   assert.equal(current.user, null);
   assert.equal(current.csrfToken, "");
+});
+
+test("a protected API 401 clears the expired account and notifies other tabs", async () => {
+  const context = createArchiveSessionClient();
+  seedVerifiedLogin(context);
+  context.fetch = async () => ({ ok: false, status: 401 });
+
+  const response = await context.archiveSessionClient.request("/api/archive/daily-todos");
+  const current = context.archiveSessionClient.current();
+
+  assert.equal(response.status, 401);
+  assert.equal(current.required, true);
+  assert.equal(current.user, null);
+  assert.equal(current.csrfToken, "");
+  assert.equal(context.localStorageWrites.length, 1);
+});
+
+test("a late protected API 401 cannot clear the account after a session context change", async () => {
+  const context = createArchiveSessionClient();
+  seedVerifiedLogin(context);
+  let resolveRequest;
+  context.fetch = () => new Promise((resolve) => { resolveRequest = resolve; });
+
+  const pendingRequest = context.archiveSessionClient.request("/api/archive/daily-todos");
+  context.archiveSessionClient.setServiceMode("online");
+  context.archiveSessionClient.setArchiveSession({
+    auth_required: true,
+    user: { id: 8, username: "new-user", role: "member" },
+    csrf_token: "new-csrf-token"
+  });
+  resolveRequest({ ok: false, status: 401 });
+  await pendingRequest;
+
+  const current = context.archiveSessionClient.current();
+  assert.equal(current.user.username, "new-user");
+  assert.equal(current.csrfToken, "new-csrf-token");
 });
 
 test("a valid unauthenticated-mode session response clears prior account state", async () => {
@@ -296,6 +333,26 @@ test("successful login and logout still apply the verified session state", async
   assert.equal(context.localStorageWrites.length, 2);
   assert.ok(context.localStorageWrites.every((entry) => entry.key === "gameops-archive-session-change-v1"));
   assert.doesNotMatch(JSON.stringify(context.localStorageWrites), /current-user|current-csrf-token|password/);
+});
+
+test("logout clears an expired session on 401 but preserves it on server errors", async () => {
+  const expired = createArchiveSessionClient();
+  seedVerifiedLogin(expired);
+  expired.fetch = async () => ({ ok: false, status: 401 });
+
+  await expired.archiveSessionClient.logoutArchiveUser();
+  assert.equal(expired.archiveSessionClient.current().required, true);
+  assert.equal(expired.archiveSessionClient.current().user, null);
+  assert.equal(expired.archiveSessionClient.current().csrfToken, "");
+  assert.equal(expired.localStorageWrites.length, 1);
+
+  const unavailable = createArchiveSessionClient();
+  seedVerifiedLogin(unavailable);
+  unavailable.fetch = async () => ({ ok: false, status: 500 });
+
+  await assert.rejects(unavailable.archiveSessionClient.logoutArchiveUser(), /退出登录失败/);
+  assert.equal(unavailable.archiveSessionClient.current().user.username, "ops-user");
+  assert.equal(unavailable.archiveSessionClient.current().csrfToken, "verified-csrf-token");
 });
 
 test("an account change in another tab refreshes this tab to the new account", async () => {

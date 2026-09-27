@@ -70,7 +70,20 @@ function archiveRequest(url, options = {}) {
   const headers = new Headers(options.headers || {});
   const method = String(options.method || "GET").toUpperCase();
   if (!["GET", "HEAD", "OPTIONS"].includes(method) && archiveCsrfToken) headers.set("X-CSRF-Token", archiveCsrfToken);
-  return fetch(url, { ...options, headers, credentials: "same-origin" });
+  const contextGeneration = archiveSessionContextGeneration;
+  const userId = archiveSessionUser?.id;
+  const csrfToken = archiveCsrfToken;
+  const authLifecycleRequest = /\/auth\/(?:login|session|logout)$/.test(String(url).split(/[?#]/, 1)[0]);
+  return fetch(url, { ...options, headers, credentials: "same-origin" }).then((response) => {
+    const sameSession = contextGeneration === archiveSessionContextGeneration
+      && userId === archiveSessionUser?.id
+      && csrfToken === archiveCsrfToken;
+    if (response.status === 401 && !authLifecycleRequest && archiveAuthRequired && archiveSessionUser && sameSession) {
+      setArchiveSession({ auth_required: true });
+      notifyArchiveSessionChanged();
+    }
+    return response;
+  });
 }
 
 function notifyArchiveSessionChanged() {
@@ -120,6 +133,11 @@ async function logoutArchiveUser() {
   const contextGeneration = ++archiveSessionContextGeneration;
   const response = await archiveRequest(ARCHIVE_SERVICE_URL + "/auth/logout", { method: "POST" });
   if (contextGeneration !== archiveSessionContextGeneration) throw new Error("登录状态已变化，退出结果未应用，请重试");
+  if (response.status === 401) {
+    const session = setArchiveSession({ auth_required: true });
+    notifyArchiveSessionChanged();
+    return session;
+  }
   if (!response.ok) throw new Error("退出登录失败");
   const session = setArchiveSession({ auth_required: true });
   notifyArchiveSessionChanged();
