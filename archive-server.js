@@ -674,8 +674,12 @@ const server = http.createServer((request, response) => {
       return;
     }
     if (request.method === "GET") {
-      const users = db.prepare("SELECT id, username, role, created_at, updated_at FROM archive_users ORDER BY id ASC").all();
-      sendJson(request, response, 200, { ok: true, users });
+      try {
+        const users = db.prepare("SELECT id, username, role, created_at, updated_at FROM archive_users ORDER BY id ASC").all();
+        sendJson(request, response, 200, { ok: true, users });
+      } catch (_error) {
+        sendJson(request, response, 500, { ok: false, error: "用户列表暂时无法读取，请稍后重试" });
+      }
       return;
     }
     if (request.method === "POST") {

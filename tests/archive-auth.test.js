@@ -251,6 +251,30 @@ test("corrupted creator libraries remain visible and cannot be overwritten", asy
   assert.equal(overwrite.payload.error, "creator_library_invalid");
 });
 
+test("admin user list storage errors return a sanitized 500 and keep the service alive", async () => {
+  const login = await request("/auth/login", {
+    method: "POST",
+    headers: jsonHeaders(),
+    body: JSON.stringify({ username: "ops-admin", password: "admin-password-2026" })
+  });
+  assert.equal(login.status, 200);
+  const cookie = sessionCookie(login);
+
+  const corruption = new DatabaseSync(databasePath);
+  corruption.exec("ALTER TABLE archive_users RENAME COLUMN updated_at TO updated_at_unavailable");
+  corruption.close();
+
+  const response = await request("/auth/users", { headers: { Cookie: cookie } });
+  assert.equal(response.status, 500);
+  assert.deepEqual(response.payload, { ok: false, error: "用户列表暂时无法读取，请稍后重试" });
+  assert.doesNotMatch(JSON.stringify(response.payload), /archive_users|sqlite|updated_at_unavailable/i);
+  const recovery = new DatabaseSync(databasePath);
+  recovery.exec("ALTER TABLE archive_users RENAME COLUMN updated_at_unavailable TO updated_at");
+  recovery.close();
+  assert.equal((await request("/auth/session", { headers: { Cookie: cookie } })).status, 200);
+  assert.equal((await request("/health")).status, 200);
+});
+
 test("archive session lookup storage errors return a sanitized 500 and keep the service alive", async () => {
   const login = await request("/auth/login", {
     method: "POST",
