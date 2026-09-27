@@ -58,8 +58,19 @@ test("HTTPS cache locations keep inheriting the server-level security headers", 
   const httpsServerStart = config.indexOf("listen 443 ssl");
   const firstLocation = config.indexOf("\n    location ", httpsServerStart);
   const serverDirectives = config.slice(httpsServerStart, firstLocation);
-  assert.match(serverDirectives, /^\s*add_header\s+Content-Security-Policy\b/m);
-  assert.match(serverDirectives, /^\s*add_header\s+Strict-Transport-Security\b/m);
+  for (const header of [
+    "Strict-Transport-Security",
+    "X-Content-Type-Options",
+    "Referrer-Policy",
+    "Permissions-Policy",
+    "Content-Security-Policy"
+  ]) {
+    assert.match(
+      serverDirectives,
+      new RegExp(`^\\s*add_header\\s+${header}\\s+.+\\s+always\\s*;`, "m"),
+      `${header} should be sent on success and error responses`
+    );
+  }
 
   const locations = [...config.matchAll(/location\s+([^{}]+)\{([^{}]*)\}/g)];
   assert.ok(locations.length > 0);
