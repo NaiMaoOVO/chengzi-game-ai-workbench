@@ -4,6 +4,7 @@ const http = require("node:http");
 const path = require("node:path");
 require("./lib/env-file").loadProjectEnv(__dirname);
 const { parseIntegerConfig } = require("./lib/http-guards");
+const { getChildProcessExitCode } = require("./lib/service-supervisor");
 const {
   ensureControllerStateDirectory,
   getControllerInstanceId,
@@ -142,7 +143,7 @@ async function main() {
     stdio: "inherit",
     env: process.env
   });
-  child.on("exit", (code) => process.exit(code || 0));
+  child.on("exit", (code, signal) => process.exit(getChildProcessExitCode(code, signal)));
 }
 
 if (require.main === module) {
