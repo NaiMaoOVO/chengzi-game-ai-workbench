@@ -8,7 +8,7 @@ const os = require("node:os");
 const path = require("node:path");
 const { DatabaseSync } = require("node:sqlite");
 const { businessDate, businessDateStart } = require("../lib/business-date");
-const { getControllerInstanceId, getControllerStatePaths } = require("../lib/controller-instance");
+const { getControllerInstanceId, getControllerStatePaths, readControllerState } = require("../lib/controller-instance");
 const { parseRequestUrl } = require("../lib/safe-request-url");
 
 const projectRoot = path.resolve(__dirname, "..");
@@ -179,7 +179,7 @@ test("local controller serves CORS headers for file pages and supervises child s
     const health = await fetch(`http://127.0.0.1:${ports.controller}/health`).then((r) => r.json());
     assert.equal(health.service, "gameops-local-controller");
     assert.equal(health.instanceId, getControllerInstanceId(projectRoot));
-    const state = JSON.parse(fs.readFileSync(controllerStateFile, "utf8"));
+    const state = readControllerState(controllerStateFile);
     assert.equal(state.project, projectRoot);
     assert.equal(state.instanceId, health.instanceId);
 

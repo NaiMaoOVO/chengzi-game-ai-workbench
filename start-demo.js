@@ -4,14 +4,13 @@ const fs = require("node:fs");
 const path = require("node:path");
 require("./lib/env-file").loadProjectEnv(__dirname);
 const { getRestartDelay } = require("./lib/service-supervisor");
-const { getControllerInstanceId, getControllerStatePaths } = require("./lib/controller-instance");
+const { ensureControllerStateDirectory, getControllerInstanceId, readControllerState, writeControllerState } = require("./lib/controller-instance");
 const { parseRequestUrl } = require("./lib/safe-request-url");
 const { createCors } = require("./lib/cors");
 const { parseIntegerConfig } = require("./lib/http-guards");
 
 const ROOT = __dirname;
 const CONTROLLER_INSTANCE_ID = getControllerInstanceId(ROOT);
-const STATE_FILE = getControllerStatePaths(ROOT).current;
 function configuredPort(name, value, defaultValue) {
   return parseIntegerConfig(value, { name, min: 1, max: 65535, defaultValue });
 }
@@ -38,6 +37,7 @@ function isLocalXhsBridgeConfigured() {
 const SERVICES = isLocalXhsBridgeConfigured()
   ? [...CORE_SERVICES, { name: "小红书 MCP 桥接", script: "xiaohongshu-bridge.js", port: xhsBridgePort, identity: "gameops-xiaohongshu-bridge", token: process.env.XHS_BRIDGE_TOKEN || "" }]
   : CORE_SERVICES;
+const STATE_FILE = ensureControllerStateDirectory(ROOT).current;
 const managedChildren = new Map();
 const restartAttempts = new Map();
 const restartTimers = new Map();
@@ -143,7 +143,7 @@ async function ensureServices() {
     process.exit(1);
   });
   srv.listen(CONTROLLER_PORT, "127.0.0.1", function() {
-    fs.writeFileSync(STATE_FILE, JSON.stringify({pid:process.pid, project:ROOT, instanceId:CONTROLLER_INSTANCE_ID}) + "\n", {mode:0o600});
+    writeControllerState(STATE_FILE, {pid:process.pid, project:ROOT, instanceId:CONTROLLER_INSTANCE_ID});
     console.log("\x1b[36mLauncher http://127.0.0.1:" + CONTROLLER_PORT + "\x1b[0m");
   });
 })();
@@ -181,7 +181,7 @@ async function main() {
     restartTimers.forEach((timer) => clearTimeout(timer));
     managedChildren.forEach((child) => child.kill());
     try {
-      const state = JSON.parse(fs.readFileSync(STATE_FILE, "utf8"));
+      const state = readControllerState(STATE_FILE);
       if (state.pid === process.pid && state.project === ROOT && state.instanceId === CONTROLLER_INSTANCE_ID) fs.rmSync(STATE_FILE, { force: true });
     } catch (_error) {
       // State may already have been removed by the restart helper.

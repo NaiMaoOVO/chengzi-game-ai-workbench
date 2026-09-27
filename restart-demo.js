@@ -4,13 +4,19 @@ const http = require("node:http");
 const path = require("node:path");
 require("./lib/env-file").loadProjectEnv(__dirname);
 const { parseIntegerConfig } = require("./lib/http-guards");
-const { getControllerInstanceId, getControllerStatePaths, isOwnedControllerState, isProjectControllerCommand } = require("./lib/controller-instance");
+const {
+  ensureControllerStateDirectory,
+  getControllerInstanceId,
+  isOwnedControllerState,
+  isProjectControllerCommand,
+  readControllerState
+} = require("./lib/controller-instance");
 
 const ROOT = __dirname;
 const CONTROLLER_INSTANCE_ID = getControllerInstanceId(ROOT);
-const STATE_PATHS = getControllerStatePaths(ROOT);
-const STATE_FILE = STATE_PATHS.current;
 const CONTROLLER_PORT = parseIntegerConfig(process.env.CONTROLLER_PORT, { name: "CONTROLLER_PORT", min: 1, max: 65535, defaultValue: 8793 });
+const STATE_PATHS = ensureControllerStateDirectory(ROOT);
+const STATE_FILE = STATE_PATHS.current;
 const START_SCRIPT = path.join(ROOT, "start-demo.js");
 
 function isProjectController(pid, { allowRelativeScript = false } = {}) {
@@ -27,7 +33,7 @@ function isProjectController(pid, { allowRelativeScript = false } = {}) {
 
 function readStateFile(filePath, { legacy = false, expectedPid } = {}) {
   try {
-    const state = JSON.parse(fs.readFileSync(filePath, "utf8"));
+    const state = readControllerState(filePath);
     if (!isOwnedControllerState(state, ROOT, { allowLegacy: legacy, expectedPid })) return null;
     return { pid: state.pid, filePath };
   } catch (_error) {

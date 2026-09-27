@@ -1,11 +1,16 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const os = require("node:os");
 const path = require("node:path");
 const {
   getControllerInstanceId,
   getControllerStatePaths,
   isProjectControllerCommand,
-  isOwnedControllerState
+  isOwnedControllerState,
+  ensureControllerStateDirectory,
+  readControllerState,
+  writeControllerState
 } = require("../lib/controller-instance");
 
 test("local controller state paths are stable but isolated by project root", () => {
@@ -48,4 +53,44 @@ test("restart cleanup only removes the state written by the controller it stoppe
   assert.equal(isOwnedControllerState({ ...replacement, instanceId: "foreign" }, projectRoot), false);
   assert.equal(isOwnedControllerState({ ...replacement, instanceId: "" }, projectRoot, { allowLegacy: true }), false);
   assert.equal(isOwnedControllerState({ pid: 202, project: projectRoot }, projectRoot, { allowLegacy: true }), true);
+});
+
+test("controller state storage rejects a pre-created symlink directory", (t) => {
+  const projectRoot = path.resolve("/tmp/gameops-symlink-test");
+  const userId = `symlink-${process.pid}-${Date.now()}`;
+  const paths = getControllerStatePaths(projectRoot, userId);
+  const target = fs.mkdtempSync(path.join(os.tmpdir(), "gameops-state-target-"));
+  const originalMode = fs.statSync(target).mode & 0o777;
+  t.after(() => {
+    fs.rmSync(paths.directory, { recursive: true, force: true });
+    fs.rmSync(target, { recursive: true, force: true });
+  });
+  fs.symlinkSync(target, paths.directory);
+
+  assert.throws(() => ensureControllerStateDirectory(projectRoot, userId), /符号链接|安全|目录/);
+  assert.equal(fs.statSync(target).mode & 0o777, originalMode);
+  assert.equal(fs.existsSync(paths.current), false);
+});
+
+test("controller state reads and writes reject symlinks and oversized files", (t) => {
+  const projectRoot = path.resolve("/tmp/gameops-state-file-test");
+  const userId = `file-${process.pid}-${Date.now()}`;
+  const paths = ensureControllerStateDirectory(projectRoot, userId);
+  const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "gameops-state-file-target-"));
+  const target = path.join(scratch, "untouched.txt");
+  fs.writeFileSync(target, "leave this file alone");
+  t.after(() => {
+    fs.rmSync(paths.directory, { recursive: true, force: true });
+    fs.rmSync(scratch, { recursive: true, force: true });
+  });
+
+  assert.equal(fs.statSync(paths.directory).mode & 0o777, 0o700);
+  fs.symlinkSync(target, paths.current);
+  assert.throws(() => writeControllerState(paths.current, { pid: 42 }), /ELOOP|符号链接|不安全/);
+  assert.throws(() => readControllerState(paths.current), /ELOOP|符号链接|不安全/);
+  assert.equal(fs.readFileSync(target, "utf8"), "leave this file alone");
+
+  fs.unlinkSync(paths.current);
+  fs.writeFileSync(paths.current, "x".repeat(8192), { mode: 0o600 });
+  assert.throws(() => readControllerState(paths.current), /过大|无效/);
 });
