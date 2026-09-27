@@ -251,3 +251,15 @@ test("daily todo update storage errors return 500 and preserve the existing row"
   const after = JSON.parse((await httpRequest("/daily-todos?game=" + encodeURIComponent("鸣潮"))).text);
   assert.equal(after.items.find((item) => item.id === created.id).status, "open");
 });
+
+test("daily todo list storage errors return a sanitized 500 and keep the service alive", async () => {
+  const db = new DatabaseSync(databasePath);
+  db.exec("ALTER TABLE daily_todos RENAME TO daily_todos_unavailable");
+  db.close();
+
+  const response = await httpRequest("/daily-todos");
+  assert.equal(response.status, 500);
+  assert.deepEqual(JSON.parse(response.text), { ok: false, error: "待办列表暂时无法读取，请稍后重试" });
+  assert.doesNotMatch(response.text, /daily_todos|sqlite|no such table/i);
+  assert.equal((await httpRequest("/health")).status, 200);
+});
