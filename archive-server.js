@@ -757,16 +757,16 @@ const server = http.createServer((request, response) => {
       const days = Math.min(90, Math.max(1, Number.parseInt(url.searchParams.get("days"), 10) || 14));
       const game = (url.searchParams.get("game") || "").trim();
       sendJson(request, response, 200, { ok: true, kind, days, series: computeStats(kind, days, game, ownerKey) });
-    } catch (error) {
-      sendJson(request, response, 400, { ok: false, error: error.message });
+    } catch (_error) {
+      sendJson(request, response, 500, { ok: false, error: "统计数据暂时无法读取，请稍后重试" });
     }
     return;
   }
   if (request.method === "GET" && url.pathname === "/morning-runs") {
     try {
       sendJson(request, response, 200, { ok: true, ...listMorningRuns(url, ownerKey) });
-    } catch (error) {
-      sendJson(request, response, 400, { ok: false, error: error.message });
+    } catch (_error) {
+      sendJson(request, response, 500, { ok: false, error: "晨报运行记录暂时无法读取，请稍后重试" });
     }
     return;
   }

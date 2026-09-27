@@ -479,7 +479,7 @@ test("risk event list storage errors return a sanitized 500 and keep the service
   assert.equal((await httpRequest("/health")).status, 200);
 });
 
-test("snapshot read storage errors return sanitized 500s while invalid kinds remain 400", async () => {
+test("snapshot and stats read storage errors return sanitized 500s while invalid kinds remain 400", async () => {
   for (const requestPath of ["/snapshots?kind=invalid!", "/latest?kind=invalid!"]) {
     assert.equal((await httpRequest(requestPath)).status, 400);
   }
@@ -488,11 +488,28 @@ test("snapshot read storage errors return sanitized 500s while invalid kinds rem
   db.exec("ALTER TABLE snapshots RENAME TO snapshots_unavailable");
   db.close();
 
-  for (const requestPath of ["/snapshots?kind=feedback", "/latest?kind=feedback"]) {
+  const readRequests = [
+    { path: "/snapshots?kind=feedback", error: "快照暂时无法读取，请稍后重试" },
+    { path: "/latest?kind=feedback", error: "快照暂时无法读取，请稍后重试" },
+    { path: "/stats?kind=feedback", error: "统计数据暂时无法读取，请稍后重试" }
+  ];
+  for (const { path: requestPath, error } of readRequests) {
     const response = await httpRequest(requestPath);
     assert.equal(response.status, 500);
-    assert.deepEqual(JSON.parse(response.text), { ok: false, error: "快照暂时无法读取，请稍后重试" });
+    assert.deepEqual(JSON.parse(response.text), { ok: false, error });
     assert.doesNotMatch(response.text, /snapshots|sqlite|no such table/i);
     assert.equal((await httpRequest("/health")).status, 200);
   }
+});
+
+test("morning run list storage errors return a sanitized 500 and keep the service alive", async () => {
+  const db = new DatabaseSync(databasePath);
+  db.exec("ALTER TABLE morning_runs RENAME TO morning_runs_unavailable");
+  db.close();
+
+  const response = await httpRequest("/morning-runs");
+  assert.equal(response.status, 500);
+  assert.deepEqual(JSON.parse(response.text), { ok: false, error: "晨报运行记录暂时无法读取，请稍后重试" });
+  assert.doesNotMatch(response.text, /morning_runs|sqlite|no such table/i);
+  assert.equal((await httpRequest("/health")).status, 200);
 });
