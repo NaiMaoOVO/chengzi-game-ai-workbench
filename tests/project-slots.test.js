@@ -1,7 +1,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 
-const { readProjectSlots, getOccupiedSlotIndexes, sanitizeProjectSlots, sanitizeProjectState, shouldPersistProjectControl } = require("../lib/project-slots");
+const { readProjectSlots, inspectProjectSlots, getOccupiedSlotIndexes, sanitizeProjectSlots, sanitizeProjectState, shouldPersistProjectControl } = require("../lib/project-slots");
 
 test("saved slots remain discoverable after a page reload", () => {
   const slots = readProjectSlots(JSON.stringify([
@@ -15,6 +15,19 @@ test("saved slots remain discoverable after a page reload", () => {
 
 test("corrupted slot storage falls back to an empty list", () => {
   assert.deepEqual(readProjectSlots("{broken"), []);
+});
+
+test("slot inspection distinguishes empty storage from malformed or partially corrupt data", () => {
+  assert.deepEqual(inspectProjectSlots(null), { slots: [], issue: "" });
+  assert.deepEqual(inspectProjectSlots(JSON.stringify([null, { controls: { "trending-game": "鸣潮" } }])), {
+    slots: [null, { controls: { "trending-game": "鸣潮" } }],
+    issue: ""
+  });
+  assert.equal(inspectProjectSlots("{broken").issue, "invalid-json");
+  assert.equal(inspectProjectSlots(JSON.stringify({ controls: {} })).issue, "invalid-shape");
+  const damaged = inspectProjectSlots(JSON.stringify([{ broken: true }, { controls: { "version-game": "原神" } }]));
+  assert.equal(damaged.issue, "invalid-shape");
+  assert.deepEqual(damaged.slots, [null, { controls: { "version-game": "原神" } }]);
 });
 
 test("invalid saved project objects are treated as empty slots", () => {

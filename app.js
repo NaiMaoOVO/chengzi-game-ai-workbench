@@ -8608,8 +8608,14 @@ function purgeSensitiveProjectStateStorage() {
     if (savedSlots) {
       const slots = JSON.parse(savedSlots);
       if (Array.isArray(slots)) {
-        const serialized = JSON.stringify(sanitizeProjectSlots(slots));
-        if (serialized !== savedSlots) storage.setItem(PROJECT_SLOTS_KEY, serialized);
+        let changed = false;
+        const sanitized = slots.map((slot) => {
+          if (!isValidProjectSlots([slot])) return slot;
+          const safeSlot = sanitizeProjectSlots([slot])[0];
+          if (safeSlot !== slot) changed = true;
+          return safeSlot;
+        });
+        if (changed) storage.setItem(PROJECT_SLOTS_KEY, JSON.stringify(sanitized));
       }
     }
   } catch (_error) {
@@ -8617,14 +8623,26 @@ function purgeSensitiveProjectStateStorage() {
   }
 }
 
+let projectSlotStorageIssue = "";
+
 function readProjectSlotStorage() {
-  let storage = null;
+  projectSlotStorageIssue = "";
+  let raw;
   try {
-    storage = window.localStorage;
+    const storage = window.localStorage;
+    if (!storage) throw new Error("local storage unavailable");
+    raw = storage.getItem(PROJECT_SLOTS_KEY);
   } catch (_error) {
+    projectSlotStorageIssue = "本机项目槽位存储不可用，原始数据未修改。";
     return [];
   }
-  return sanitizeProjectSlots(readStorageArray(storage, PROJECT_SLOTS_KEY));
+  const result = inspectProjectSlots(raw);
+  if (result.issue === "invalid-json") {
+    projectSlotStorageIssue = "项目槽位 JSON 已损坏，原始内容未修改；请先备份并修复后再保存。";
+  } else if (result.issue === "invalid-shape") {
+    projectSlotStorageIssue = "项目槽位包含无法识别的内容，原始数据未修改；请先备份并修复后再保存。";
+  }
+  return result.slots;
 }
 
 function renderOverviewConclusion() {
@@ -8775,8 +8793,16 @@ function setupConfirmButtons() {
 /* ---- 多项目槽位 ---- */
 
 function saveProjectToSlot(slotIndex) {
-  const data = collectProjectState();
   const stateList = readProjectSlotStorage();
+  if (projectSlotStorageIssue) {
+    const status = document.querySelector("#overview-status");
+    if (status) {
+      status.textContent = `总览状态：${projectSlotStorageIssue}已取消保存。`;
+      status.className = "source-status source-mock";
+    }
+    return;
+  }
+  const data = collectProjectState();
   stateList[slotIndex - 1] = data;
   try {
     window.localStorage.setItem(PROJECT_SLOTS_KEY, JSON.stringify(stateList));
@@ -8799,6 +8825,14 @@ function saveProjectToSlot(slotIndex) {
 
 function loadProjectFromSlot(slotIndex) {
   const stateList = readProjectSlotStorage();
+  if (projectSlotStorageIssue) {
+    const status = document.querySelector("#overview-status");
+    if (status) {
+      status.textContent = `总览状态：${projectSlotStorageIssue}未载入槽位。`;
+      status.className = "source-status source-mock";
+    }
+    return;
+  }
   const data = stateList[slotIndex - 1];
   if (!data || typeof data !== "object" || !data.controls || typeof data.controls !== "object") {
     const status = document.querySelector("#overview-status");
@@ -8841,9 +8875,16 @@ function refreshSlotNames() {
     if (el) {
       el.textContent = data
         ? data.controls?.["trending-game"] || data.controls?.["version-game"] || ("槽位 " + idx)
-        : "空";
+      : "空";
     }
   });
+  if (projectSlotStorageIssue) {
+    const status = document.querySelector("#overview-status");
+    if (status) {
+      status.textContent = `总览状态：${projectSlotStorageIssue}`;
+      status.className = "source-status source-mock";
+    }
+  }
 }
 
 /* ---- 平台差异化策略 ---- */

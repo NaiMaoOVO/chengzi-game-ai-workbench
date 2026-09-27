@@ -122,6 +122,98 @@ test("project slots use explicit buttons instead of a clickable div", () => {
   assert.match(html, /class="slot-action slot-load"/);
 });
 
+test("damaged project slots are preserved and cannot be silently replaced", () => {
+  const purgeStart = app.indexOf("function purgeSensitiveProjectStateStorage");
+  const readStart = app.indexOf("function readProjectSlotStorage", purgeStart);
+  const readEnd = app.indexOf("function renderOverviewConclusion", readStart);
+  const saveStart = app.indexOf("function saveProjectToSlot", readEnd);
+  const loadStart = app.indexOf("function loadProjectFromSlot", saveStart);
+  const refreshStart = app.indexOf("function refreshSlotNames", loadStart);
+  const refreshEnd = app.indexOf("function renderPlatformStrategy", refreshStart);
+  assert.ok(purgeStart >= 0 && readStart > purgeStart && readEnd > readStart && saveStart > readEnd && loadStart > saveStart && refreshStart > loadStart && refreshEnd > refreshStart);
+  const purgeSource = app.slice(purgeStart, readStart);
+  const readSource = app.slice(readStart, readEnd);
+  const saveSource = app.slice(saveStart, loadStart);
+  const loadSource = app.slice(loadStart, refreshStart);
+  const refreshSource = app.slice(refreshStart, refreshEnd);
+  assert.match(purgeSource, /isValidProjectSlots\(\[slot\]\)/);
+  assert.match(readSource, /inspectProjectSlots/);
+  assert.match(readSource, /projectSlotStorageIssue/);
+  assert.match(saveSource, /projectSlotStorageIssue/);
+  assert.match(loadSource, /projectSlotStorageIssue/);
+  assert.match(refreshSource, /projectSlotStorageIssue/);
+});
+
+test("startup cleanup and slot saves leave damaged browser data untouched", () => {
+  const purgeStart = app.indexOf("function purgeSensitiveProjectStateStorage");
+  const purgeEnd = app.indexOf("let projectSlotStorageIssue", purgeStart);
+  const readStart = purgeEnd;
+  const readEnd = app.indexOf("function renderOverviewConclusion", readStart);
+  const saveStart = app.indexOf("function saveProjectToSlot", readEnd);
+  const saveEnd = app.indexOf("function loadProjectFromSlot", saveStart);
+  assert.ok(purgeStart >= 0 && purgeEnd > purgeStart && readEnd > readStart && saveEnd > saveStart);
+  const { inspectProjectSlots, isValidProjectSlots, sanitizeProjectSlots, sanitizeProjectState } = require("../lib/project-slots");
+  const createHarness = (raw) => {
+    let value = raw;
+    let writes = 0;
+    const status = { textContent: "", className: "" };
+    const context = {
+      PROJECT_STORAGE_KEY: "project-state",
+      window: { localStorage: {
+        getItem: (key) => key === "gameops-project-slots-v2" ? value : null,
+        setItem: (_key, next) => { writes += 1; value = next; }
+      } },
+      inspectProjectSlots,
+      isValidProjectSlots,
+      sanitizeProjectSlots,
+      sanitizeProjectState,
+      collectProjectState: () => ({ controls: { "trending-game": "鸣潮" } }),
+      updateSlotName: () => {},
+      document: { querySelector: (selector) => selector === "#overview-status" ? status : null }
+    };
+    vm.runInNewContext(`
+      const PROJECT_SLOTS_KEY = "gameops-project-slots-v2";
+      ${app.slice(purgeStart, purgeEnd)}
+      ${app.slice(readStart, readEnd)}
+      ${app.slice(saveStart, saveEnd)}
+      this.purge = purgeSensitiveProjectStateStorage;
+      this.read = readProjectSlotStorage;
+      this.save = saveProjectToSlot;
+      this.issue = () => projectSlotStorageIssue;
+    `, context);
+    return { context, status, value: () => value, writes: () => writes };
+  };
+
+  for (const raw of ["{broken", JSON.stringify([{ broken: true }])]) {
+    const harness = createHarness(raw);
+    harness.context.purge();
+    assert.equal(harness.value(), raw);
+    assert.equal(harness.writes(), 0);
+    harness.context.read();
+    assert.match(harness.context.issue(), /损坏|无法识别/);
+    harness.context.save(1);
+    assert.equal(harness.value(), raw);
+    assert.equal(harness.writes(), 0);
+    assert.match(harness.status.textContent, /已取消保存/);
+  }
+
+  const mixedRaw = JSON.stringify([
+    { controls: { "trending-game": "鸣潮", "archive-login-password": "secret" } },
+    { broken: true }
+  ]);
+  const mixed = createHarness(mixedRaw);
+  mixed.context.purge();
+  const sanitized = JSON.parse(mixed.value());
+  assert.equal(sanitized[0].controls["archive-login-password"], undefined);
+  assert.deepEqual(sanitized[1], { broken: true });
+  assert.equal(mixed.writes(), 1);
+  const afterCleanup = mixed.value();
+  mixed.context.save(1);
+  assert.equal(mixed.value(), afterCleanup);
+  assert.equal(mixed.writes(), 1);
+  assert.match(mixed.status.textContent, /已取消保存/);
+});
+
 test("mobile styles allow the service mode switch to wrap", () => {
   assert.match(css, /@media \(max-width: 640px\)[\s\S]*\.service-mode-switch[\s\S]*grid-template-columns:\s*1fr 1fr/);
 });
