@@ -910,11 +910,15 @@ const server = http.createServer((request, response) => {
       let title;
       let channel;
       let publishedAt;
+      let publicationUrl;
+      let relatedTopic;
       try {
         game = textValue(body?.game, "game", 60);
         title = textValue(body?.title, "title", 200);
         channel = textValue(body?.channel, "channel", 60);
         publishedAt = publicationDateValue(body?.published_at);
+        publicationUrl = textValue(body?.url, "url", 2048);
+        relatedTopic = textValue(body?.related_topic, "related_topic", 200);
       } catch (error) {
         sendJson(request, response, 400, { ok: false, error: error.message });
         return;
@@ -939,7 +943,13 @@ const server = http.createServer((request, response) => {
         return;
       }
       if (requestId) {
-        const existing = findPublicationByRequestStatement.get(ownerKey, requestId);
+        let existing;
+        try {
+          existing = findPublicationByRequestStatement.get(ownerKey, requestId);
+        } catch (_error) {
+          sendJson(request, response, 500, { ok: false, error: "发布记录暂时无法保存，请稍后重试" });
+          return;
+        }
         if (existing) {
           sendJson(request, response, 200, { ok: true, publication: formatPublication(existing), idempotent: true });
           return;
@@ -953,21 +963,34 @@ const server = http.createServer((request, response) => {
           game,
           title,
           channel,
-          textValue(body?.url, "url", 2048),
-          textValue(body?.related_topic, "related_topic", 200),
+          publicationUrl,
+          relatedTopic,
           publishedAt,
           metricsJson,
           requestId,
           now,
           now
         );
-      } catch (error) {
-        const existing = requestId ? findPublicationByRequestStatement.get(ownerKey, requestId) : null;
-        if (!existing) throw error;
+      } catch (_error) {
+        let existing = null;
+        try {
+          if (requestId) existing = findPublicationByRequestStatement.get(ownerKey, requestId);
+        } catch (_lookupError) {
+          // The write outcome cannot be confirmed; report storage failure rather than crashing or guessing.
+        }
+        if (!existing) {
+          sendJson(request, response, 500, { ok: false, error: "发布记录暂时无法保存，请稍后重试" });
+          return;
+        }
         sendJson(request, response, 200, { ok: true, publication: formatPublication(existing), idempotent: true });
         return;
       }
-      sendJson(request, response, 201, { ok: true, publication: formatPublication(getPublicationStatement.get(Number(info.lastInsertRowid), ownerKey)) });
+      try {
+        const publication = formatPublication(getPublicationStatement.get(Number(info.lastInsertRowid), ownerKey));
+        sendJson(request, response, 201, { ok: true, publication });
+      } catch (_error) {
+        sendJson(request, response, 500, { ok: false, error: "发布记录已提交，但暂时无法读取，请稍后按原提交编号重试" });
+      }
     });
     return;
   }

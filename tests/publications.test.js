@@ -4,9 +4,11 @@ const { spawn } = require("node:child_process");
 const http = require("node:http");
 const os = require("node:os");
 const path = require("node:path");
+const { DatabaseSync } = require("node:sqlite");
 
 const projectRoot = path.resolve(__dirname, "..");
 const PORT = 19711;
+const databasePath = path.join(os.tmpdir(), "gameops-publications-" + process.pid + "-" + Date.now() + ".db");
 
 function httpRequest(requestPath, options) {
   const { method = "GET", headers = {}, body = null } = options || {};
@@ -46,7 +48,7 @@ const child = spawn(process.execPath, [path.join(projectRoot, "archive-server.js
   env: {
     ...process.env,
     ARCHIVE_PORT: String(PORT),
-    ARCHIVE_DB_PATH: path.join(os.tmpdir(), "gameops-publications-" + process.pid + "-" + Date.now() + ".db"),
+    ARCHIVE_DB_PATH: databasePath,
     MORNING_GAMES: ""
   },
   stdio: ["ignore", "pipe", "pipe"]
@@ -308,4 +310,26 @@ test("delete removes the record; subsequent reads no longer see it", async () =>
     body: JSON.stringify({ metrics_json: {} })
   });
   assert.equal(gone.status, 404);
+});
+
+test("publication create storage errors return 500 without stopping the service", async () => {
+  const invalid = await postPublication({ game: "鸣潮", title: "输入校验", channel: "B站", url: 123 });
+  assert.equal(invalid.status, 400);
+  assert.match(JSON.parse(invalid.text).error, /url/);
+
+  const db = new DatabaseSync(databasePath);
+  db.exec("CREATE TRIGGER reject_publication_insert BEFORE INSERT ON publications BEGIN SELECT RAISE(ABORT, 'blocked'); END;");
+  db.close();
+
+  const response = await httpRequest("/publications", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "Idempotency-Key": "publication-storage-failure-20260927" },
+    body: JSON.stringify({ game: "数据库写故障样本", title: "存储异常保护", channel: "B站" })
+  });
+  assert.equal(response.status, 500);
+  assert.deepEqual(JSON.parse(response.text), { ok: false, error: "发布记录暂时无法保存，请稍后重试" });
+  assert.doesNotMatch(response.text, /blocked|sqlite/i);
+  assert.equal((await httpRequest("/health")).status, 200);
+  const after = JSON.parse((await httpRequest("/publications?game=" + encodeURIComponent("数据库写故障样本"))).text);
+  assert.equal(after.items.length, 0, "失败的创建不应留下发布记录");
 });
