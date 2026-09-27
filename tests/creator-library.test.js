@@ -214,3 +214,22 @@ test("creator library marks structurally damaged stored data invalid and blocks 
   assert.deepEqual(after.payload.library, damagedLibrary);
   assert.equal(after.payload.updated_at, updatedAt);
 });
+
+test("creator library read errors return a sanitized 500 and keep the server alive", async () => {
+  const login = await request("/auth/login", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ username: "creator-admin", password: "creator-password-2026" })
+  });
+  const cookie = cookieOf(login);
+
+  const database = new DatabaseSync(databasePath);
+  database.exec("ALTER TABLE creator_libraries RENAME TO creator_libraries_unavailable");
+  database.close();
+
+  const response = await request("/creator-library", { headers: { Cookie: cookie } });
+  assert.equal(response.status, 500);
+  assert.deepEqual(response.payload, { ok: false, error: "个人库暂时无法读取，请稍后重试" });
+  assert.doesNotMatch(JSON.stringify(response.payload), /sqlite|no such table/i);
+  assert.equal((await request("/health")).status, 200);
+});

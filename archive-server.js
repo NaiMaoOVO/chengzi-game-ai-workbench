@@ -686,8 +686,12 @@ const server = http.createServer((request, response) => {
   if (url.pathname === "/creator-library") {
     const ownerKey = creatorLibraryOwner(session);
     if (request.method === "GET") {
-      const current = readCreatorLibraryRow(ownerKey);
-      sendJson(request, response, 200, { ok: true, ...current });
+      try {
+        const current = readCreatorLibraryRow(ownerKey);
+        sendJson(request, response, 200, { ok: true, ...current });
+      } catch (_error) {
+        sendJson(request, response, 500, { ok: false, error: "个人库暂时无法读取，请稍后重试" });
+      }
       return;
     }
     if (request.method === "PUT") {
