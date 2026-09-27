@@ -214,6 +214,44 @@ test("startup cleanup and slot saves leave damaged browser data untouched", () =
   assert.match(mixed.status.textContent, /已取消保存/);
 });
 
+test("startup privacy cleanup does not overwrite project data changed in another tab", () => {
+  const purgeStart = app.indexOf("function purgeSensitiveProjectStateStorage");
+  const purgeEnd = app.indexOf("let projectSlotStorageIssue", purgeStart);
+  const { sanitizeProjectState, sanitizeProjectSlots, isValidProjectSlots } = require("../lib/project-slots");
+  const runRace = (key, initial, newer, mutateOn) => {
+    const values = { "project-state": null, "gameops-project-slots-v2": null, [key]: initial };
+    let writes = 0;
+    let changed = false;
+    const replaceWithNewer = () => {
+      if (mutateOn && !changed) {
+        changed = true;
+        values[key] = newer;
+      }
+    };
+    const context = {
+      PROJECT_STORAGE_KEY: "project-state",
+      window: { localStorage: {
+        getItem: (storageKey) => values[storageKey] ?? null,
+        setItem: (storageKey, value) => { writes += 1; values[storageKey] = value; }
+      } },
+      sanitizeProjectState: (state) => { if (mutateOn === "state") replaceWithNewer(); return sanitizeProjectState(state); },
+      sanitizeProjectSlots: (slots) => { if (mutateOn === "slots") replaceWithNewer(); return sanitizeProjectSlots(slots); },
+      isValidProjectSlots
+    };
+    vm.runInNewContext(`(() => { const PROJECT_SLOTS_KEY = "gameops-project-slots-v2"; ${app.slice(purgeStart, purgeEnd)}; return purgeSensitiveProjectStateStorage; })()`, context)();
+    assert.equal(values[key], newer);
+    assert.equal(writes, 0);
+  };
+
+  const stateWithSecret = JSON.stringify({ controls: { "archive-login-password": "secret", game: "旧项目" } });
+  const latestState = JSON.stringify({ controls: { game: "新项目" } });
+  runRace("project-state", stateWithSecret, latestState, "state");
+
+  const slotsWithSecret = JSON.stringify([{ controls: { "archive-login-password": "secret", "trending-game": "旧项目" } }]);
+  const latestSlots = JSON.stringify([{ controls: { "trending-game": "新项目" } }]);
+  runRace("gameops-project-slots-v2", slotsWithSecret, latestSlots, "slots");
+});
+
 test("mobile styles allow the service mode switch to wrap", () => {
   assert.match(css, /@media \(max-width: 640px\)[\s\S]*\.service-mode-switch[\s\S]*grid-template-columns:\s*1fr 1fr/);
 });

@@ -8678,7 +8678,9 @@ function purgeSensitiveProjectStateStorage() {
       const state = JSON.parse(savedState);
       const sanitized = sanitizeProjectState(state);
       const serialized = JSON.stringify(sanitized);
-      if (serialized !== savedState) storage.setItem(PROJECT_STORAGE_KEY, serialized);
+      if (serialized !== savedState && storage.getItem(PROJECT_STORAGE_KEY) === savedState) {
+        storage.setItem(PROJECT_STORAGE_KEY, serialized);
+      }
     }
     const savedSlots = storage.getItem(PROJECT_SLOTS_KEY);
     if (savedSlots) {
@@ -8691,7 +8693,9 @@ function purgeSensitiveProjectStateStorage() {
           if (safeSlot !== slot) changed = true;
           return safeSlot;
         });
-        if (changed) storage.setItem(PROJECT_SLOTS_KEY, JSON.stringify(sanitized));
+        if (changed && storage.getItem(PROJECT_SLOTS_KEY) === savedSlots) {
+          storage.setItem(PROJECT_SLOTS_KEY, JSON.stringify(sanitized));
+        }
       }
     }
   } catch (_error) {
