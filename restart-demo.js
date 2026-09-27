@@ -4,7 +4,7 @@ const http = require("node:http");
 const path = require("node:path");
 require("./lib/env-file").loadProjectEnv(__dirname);
 const { parseIntegerConfig } = require("./lib/http-guards");
-const { getControllerInstanceId, getControllerStatePaths, isProjectControllerCommand } = require("./lib/controller-instance");
+const { getControllerInstanceId, getControllerStatePaths, isOwnedControllerState, isProjectControllerCommand } = require("./lib/controller-instance");
 
 const ROOT = __dirname;
 const CONTROLLER_INSTANCE_ID = getControllerInstanceId(ROOT);
@@ -25,12 +25,10 @@ function isProjectController(pid, { allowRelativeScript = false } = {}) {
   }
 }
 
-function readStateFile(filePath, { legacy = false } = {}) {
+function readStateFile(filePath, { legacy = false, expectedPid } = {}) {
   try {
     const state = JSON.parse(fs.readFileSync(filePath, "utf8"));
-    if (state.project !== ROOT || !Number.isInteger(state.pid) || state.pid <= 1) return null;
-    if (state.instanceId && state.instanceId !== CONTROLLER_INSTANCE_ID) return null;
-    if (!legacy && state.instanceId !== CONTROLLER_INSTANCE_ID) return null;
+    if (!isOwnedControllerState(state, ROOT, { allowLegacy: legacy, expectedPid })) return null;
     return { pid: state.pid, filePath };
   } catch (_error) {
     return null;
@@ -41,9 +39,8 @@ function readProjectState() {
   return readStateFile(STATE_FILE) || readStateFile(STATE_PATHS.legacy, { legacy: true });
 }
 
-function removeOwnedState(filePath, legacy = false) {
-  const state = readStateFile(filePath, { legacy });
-  if (state) fs.rmSync(filePath, { force: true });
+function removeOwnedState(filePath, legacy = false, expectedPid) {
+  if (readStateFile(filePath, { legacy, expectedPid })) fs.rmSync(filePath, { force: true });
 }
 
 function findListenerPid(port) {
@@ -131,8 +128,8 @@ async function main() {
     const stopped = await waitForExit(pid);
     if (!stopped) throw new Error("旧控制进程未能在 5 秒内退出，请稍后重试");
   }
-  removeOwnedState(STATE_FILE);
-  removeOwnedState(STATE_PATHS.legacy, true);
+  removeOwnedState(STATE_FILE, false, pid || undefined);
+  removeOwnedState(STATE_PATHS.legacy, true, pid || undefined);
 
   const child = spawn(process.execPath, [START_SCRIPT], {
     cwd: ROOT,

@@ -4,7 +4,8 @@ const path = require("node:path");
 const {
   getControllerInstanceId,
   getControllerStatePaths,
-  isProjectControllerCommand
+  isProjectControllerCommand,
+  isOwnedControllerState
 } = require("../lib/controller-instance");
 
 test("local controller state paths are stable but isolated by project root", () => {
@@ -32,4 +33,19 @@ test("restart process matching rejects another project's start-demo script", () 
   assert.equal(isProjectControllerCommand(misleadingCommand, firstRoot), false);
   assert.equal(isProjectControllerCommand(process.execPath + " start-demo.js", firstRoot), false);
   assert.equal(isProjectControllerCommand(process.execPath + " start-demo.js", firstRoot, { allowRelativeScript: true }), true);
+});
+
+test("restart cleanup only removes the state written by the controller it stopped", () => {
+  const projectRoot = path.resolve("/tmp/gameops-main");
+  const instanceId = getControllerInstanceId(projectRoot);
+  const previous = { pid: 101, project: projectRoot, instanceId };
+  const replacement = { pid: 202, project: projectRoot, instanceId };
+
+  assert.equal(isOwnedControllerState(previous, projectRoot, { expectedPid: 101 }), true);
+  assert.equal(isOwnedControllerState(replacement, projectRoot, { expectedPid: 101 }), false);
+  assert.equal(isOwnedControllerState(replacement, projectRoot), true);
+  assert.equal(isOwnedControllerState(replacement, path.resolve("/tmp/gameops-worktree")), false);
+  assert.equal(isOwnedControllerState({ ...replacement, instanceId: "foreign" }, projectRoot), false);
+  assert.equal(isOwnedControllerState({ ...replacement, instanceId: "" }, projectRoot, { allowLegacy: true }), false);
+  assert.equal(isOwnedControllerState({ pid: 202, project: projectRoot }, projectRoot, { allowLegacy: true }), true);
 });
