@@ -568,6 +568,53 @@ test("archive restore rechecks service status after preserving the live database
   stillLive.close();
 });
 
+test("archive restore refuses a live database changed during its safety copy", (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "gameops-backup-restore-source-change-test-"));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const databasePath = path.join(dir, "archive.db");
+  const backupDir = path.join(dir, "backups");
+  const db = new DatabaseSync(databasePath);
+  db.exec("CREATE TABLE check_rows (value TEXT NOT NULL); INSERT INTO check_rows VALUES ('before backup');");
+  db.close();
+  const env = { ...process.env, ARCHIVE_DB_PATH: databasePath, ARCHIVE_BACKUP_DIR: backupDir, ARCHIVE_PORT: "19723" };
+  const backup = spawnSync(process.execPath, [path.join(root, "scripts", "backup-archive.js")], { cwd: root, env, encoding: "utf8" });
+  assert.equal(backup.status, 0, backup.stderr || backup.stdout);
+  const backupFile = path.join(backupDir, fs.readdirSync(backupDir).find((name) => /^archive-.*\.db$/.test(name)));
+  const changed = new DatabaseSync(databasePath);
+  changed.exec("INSERT INTO check_rows VALUES ('live');");
+  changed.close();
+  const originalDatabase = fs.readFileSync(databasePath);
+  const preload = path.join(dir, "mutate-restore-source.cjs");
+  fs.writeFileSync(preload, [
+    'const fs = require("node:fs");',
+    'const destinations = new Map();',
+    'const openSync = fs.openSync;',
+    'fs.openSync = function (file, ...args) {',
+    '  const descriptor = openSync.call(fs, file, ...args);',
+    '  if (String(file).includes(".pre-restore-")) destinations.set(descriptor, String(file));',
+    '  return descriptor;',
+    '};',
+    'const writeSync = fs.writeSync;',
+    'let mutated = false;',
+    'fs.writeSync = function (descriptor, ...args) {',
+    '  if (!mutated && destinations.has(descriptor)) {',
+    '    mutated = true;',
+    '    fs.appendFileSync(process.env.TEST_RESTORE_SOURCE_PATH, "concurrent mutation");',
+    '  }',
+    '  return writeSync.call(fs, descriptor, ...args);',
+    '};'
+  ].join("\n"));
+  const restored = spawnSync(process.execPath, [
+    "--require", preload,
+    path.join(root, "scripts", "restore-archive-backup.js"), backupFile, "--service-stopped"
+  ], { cwd: root, env: { ...env, TEST_RESTORE_SOURCE_PATH: databasePath }, encoding: "utf8" });
+
+  assert.equal(restored.status, 1, restored.stdout);
+  assert.match(restored.stderr, /复制期间发生变化/);
+  assert.deepEqual(fs.readFileSync(databasePath), Buffer.concat([originalDatabase, Buffer.from("concurrent mutation")]));
+  assert.equal(fs.readdirSync(dir).some((name) => name.includes("pre-restore") || name.includes("restore-stage")), false);
+});
+
 test("archive restore rejects a checksum-valid non-SQLite backup without touching the live database", () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "gameops-backup-restore-invalid-test-"));
   const databasePath = path.join(dir, "archive.db");

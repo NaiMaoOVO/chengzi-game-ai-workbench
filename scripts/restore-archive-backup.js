@@ -36,7 +36,7 @@ const stagePath = databasePath + ".restore-stage-" + stamp;
 const safetyPath = databasePath + ".pre-restore-" + stamp;
 
 function preserveFile(source, destination) {
-  const before = fs.lstatSync(source);
+  const before = fs.lstatSync(source, { bigint: true });
   if (!before.isFile()) throw new Error("恢复副本来源必须是普通文件");
   const sourceFlags = fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW || 0);
   const sourceDescriptor = fs.openSync(source, sourceFlags);
@@ -45,7 +45,7 @@ function preserveFile(source, destination) {
   let complete = false;
   let copyError;
   try {
-    const opened = fs.fstatSync(sourceDescriptor);
+    const opened = fs.fstatSync(sourceDescriptor, { bigint: true });
     if (!opened.isFile() || opened.dev !== before.dev || opened.ino !== before.ino) {
       throw new Error("恢复副本来源在复制期间发生变化");
     }
@@ -54,14 +54,20 @@ function preserveFile(source, destination) {
     createdFile = { dev: created.dev, ino: created.ino };
 
     const buffer = Buffer.allocUnsafe(1024 * 1024);
+    let bytesCopied = 0n;
     let bytesRead;
     while ((bytesRead = fs.readSync(sourceDescriptor, buffer, 0, buffer.length, null)) > 0) {
+      bytesCopied += BigInt(bytesRead);
       let offset = 0;
       while (offset < bytesRead) {
         const bytesWritten = fs.writeSync(destinationDescriptor, buffer, offset, bytesRead - offset, null);
         if (bytesWritten < 1) throw new Error("恢复副本写入未取得进展");
         offset += bytesWritten;
       }
+    }
+    const after = fs.fstatSync(sourceDescriptor, { bigint: true });
+    if (bytesCopied !== opened.size || after.size !== opened.size || after.mtimeNs !== opened.mtimeNs || after.ctimeNs !== opened.ctimeNs) {
+      throw new Error("恢复副本来源在复制期间发生变化");
     }
     fs.fchmodSync(destinationDescriptor, 0o600);
     complete = true;
