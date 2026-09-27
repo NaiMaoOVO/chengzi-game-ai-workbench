@@ -1,5 +1,6 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
+const crypto = require("node:crypto");
 const { spawn } = require("node:child_process");
 const fs = require("node:fs");
 const http = require("node:http");
@@ -49,6 +50,11 @@ function sessionCookie(response) {
   const header = response.headers["set-cookie"]?.[0] || "";
   assert.match(header, /^gameops_session=/);
   return header.split(";", 1)[0];
+}
+
+function sessionTokenHash(cookie) {
+  const token = decodeURIComponent(cookie.slice("gameops_session=".length));
+  return crypto.createHash("sha256").update(token).digest("hex");
 }
 
 function jsonHeaders({ cookie, csrf } = {}) {
@@ -286,6 +292,49 @@ test("logout storage errors keep the current session recoverable and do not clea
   assert.equal(retried.status, 200, JSON.stringify(retried.payload));
   assert.match(retried.headers["set-cookie"]?.[0] || "", /^gameops_session=/);
   assert.equal((await request("/auth/session", { headers: { Cookie: cookie } })).status, 401);
+});
+
+test("archive sessions with an invalid expiry timestamp are rejected", async () => {
+  const login = await request("/auth/login", {
+    method: "POST",
+    headers: jsonHeaders(),
+    body: JSON.stringify({ username: "ops-admin", password: "admin-password-2026" })
+  });
+  assert.equal(login.status, 200);
+  const cookie = sessionCookie(login);
+
+  const setup = new DatabaseSync(databasePath);
+  setup.prepare("UPDATE archive_sessions SET expires_at = ? WHERE token_hash = ?").run("not-a-timestamp", sessionTokenHash(cookie));
+  setup.close();
+
+  const response = await request("/auth/session", { headers: { Cookie: cookie } });
+  assert.equal(response.status, 401);
+});
+
+test("an expired archive session stays rejected when best-effort cleanup fails", async () => {
+  const login = await request("/auth/login", {
+    method: "POST",
+    headers: jsonHeaders(),
+    body: JSON.stringify({ username: "ops-admin", password: "admin-password-2026" })
+  });
+  assert.equal(login.status, 200);
+  const cookie = sessionCookie(login);
+  const tokenHash = sessionTokenHash(cookie);
+
+  const setup = new DatabaseSync(databasePath);
+  setup.prepare("UPDATE archive_sessions SET expires_at = ? WHERE token_hash = ?").run(new Date(Date.now() - 60000).toISOString(), tokenHash);
+  setup.exec(`CREATE TRIGGER reject_expired_session_cleanup BEFORE DELETE ON archive_sessions WHEN OLD.token_hash = '${tokenHash}' BEGIN SELECT RAISE(ABORT, 'blocked'); END;`);
+  setup.close();
+
+  let response;
+  const cleanup = new DatabaseSync(databasePath);
+  try {
+    response = await request("/auth/session", { headers: { Cookie: cookie } });
+  } finally {
+    cleanup.exec("DROP TRIGGER IF EXISTS reject_expired_session_cleanup");
+    cleanup.close();
+  }
+  assert.equal(response.status, 401);
 });
 
 test("corrupted creator libraries remain visible and cannot be overwritten", async () => {
