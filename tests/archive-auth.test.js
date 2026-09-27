@@ -239,6 +239,48 @@ test("authenticated archive data responses disable browser and intermediary cach
   }
 });
 
+test("logout storage errors keep the current session recoverable and do not clear its cookie", async () => {
+  const login = await request("/auth/login", {
+    method: "POST",
+    headers: jsonHeaders(),
+    body: JSON.stringify({ username: "ops-admin", password: "admin-password-2026" })
+  });
+  assert.equal(login.status, 200);
+  const cookie = sessionCookie(login);
+  const csrf = login.payload.csrf_token;
+
+  const setup = new DatabaseSync(databasePath);
+  setup.exec("CREATE TABLE session_delete_guard (reject INTEGER NOT NULL); INSERT INTO session_delete_guard VALUES (1);");
+  setup.exec("CREATE TRIGGER reject_session_delete BEFORE DELETE ON archive_sessions WHEN (SELECT reject FROM session_delete_guard LIMIT 1) = 1 BEGIN SELECT RAISE(ABORT, 'blocked'); END;");
+  setup.close();
+
+  let response;
+  const cleanup = new DatabaseSync(databasePath);
+  try {
+    response = await request("/auth/logout", {
+      method: "POST",
+      headers: jsonHeaders({ cookie, csrf })
+    });
+  } finally {
+    cleanup.exec("UPDATE session_delete_guard SET reject = 0");
+    assert.equal(cleanup.prepare("SELECT reject FROM session_delete_guard").get().reject, 0);
+    cleanup.close();
+  }
+
+  assert.equal(response.status, 500);
+  assert.deepEqual(response.payload, { ok: false, error: "退出登录暂时失败，请稍后重试" });
+  assert.equal(response.headers["set-cookie"], undefined, "失败时不能清除仍有效的会话 cookie");
+  assert.equal((await request("/auth/session", { headers: { Cookie: cookie } })).status, 200);
+
+  const retried = await request("/auth/logout", {
+    method: "POST",
+    headers: jsonHeaders({ cookie, csrf })
+  });
+  assert.equal(retried.status, 200, JSON.stringify(retried.payload));
+  assert.match(retried.headers["set-cookie"]?.[0] || "", /^gameops_session=/);
+  assert.equal((await request("/auth/session", { headers: { Cookie: cookie } })).status, 401);
+});
+
 test("corrupted creator libraries remain visible and cannot be overwritten", async () => {
   const login = await request("/auth/login", {
     method: "POST",

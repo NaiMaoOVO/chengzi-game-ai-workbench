@@ -669,7 +669,14 @@ const server = http.createServer((request, response) => {
     return;
   }
   if (request.method === "POST" && url.pathname === "/auth/logout") {
-    if (archiveAuth.enabled) archiveAuth.deleteSession(session.tokenHash);
+    if (archiveAuth.enabled) {
+      try {
+        archiveAuth.deleteSession(session.tokenHash);
+      } catch (_error) {
+        sendJson(request, response, 500, { ok: false, error: "退出登录暂时失败，请稍后重试" });
+        return;
+      }
+    }
     sendJson(request, response, 200, { ok: true }, { "Set-Cookie": archiveAuth.clearSessionCookie() });
     return;
   }
