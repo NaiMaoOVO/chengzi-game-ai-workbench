@@ -444,6 +444,21 @@ test("ocr: disallowed Origin -> 403, wrong content type -> 415, undetectable ima
   });
 });
 
+test("ocr: rejects a non-HTTP remote URL even when insecure remote transport is enabled", async () => {
+  await withGuardedService("ocr-server.js", "PORT", {
+    OCR_PROVIDER: "remote",
+    OCR_REMOTE_URL: "ftp://ocr-provider.test/api",
+    OCR_ALLOW_INSECURE_REMOTE: "true"
+  }, async (port) => {
+    const response = await httpRequest(port, "/ready");
+    const readiness = JSON.parse(response.text);
+
+    assert.equal(response.status, 503);
+    assert.equal(readiness.providerConfigured, false);
+    assert.equal(readiness.detail, "OCR_REMOTE_URL 无效");
+  });
+});
+
 test("llm: identity, disallowed Origin -> 403, bad bodies -> 400, exceeding limit -> 429 + Retry-After", async () => {
   await withGuardedService("llm-server.js", "LLM_PORT", {
     LLM_API_KEY: "contract-test-key",

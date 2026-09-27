@@ -51,13 +51,16 @@ test("deployment check refuses online archive access without authentication", ()
   assert.match(result.stderr, /线上部署必须设置 ARCHIVE_AUTH_ENABLED=1/);
 });
 
-test("deployment check validates production admin identity, password and secure cookie", () => {
+test("deployment check validates production admin and remote OCR transport", () => {
   const invalidConfigs = [
     [{ ARCHIVE_ADMIN_USERNAME: "bad username" }, /ARCHIVE_ADMIN_USERNAME 必须是 3-40 位/],
     [{ ARCHIVE_ADMIN_PASSWORD: "x".repeat(201) }, /ARCHIVE_ADMIN_PASSWORD 必须是 12-200 位/],
     [{ ARCHIVE_ADMIN_PASSWORD: "请使用至少 12 位的随机强密码" }, /不能使用示例或常见占位值/],
     [{ ARCHIVE_ADMIN_PASSWORD: "change-me" }, /不能使用示例或常见占位值/],
-    [{ ARCHIVE_COOKIE_SECURE: "0" }, /线上部署必须保持 ARCHIVE_COOKIE_SECURE=1/]
+    [{ ARCHIVE_COOKIE_SECURE: "0" }, /线上部署必须保持 ARCHIVE_COOKIE_SECURE=1/],
+    [{ OCR_PROVIDER: "remote", OCR_REMOTE_URL: "not-a-url" }, /OCR_REMOTE_URL 必须是有效的 HTTP\/HTTPS URL/],
+    [{ OCR_PROVIDER: "remote", OCR_REMOTE_URL: "ftp://ocr.test/api" }, /OCR_REMOTE_URL 必须是有效的 HTTP\/HTTPS URL/],
+    [{ OCR_PROVIDER: "remote", OCR_REMOTE_URL: "http://ocr-provider.test/api" }, /公网 OCR 使用 HTTP 时必须设置 OCR_ALLOW_INSECURE_REMOTE=true/]
   ];
 
   for (const [extraEnv, message] of invalidConfigs) {
@@ -65,6 +68,20 @@ test("deployment check validates production admin identity, password and secure 
 
     assert.equal(result.status, 1);
     assert.match(result.stderr, message);
+  }
+});
+
+test("deployment check accepts secure and explicitly allowed OCR transports", () => {
+  const validConfigs = [
+    { OCR_PROVIDER: "remote", OCR_REMOTE_URL: "https://ocr-provider.test/api" },
+    { OCR_PROVIDER: "remote", OCR_REMOTE_URL: "http://127.0.0.1:8787/api" },
+    { OCR_PROVIDER: "remote", OCR_REMOTE_URL: "http://ocr.internal/api", OCR_ALLOW_INSECURE_REMOTE: "true" }
+  ];
+
+  for (const config of validConfigs) {
+    const result = runCheck("https://gameops.test", config);
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /deployment environment ok/);
   }
 });
 

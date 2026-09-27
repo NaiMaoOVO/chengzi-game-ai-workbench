@@ -90,17 +90,29 @@ if (OCR_PROVIDER === "macos") {
   readinessSelfHealTimer.unref?.();
 }
 
-function remoteProviderStatus() {
-  if (!process.env.OCR_REMOTE_URL) return { ready: false, detail: "OCR_REMOTE_URL 未配置" };
+function parseRemoteOcrUrl(rawUrl) {
+  if (!rawUrl) throw new Error("OCR_REMOTE_URL 未配置");
+  let url;
   try {
-    const url = new URL(process.env.OCR_REMOTE_URL);
-    const localHttp = url.protocol === "http:" && ["127.0.0.1", "localhost"].includes(url.hostname);
-    if (url.protocol !== "https:" && !localHttp && !OCR_ALLOW_INSECURE_REMOTE) {
-      return { ready: false, detail: "远端 OCR 必须使用 HTTPS" };
-    }
-    return { ready: true, detail: "remote provider configured" };
+    url = new URL(rawUrl);
   } catch (_error) {
-    return { ready: false, detail: "OCR_REMOTE_URL 无效" };
+    throw new Error("OCR_REMOTE_URL 无效");
+  }
+
+  if (url.protocol !== "https:" && url.protocol !== "http:") throw new Error("OCR_REMOTE_URL 无效");
+  const localHttp = url.protocol === "http:" && ["127.0.0.1", "localhost"].includes(url.hostname);
+  if (url.protocol === "http:" && !localHttp && !OCR_ALLOW_INSECURE_REMOTE) {
+    throw new Error("远端 OCR 必须使用 HTTPS");
+  }
+  return url;
+}
+
+function remoteProviderStatus() {
+  try {
+    parseRemoteOcrUrl(process.env.OCR_REMOTE_URL);
+    return { ready: true, detail: "remote provider configured" };
+  } catch (error) {
+    return { ready: false, detail: error.message };
   }
 }
 
@@ -314,12 +326,9 @@ function runMacOcr(imagePath) {
 
 function runRemoteOcr(buffer, contentType) {
   return new Promise((resolve, reject) => {
-    if (!process.env.OCR_REMOTE_URL) return reject(new Error("OCR_REMOTE_URL 未配置"));
     let url;
-    try { url = new URL(process.env.OCR_REMOTE_URL); }
-    catch (_error) { return reject(new Error("OCR_REMOTE_URL 无效")); }
-    const localHttp = url.protocol === "http:" && ["127.0.0.1", "localhost"].includes(url.hostname);
-    if (url.protocol !== "https:" && !localHttp && !OCR_ALLOW_INSECURE_REMOTE) return reject(new Error("远端 OCR 必须使用 HTTPS"));
+    try { url = parseRemoteOcrUrl(process.env.OCR_REMOTE_URL); }
+    catch (error) { return reject(error); }
     const transport = url.protocol === "https:" ? https : http;
     const headers = { "Content-Type": contentType, "Content-Length": buffer.length, "Accept": "application/json" };
     if (process.env.OCR_REMOTE_API_KEY) headers.Authorization = `Bearer ${process.env.OCR_REMOTE_API_KEY}`;

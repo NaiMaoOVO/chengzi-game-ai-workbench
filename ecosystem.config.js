@@ -80,8 +80,27 @@ if ((process.env.ARCHIVE_COOKIE_SECURE || "1") !== "1") {
   throw new Error("线上部署必须保持 ARCHIVE_COOKIE_SECURE=1");
 }
 
-if (ocrProvider === "remote" && (!process.env.OCR_REMOTE_URL || process.env.OCR_REMOTE_URL.includes("example.com"))) {
-  throw new Error("OCR_PROVIDER=remote 时必须设置真实的 OCR_REMOTE_URL");
+if (ocrProvider === "remote") {
+  const remoteOcrUrl = String(process.env.OCR_REMOTE_URL || "");
+  if (!remoteOcrUrl || remoteOcrUrl.includes("example.com")) {
+    throw new Error("OCR_PROVIDER=remote 时必须设置真实的 OCR_REMOTE_URL");
+  }
+
+  let parsedOcrUrl;
+  try {
+    parsedOcrUrl = new URL(remoteOcrUrl);
+  } catch (_error) {
+    throw new Error("OCR_REMOTE_URL 必须是有效的 HTTP/HTTPS URL");
+  }
+  if (parsedOcrUrl.protocol !== "https:" && parsedOcrUrl.protocol !== "http:") {
+    throw new Error("OCR_REMOTE_URL 必须是有效的 HTTP/HTTPS URL");
+  }
+
+  const isLocalHttp = parsedOcrUrl.protocol === "http:" &&
+    ["127.0.0.1", "localhost"].includes(parsedOcrUrl.hostname.toLowerCase());
+  if (parsedOcrUrl.protocol === "http:" && !isLocalHttp && process.env.OCR_ALLOW_INSECURE_REMOTE !== "true") {
+    throw new Error("公网 OCR 使用 HTTP 时必须设置 OCR_ALLOW_INSECURE_REMOTE=true");
+  }
 }
 
 function app(name, script, env) {
