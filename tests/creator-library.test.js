@@ -139,6 +139,44 @@ test("creator library rejects malformed profile and collaboration records withou
   assert.equal(after.payload.updated_at, current.payload.updated_at);
 });
 
+test("creator library storage errors return 500 and preserve the remote archive", async () => {
+  const login = await request("/auth/login", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ username: "creator-admin", password: "creator-password-2026" })
+  });
+  assert.equal(login.status, 200);
+  const cookie = cookieOf(login);
+  const headers = {
+    "Content-Type": "application/json",
+    Cookie: cookie,
+    "X-CSRF-Token": login.payload.csrf_token
+  };
+  const current = await request("/creator-library", { headers: { Cookie: cookie } });
+  assert.equal(current.status, 200);
+
+  const db = new DatabaseSync(databasePath);
+  db.exec("CREATE TRIGGER reject_creator_library_insert BEFORE INSERT ON creator_libraries BEGIN SELECT RAISE(ABORT, 'blocked'); END;");
+  db.close();
+
+  const response = await request("/creator-library", {
+    method: "PUT",
+    headers,
+    body: JSON.stringify({
+      base_updated_at: current.payload.updated_at,
+      library: { ...current.payload.library, new: { name: "不会被保存", platform: "B站" } }
+    })
+  });
+  assert.equal(response.status, 500);
+  assert.deepEqual(response.payload, { ok: false, error: "个人库暂时无法保存，请稍后重试" });
+  assert.doesNotMatch(JSON.stringify(response.payload), /blocked|sqlite/i);
+  assert.equal((await request("/health")).status, 200);
+
+  const after = await request("/creator-library", { headers: { Cookie: cookie } });
+  assert.deepEqual(after.payload.library, current.payload.library);
+  assert.equal(after.payload.updated_at, current.payload.updated_at);
+});
+
 test("creator library marks structurally damaged stored data invalid and blocks valid overwrites", async () => {
   const login = await request("/auth/login", {
     method: "POST",

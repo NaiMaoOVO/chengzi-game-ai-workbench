@@ -692,30 +692,43 @@ const server = http.createServer((request, response) => {
     }
     if (request.method === "PUT") {
       readJsonBody(request, response, (body) => {
-        try {
-          if (!body.library || typeof body.library !== "object" || Array.isArray(body.library)) throw new Error("library 必须是对象");
-          if (!isValidCreatorLibrary(body.library)) {
-            sendJson(request, response, 400, { ok: false, error: "creator_library_invalid_payload" });
-            return;
-          }
-          const serialized = JSON.stringify(body.library);
-          if (Buffer.byteLength(serialized, "utf8") > MAX_BODY_BYTES) throw new Error("个人库内容过大");
-          const current = readCreatorLibraryRow(ownerKey);
-          if (current.invalid) {
-            sendJson(request, response, 409, { ok: false, error: "creator_library_invalid", library: current.library, updated_at: current.updated_at, invalid: true });
-            return;
-          }
-          const base = body.base_updated_at === null || body.base_updated_at === undefined ? null : String(body.base_updated_at);
-          if (current.updated_at && base !== current.updated_at) {
-            sendJson(request, response, 409, { ok: false, error: "creator_library_conflict", library: current.library, updated_at: current.updated_at });
-            return;
-          }
-          const updatedAt = new Date().toISOString();
-          upsertCreatorLibraryStatement.run(ownerKey, serialized, updatedAt);
-          sendJson(request, response, 200, { ok: true, updated_at: updatedAt });
-        } catch (error) {
-          sendJson(request, response, 400, { ok: false, error: error.message || "个人库保存失败" });
+        if (!body.library || typeof body.library !== "object" || Array.isArray(body.library)) {
+          sendJson(request, response, 400, { ok: false, error: "library 必须是对象" });
+          return;
         }
+        if (!isValidCreatorLibrary(body.library)) {
+          sendJson(request, response, 400, { ok: false, error: "creator_library_invalid_payload" });
+          return;
+        }
+        const serialized = JSON.stringify(body.library);
+        if (Buffer.byteLength(serialized, "utf8") > MAX_BODY_BYTES) {
+          sendJson(request, response, 400, { ok: false, error: "个人库内容过大" });
+          return;
+        }
+        let current;
+        try {
+          current = readCreatorLibraryRow(ownerKey);
+        } catch (_error) {
+          sendJson(request, response, 500, { ok: false, error: "个人库暂时无法读取，请稍后重试" });
+          return;
+        }
+        if (current.invalid) {
+          sendJson(request, response, 409, { ok: false, error: "creator_library_invalid", library: current.library, updated_at: current.updated_at, invalid: true });
+          return;
+        }
+        const base = body.base_updated_at === null || body.base_updated_at === undefined ? null : String(body.base_updated_at);
+        if (current.updated_at && base !== current.updated_at) {
+          sendJson(request, response, 409, { ok: false, error: "creator_library_conflict", library: current.library, updated_at: current.updated_at });
+          return;
+        }
+        const updatedAt = new Date().toISOString();
+        try {
+          upsertCreatorLibraryStatement.run(ownerKey, serialized, updatedAt);
+        } catch (_error) {
+          sendJson(request, response, 500, { ok: false, error: "个人库暂时无法保存，请稍后重试" });
+          return;
+        }
+        sendJson(request, response, 200, { ok: true, updated_at: updatedAt });
       });
       return;
     }
