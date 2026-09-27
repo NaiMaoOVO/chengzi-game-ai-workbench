@@ -391,3 +391,19 @@ test("project profile storage errors return 500 without exposing database detail
   assert.doesNotMatch(response.text, /blocked|sqlite/i);
   assert.equal((await httpRequest("/health")).status, 200);
 });
+
+test("project profile read errors return 500 without stopping the archive service", async () => {
+  const missingGame = await httpRequest("/profile");
+  assert.equal(missingGame.status, 400);
+
+  const db = new DatabaseSync(databasePath);
+  db.exec("ALTER TABLE project_profiles RENAME TO project_profiles_unavailable;");
+  db.close();
+
+  for (const requestPath of ["/profiles", "/profile?game=" + encodeURIComponent("鸣潮")]) {
+    const response = await httpRequest(requestPath);
+    assert.equal(response.status, 500);
+    assert.doesNotMatch(response.text, /no such table|sqlite/i);
+    assert.equal((await httpRequest("/health")).status, 200);
+  }
+});

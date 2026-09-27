@@ -748,20 +748,28 @@ const server = http.createServer((request, response) => {
     return;
   }
   if (request.method === "GET" && url.pathname === "/profiles") {
-    const rows = db.prepare("SELECT game, payload, updated_at FROM project_profiles WHERE owner_key = ? ORDER BY updated_at DESC").all(ownerKey);
-    const profiles = rows.map((row) => {
-      const parsed = parseStoredObject(row.payload);
-      return { game: row.game, updated_at: row.updated_at, payload: parsed.value, invalid: !parsed.valid };
-    });
-    sendJson(request, response, 200, { ok: true, profiles, invalid_count: profiles.filter((profile) => profile.invalid).length });
+    try {
+      const rows = db.prepare("SELECT game, payload, updated_at FROM project_profiles WHERE owner_key = ? ORDER BY updated_at DESC").all(ownerKey);
+      const profiles = rows.map((row) => {
+        const parsed = parseStoredObject(row.payload);
+        return { game: row.game, updated_at: row.updated_at, payload: parsed.value, invalid: !parsed.valid };
+      });
+      sendJson(request, response, 200, { ok: true, profiles, invalid_count: profiles.filter((profile) => profile.invalid).length });
+    } catch (_error) {
+      sendJson(request, response, 500, { ok: false, error: "项目档案暂时无法读取，请稍后重试" });
+    }
     return;
   }
   if (request.method === "GET" && url.pathname === "/profile") {
     const game = (url.searchParams.get("game") || "").trim();
     if (!game) { sendJson(request, response, 400, { ok: false, error: "game 参数必填" }); return; }
-    const row = db.prepare("SELECT payload, updated_at FROM project_profiles WHERE owner_key = ? AND game = ?").get(ownerKey, game);
-    const parsed = row ? parseStoredObject(row.payload) : { value: null, valid: true };
-    sendJson(request, response, 200, { ok: true, game, profile: parsed.value, invalid: row ? !parsed.valid : false, updated_at: row ? row.updated_at : null });
+    try {
+      const row = db.prepare("SELECT payload, updated_at FROM project_profiles WHERE owner_key = ? AND game = ?").get(ownerKey, game);
+      const parsed = row ? parseStoredObject(row.payload) : { value: null, valid: true };
+      sendJson(request, response, 200, { ok: true, game, profile: parsed.value, invalid: row ? !parsed.valid : false, updated_at: row ? row.updated_at : null });
+    } catch (_error) {
+      sendJson(request, response, 500, { ok: false, error: "项目档案暂时无法读取，请稍后重试" });
+    }
     return;
   }
   if (request.method === "GET" && url.pathname === "/latest") {
