@@ -851,33 +851,54 @@ const server = http.createServer((request, response) => {
     });
     request.on("end", () => {
       if (rejectedUpd) return;
+      let body;
       try {
-        const body = JSON.parse(Buffer.concat(chunksUpd).toString("utf8"));
+        body = JSON.parse(Buffer.concat(chunksUpd).toString("utf8"));
         if (!body || typeof body !== "object" || Array.isArray(body)) {
           sendJson(request, response, 400, { ok: false, error: "请求体必须是 JSON 对象" });
           return;
         }
-        const id = publicationIdOf(url.pathname);
-        const current = getPublicationStatement.get(id, ownerKey);
-        if (!current) {
-          sendJson(request, response, 404, { ok: false, error: "发布记录不存在" });
-          return;
-        }
-        updatePublicationStatement.run(
-          textValue(body.game, "game", 60, current.game) || current.game,
-          textValue(body.title, "title", 200, current.title) || current.title,
-          textValue(body.channel, "channel", 60, current.channel) || current.channel,
-          textValue(body.url, "url", 2048, current.url),
-          textValue(body.related_topic, "related_topic", 200, current.related_topic),
-          publicationDateValue(body.published_at, current.published_at),
-          Object.hasOwn(body, "metrics_json") ? serializeMetrics(body.metrics_json) : current.metrics_json,
-          new Date().toISOString(),
-          id,
-          ownerKey
-        );
-        sendJson(request, response, 200, { ok: true, publication: formatPublication(getPublicationStatement.get(id, ownerKey)) });
       } catch (error) {
         sendJson(request, response, 400, { ok: false, error: error.message });
+        return;
+      }
+      const id = publicationIdOf(url.pathname);
+      let current;
+      try {
+        current = getPublicationStatement.get(id, ownerKey);
+      } catch (_error) {
+        sendJson(request, response, 500, { ok: false, error: "发布记录暂时无法读取，请稍后重试" });
+        return;
+      }
+      if (!current) {
+        sendJson(request, response, 404, { ok: false, error: "发布记录不存在" });
+        return;
+      }
+      let next;
+      try {
+        next = {
+          game: textValue(body.game, "game", 60, current.game) || current.game,
+          title: textValue(body.title, "title", 200, current.title) || current.title,
+          channel: textValue(body.channel, "channel", 60, current.channel) || current.channel,
+          url: textValue(body.url, "url", 2048, current.url),
+          relatedTopic: textValue(body.related_topic, "related_topic", 200, current.related_topic),
+          publishedAt: publicationDateValue(body.published_at, current.published_at),
+          metricsJson: Object.hasOwn(body, "metrics_json") ? serializeMetrics(body.metrics_json) : current.metrics_json
+        };
+      } catch (error) {
+        sendJson(request, response, 400, { ok: false, error: error.message });
+        return;
+      }
+      try {
+        updatePublicationStatement.run(next.game, next.title, next.channel, next.url, next.relatedTopic, next.publishedAt, next.metricsJson, new Date().toISOString(), id, ownerKey);
+      } catch (_error) {
+        sendJson(request, response, 500, { ok: false, error: "发布记录暂时无法更新，请稍后重试" });
+        return;
+      }
+      try {
+        sendJson(request, response, 200, { ok: true, publication: formatPublication(getPublicationStatement.get(id, ownerKey)) });
+      } catch (_error) {
+        sendJson(request, response, 500, { ok: false, error: "发布记录已更新，但暂时无法读取，请稍后重试" });
       }
     });
     return;
