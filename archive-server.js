@@ -1035,8 +1035,8 @@ const server = http.createServer((request, response) => {
   if (request.method === "GET" && url.pathname === "/risk-events") {
     try {
       sendJson(request, response, 200, { ok: true, ...listRiskEvents(url, ownerKey) });
-    } catch (error) {
-      sendJson(request, response, 400, { ok: false, error: error.message });
+    } catch (_error) {
+      sendJson(request, response, 500, { ok: false, error: "风险事件暂时无法读取，请稍后重试" });
     }
     return;
   }

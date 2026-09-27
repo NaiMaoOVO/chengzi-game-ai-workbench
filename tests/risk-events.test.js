@@ -466,3 +466,15 @@ test("project profile read errors return 500 without stopping the archive servic
     assert.equal((await httpRequest("/health")).status, 200);
   }
 });
+
+test("risk event list storage errors return a sanitized 500 and keep the service alive", async () => {
+  const db = new DatabaseSync(databasePath);
+  db.exec("ALTER TABLE risk_events RENAME TO risk_events_unavailable");
+  db.close();
+
+  const response = await httpRequest("/risk-events");
+  assert.equal(response.status, 500);
+  assert.deepEqual(JSON.parse(response.text), { ok: false, error: "风险事件暂时无法读取，请稍后重试" });
+  assert.doesNotMatch(response.text, /risk_events|sqlite|no such table/i);
+  assert.equal((await httpRequest("/health")).status, 200);
+});
