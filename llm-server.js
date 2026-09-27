@@ -52,6 +52,16 @@ function sendJson(request, response, statusCode, payload, extraHeaders = {}) {
   response.end(JSON.stringify(payload));
 }
 
+function safeErrorSummary(error) {
+  const name = ["Error", "TypeError", "AbortError", "TimeoutError"].includes(error?.name) ? error.name : "Error";
+  const rawCode = typeof error?.code === "string" ? error.code : "";
+  const code = /^[A-Z][A-Z0-9_]{0,31}$/.test(rawCode) ? rawCode : "";
+  const status = Number.isInteger(error?.statusCode) && error.statusCode >= 100 && error.statusCode <= 599
+    ? `status=${error.statusCode}`
+    : "";
+  return [name, code && `code=${code}`, status].filter(Boolean).join(" ");
+}
+
 function checkRateLimitRequest(request) {
   return checkRateLimit(request);
 }
@@ -280,7 +290,10 @@ function callUpstream(prompt, task = {}, options = {}) {
             const parsed = JSON.parse(body);
             detail = parsed?.error?.message || detail;
           } catch (_error) { /* keep default */ }
-          reject(new Error(detail.slice(0, 240)));
+          const error = new Error(detail.slice(0, 240));
+          error.code = "LLM_UPSTREAM_HTTP";
+          error.statusCode = response.statusCode;
+          reject(error);
           return;
         }
         try {
@@ -494,7 +507,7 @@ async function handleStreamGenerate(request, response, taskName, task, prompt) {
     sendEvent("done", { task: taskName, result: result, model: LLM_MODEL, cached: false });
     response.end();
   } catch (error) {
-    console.error("LLM 网关：流式请求失败", String(error?.message || error).slice(0, 240));
+    console.error("LLM 网关：流式请求失败", safeErrorSummary(error));
     sendEvent("error", {
       error: "AI 服务暂不可用，请稍后重试",
       hint: "请检查 AI 服务配置和网络后重试"
@@ -628,7 +641,7 @@ const server = http.createServer((request, response) => {
       });
       sendJson(request, response, 200, { task: body.task, result, model: LLM_MODEL, cached: false });
     } catch (error) {
-      console.error("LLM 网关：请求失败", String(error?.message || error).slice(0, 240));
+      console.error("LLM 网关：请求失败", safeErrorSummary(error));
       sendJson(request, response, 502, {
         error: "AI 服务暂不可用，请稍后重试",
         hint: "请检查 AI 服务配置和网络后重试"

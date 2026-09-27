@@ -91,7 +91,7 @@ function parseSseEvents(text) {
 }
 
 function createFakeOpenAiUpstream(port, behavior = {}) {
-  const state = { requests: [] };
+  const state = { requests: [], authorizationHeaders: [] };
   let jsonModeFailuresRemaining = behavior.rejectJsonModeOnce ? 1 : 0;
   const server = http.createServer((req, res) => {
     const chunks = [];
@@ -102,6 +102,12 @@ function createFakeOpenAiUpstream(port, behavior = {}) {
         body = JSON.parse(Buffer.concat(chunks).toString("utf8"));
       } catch (_error) { /* keep empty */ }
       state.requests.push(body);
+      state.authorizationHeaders.push(req.headers.authorization || "");
+      if (behavior.echoAuthorization) {
+        res.writeHead(502, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: { message: `upstream rejected ${req.headers.authorization}` } }));
+        return;
+      }
       if (behavior.upstreamError) {
         res.writeHead(502, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ error: { message: behavior.upstreamError } }));
@@ -160,6 +166,7 @@ function createFakeOpenAiUpstream(port, behavior = {}) {
     server.listen(port, "127.0.0.1", () => {
       resolve({
         requests: state.requests,
+        authorizationHeaders: state.authorizationHeaders,
         close: () => new Promise((done) => server.close(done))
       });
     });
@@ -174,18 +181,18 @@ async function withLlmService(envOverrides, run) {
   });
   let stderrText = "";
   child.stderr.on("data", (chunk) => { stderrText += chunk.toString("utf8"); });
+  let result;
   try {
     await waitForHealth(envOverrides.LLM_PORT);
-    await run(envOverrides.LLM_PORT);
+    result = await run(envOverrides.LLM_PORT);
   } catch (error) {
     assert.fail(error.message + "\nstderr: " + stderrText.slice(-800));
   } finally {
+    const closed = new Promise((resolve) => child.once("close", resolve));
     child.kill("SIGTERM");
-    await new Promise((resolve) => {
-      child.once("exit", resolve);
-      setTimeout(resolve, 3000);
-    });
+    await Promise.race([closed, new Promise((resolve) => setTimeout(resolve, 3000))]);
   }
+  return { result, stderrText };
 }
 
 test("llm stream=true forwards ordered SSE deltas and a done event with the parsed JSON result", async () => {
@@ -326,15 +333,15 @@ test("llm daily insight falls back from unsupported JSON mode while retaining ta
   }
 });
 
-test("llm hides upstream implementation errors from non-stream browser responses", async () => {
+test("llm hides upstream details from browser responses and service logs", async () => {
   const llmPort = 19539;
   const upstreamPort = 19639;
-  const upstreamDetail = "proxy at http://internal-gateway:9000 rejected tenant secret";
-  const upstream = await createFakeOpenAiUpstream(upstreamPort, { upstreamError: upstreamDetail });
+  const apiKey = "llm-fake-key-never-log";
+  const upstream = await createFakeOpenAiUpstream(upstreamPort, { echoAuthorization: true });
   try {
-    await withLlmService({
+    const service = await withLlmService({
       LLM_PORT: String(llmPort),
-      LLM_API_KEY: "daily-insight-test-key",
+      LLM_API_KEY: apiKey,
       LLM_BASE_URL: "http://127.0.0.1:" + upstreamPort + "/v1",
       LLM_MODEL: "test-model",
       LLM_RATE_LIMIT_MAX: "100"
@@ -343,8 +350,18 @@ test("llm hides upstream implementation errors from non-stream browser responses
       assert.equal(res.status, 502, res.text);
       const payload = JSON.parse(res.text);
       assert.equal(payload.error, "AI 服务暂不可用，请稍后重试");
-      assert.doesNotMatch(res.text, /internal-gateway|tenant secret/);
+      assert.equal(res.text.includes(apiKey), false);
+
+      const stream = await postStream(llmPort, { ...DAILY_INSIGHT_BODY, stream: true }, { Origin: "null" });
+      assert.equal(stream.status, 200);
+      assert.match(stream.text, /event: error/);
+      assert.equal(stream.text.includes(apiKey), false);
     });
+    assert.deepEqual(upstream.authorizationHeaders, [`Bearer ${apiKey}`, `Bearer ${apiKey}`]);
+    assert.equal(service.stderrText.includes(apiKey), false);
+    assert.match(service.stderrText, /LLM 网关：请求失败/);
+    assert.match(service.stderrText, /code=LLM_UPSTREAM_HTTP status=502/);
+    assert.match(service.stderrText, /LLM 网关：流式请求失败/);
   } finally {
     await upstream.close();
   }
