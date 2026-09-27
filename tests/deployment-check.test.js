@@ -34,10 +34,31 @@ test("deployment check gives an actionable one-line error for a placeholder publ
 });
 
 test("deployment check accepts a real configured HTTPS origin", () => {
-  const result = runCheck("https://gameops.test");
+  const result = runCheck("https://gameops.test, https://staging.gameops.test, https://notexample.com");
 
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /deployment environment ok/);
+});
+
+test("deployment check rejects malformed, insecure and local public origins", () => {
+  const invalidOrigins = [
+    "not-a-url",
+    "http://gameops.test",
+    "https://localhost",
+    "https://127.0.0.1:8793",
+    "https://[::1]:8793",
+    "https://gameops.test/path",
+    "https://gameops.test, http://localhost:8793"
+  ];
+
+  for (const origin of invalidOrigins) {
+    const result = runCheck(origin);
+    const output = result.stdout + result.stderr;
+
+    assert.equal(result.status, 1, `unexpectedly accepted ${origin}`);
+    assert.match(output, /ALLOWED_ORIGIN 必须是一个或多个 HTTPS 源/);
+    assert.doesNotMatch(output, /at Object\.|ecosystem\.config\.js:\d+/);
+  }
 });
 
 test("deployment check never prints configured archive credentials", () => {

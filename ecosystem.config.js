@@ -1,4 +1,5 @@
 const path = require("node:path");
+const { isIP } = require("node:net");
 require("./lib/env-file").loadProjectEnv(__dirname);
 const { assertSafeProviderUrl } = require("./lib/platform-provider");
 
@@ -6,8 +7,40 @@ const cwd = __dirname;
 const allowedOrigin = process.env.ALLOWED_ORIGIN || "";
 const ocrProvider = process.env.OCR_PROVIDER || "macos";
 
-if (!allowedOrigin || allowedOrigin.includes("example.com")) {
+function isPlaceholderOrigin(value) {
+  return value.split(",").some((origin) => {
+    try {
+      const host = new URL(origin.trim()).hostname.toLowerCase();
+      return host === "example.com" || host.endsWith(".example.com");
+    } catch (_error) {
+      return false;
+    }
+  });
+}
+
+if (!allowedOrigin || isPlaceholderOrigin(allowedOrigin)) {
   throw new Error("部署前必须设置 ALLOWED_ORIGIN=https://你的真实域名");
+}
+
+const allowedOriginError = "ALLOWED_ORIGIN 必须是一个或多个 HTTPS 源（仅协议、域名和可选端口），不能使用本机地址";
+const configuredOrigins = allowedOrigin.split(",").map((origin) => origin.trim());
+if (configuredOrigins.some((origin) => !origin)) {
+  throw new Error(allowedOriginError);
+}
+for (const origin of configuredOrigins) {
+  let parsedOrigin;
+  try {
+    parsedOrigin = new URL(origin);
+  } catch (_error) {
+    throw new Error(allowedOriginError);
+  }
+  const host = parsedOrigin.hostname.replace(/^\[|\]$/g, "").toLowerCase();
+  const ipVersion = isIP(host);
+  const isLoopback = host === "localhost" || host.endsWith(".localhost") ||
+    (ipVersion === 4 && host.startsWith("127.")) || (ipVersion === 6 && host === "::1");
+  if (parsedOrigin.protocol !== "https:" || parsedOrigin.origin !== origin || isLoopback) {
+    throw new Error(allowedOriginError);
+  }
 }
 
 if (process.env.ALLOW_FILE_ORIGIN === "1") {
