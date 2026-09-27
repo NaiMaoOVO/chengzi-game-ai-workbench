@@ -412,7 +412,7 @@ test("llm: identity, disallowed Origin -> 403, bad bodies -> 400, exceeding limi
   await withGuardedService("llm-server.js", "LLM_PORT", {
     LLM_API_KEY: "contract-test-key",
     LLM_BASE_URL: "http://127.0.0.1:1/v1",
-    LLM_RATE_LIMIT_MAX: "3"
+    LLM_RATE_LIMIT_MAX: "5"
   }, async (port) => {
     const healthPayload = JSON.parse((await httpRequest(port, "/health")).text);
     assert.equal(healthPayload.service, "gameops-llm");
@@ -431,6 +431,14 @@ test("llm: identity, disallowed Origin -> 403, bad bodies -> 400, exceeding limi
       headers: { "Content-Type": "application/json" },
       body
     });
+
+    const nullBody = await post("null");
+    assert.equal(nullBody.status, 400);
+    assert.match(nullBody.text, /JSON 对象/);
+
+    const arrayBody = await post("[]");
+    assert.equal(arrayBody.status, 400);
+    assert.match(arrayBody.text, /JSON 对象/);
 
     const badJson = await post("{not-json");
     assert.equal(badJson.status, 400);

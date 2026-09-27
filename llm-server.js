@@ -521,6 +521,10 @@ const server = http.createServer((request, response) => {
       sendJson(request, response, 400, { error: "请求体不是合法 JSON" });
       return;
     }
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      sendJson(request, response, 400, { error: "请求体必须是 JSON 对象" });
+      return;
+    }
     const task = Object.hasOwn(TASKS, body.task) ? TASKS[body.task] : null;
     if (!task) {
       sendJson(request, response, 400, { error: "不支持的任务" });
