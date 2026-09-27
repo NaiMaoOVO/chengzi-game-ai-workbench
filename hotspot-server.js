@@ -16,7 +16,7 @@ const DOUYIN_PROVIDER_URL = process.env.DOUYIN_PROVIDER_URL || "";
 const DOUYIN_PROVIDER_TOKEN = process.env.DOUYIN_PROVIDER_TOKEN || "";
 const XIAOHONGSHU_PROVIDER_URL = process.env.XIAOHONGSHU_PROVIDER_URL || "";
 const XIAOHONGSHU_PROVIDER_TOKEN = process.env.XIAOHONGSHU_PROVIDER_TOKEN || "";
-const PLATFORM_PROVIDER_TIMEOUT_MS = Math.max(1000, Number(process.env.PLATFORM_PROVIDER_TIMEOUT_MS) || 15000);
+const PLATFORM_PROVIDER_TIMEOUT_MS = parseIntegerConfig(process.env.PLATFORM_PROVIDER_TIMEOUT_MS, { name: "PLATFORM_PROVIDER_TIMEOUT_MS", min: 1000, max: 2147483647, defaultValue: 15000 });
 const cors = createCors({ allowedOrigins: process.env.ALLOWED_ORIGIN, methods: "GET, OPTIONS", allowFileOrigin: process.env.ALLOW_FILE_ORIGIN === "1" || process.env.NODE_ENV !== "production" });
 const RATE_LIMIT_WINDOW_MS = Math.max(1000, Number(process.env.RATE_LIMIT_WINDOW_MS || 60000));
 const RATE_LIMIT_MAX = Math.max(1, Number(process.env.RATE_LIMIT_MAX || 60));

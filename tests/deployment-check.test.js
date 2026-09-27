@@ -98,7 +98,7 @@ test("deployment check rejects malformed rate limit settings before PM2 starts s
   }
 });
 
-test("deployment check validates network, OCR, and LLM resource bounds", () => {
+test("deployment check validates numeric service resource bounds", () => {
   const invalidSettings = [
     ["UPSTREAM_TIMEOUT_MS", "abc", /UPSTREAM_TIMEOUT_MS 必须是 1000-2147483647 之间的整数/],
     ["UPSTREAM_RETRIES", "abc", /UPSTREAM_RETRIES 必须是 0-3 的整数/],
@@ -110,7 +110,10 @@ test("deployment check validates network, OCR, and LLM resource bounds", () => {
     ["OCR_MAX_CONCURRENCY", "0", /OCR_MAX_CONCURRENCY 必须是正整数/],
     ["LLM_TIMEOUT_MS", "NaN", /LLM_TIMEOUT_MS 必须是 1-2147483647 之间的整数/],
     ["LLM_MAX_CONCURRENCY", "Infinity", /LLM_MAX_CONCURRENCY 必须是正整数/],
-    ["LLM_CACHE_TTL_MS", "-1", /LLM_CACHE_TTL_MS 必须是非负整数/]
+    ["LLM_CACHE_TTL_MS", "-1", /LLM_CACHE_TTL_MS 必须是非负整数/],
+    ["PLATFORM_PROVIDER_TIMEOUT_MS", "Infinity", /PLATFORM_PROVIDER_TIMEOUT_MS 必须是 1000-2147483647 之间的整数/],
+    ["ARCHIVE_SESSION_HOURS", "0", /ARCHIVE_SESSION_HOURS 必须是 1-744 小时的整数/],
+    ["ARCHIVE_SESSION_HOURS", "745", /ARCHIVE_SESSION_HOURS 必须是 1-744 小时的整数/]
   ];
 
   for (const [name, value, message] of invalidSettings) {
@@ -119,8 +122,14 @@ test("deployment check validates network, OCR, and LLM resource bounds", () => {
     assert.match(result.stderr, message);
   }
 
-  const disabledCache = runCheck("https://gameops.test", { CACHE_TTL_MS: "0", LLM_CACHE_TTL_MS: "0", UPSTREAM_RETRIES: "0" });
-  assert.equal(disabledCache.status, 0, disabledCache.stderr);
+  const boundaryValues = runCheck("https://gameops.test", {
+    CACHE_TTL_MS: "0",
+    LLM_CACHE_TTL_MS: "0",
+    UPSTREAM_RETRIES: "0",
+    PLATFORM_PROVIDER_TIMEOUT_MS: "1000",
+    ARCHIVE_SESSION_HOURS: "744"
+  });
+  assert.equal(boundaryValues.status, 0, boundaryValues.stderr);
 });
 
 test("deployment check validates the scheduled morning time and normalizes whitespace", () => {

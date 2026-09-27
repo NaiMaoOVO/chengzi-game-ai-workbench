@@ -5,13 +5,14 @@ const path = require("node:path");
 const { DatabaseSync } = require("node:sqlite");
 require("./lib/env-file").loadProjectEnv(__dirname);
 const { parseRequestUrl } = require("./lib/safe-request-url");
-const { createRateLimiter } = require("./lib/http-guards");
+const { parseIntegerConfig, createRateLimiter } = require("./lib/http-guards");
 const { createCors } = require("./lib/cors");
 const { createArchiveAuth } = require("./lib/archive-auth");
 const { businessDate, businessTime, isValidBusinessTime } = require("./lib/business-date");
 const { SUPPORTED_PLATFORMS, isSupportedPlatform } = require("./lib/platform-provider");
 
 const PORT = Number(process.env.ARCHIVE_PORT) || 8796;
+const ARCHIVE_SESSION_HOURS = parseIntegerConfig(process.env.ARCHIVE_SESSION_HOURS, { name: "ARCHIVE_SESSION_HOURS", min: 1, max: 744, defaultValue: 12 });
 const MAX_BODY_BYTES = 5 * 1024 * 1024;
 const cors = createCors({ allowedOrigins: process.env.ALLOWED_ORIGIN, methods: "GET, POST, PUT, DELETE, OPTIONS", allowFileOrigin: process.env.ALLOW_FILE_ORIGIN === "1" || process.env.NODE_ENV !== "production" });
 const RATE_LIMIT_WINDOW_MS = Math.max(1000, Number(process.env.RATE_LIMIT_WINDOW_MS || 60000));
@@ -320,7 +321,7 @@ try {
     adminUsername: process.env.ARCHIVE_ADMIN_USERNAME || "admin",
     adminPassword: process.env.ARCHIVE_ADMIN_PASSWORD || "",
     secureCookie: process.env.ARCHIVE_COOKIE_SECURE !== "0",
-    sessionHours: Number(process.env.ARCHIVE_SESSION_HOURS) || 12
+    sessionHours: ARCHIVE_SESSION_HOURS
   });
 } catch (error) {
   console.error("存档服务认证配置无效：" + error.message);

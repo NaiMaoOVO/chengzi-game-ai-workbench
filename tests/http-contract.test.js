@@ -526,7 +526,8 @@ test("llm: identity, disallowed Origin -> 403, bad bodies -> 400, exceeding limi
 test("archive: invalid morning schedule or platform exits before the service listens", () => {
   const invalidConfigs = [
     [{ MORNING_SCHEDULE: "9:00" }, /MORNING_SCHEDULE 必须是 24 小时制 HH:mm/],
-    [{ MORNING_PLATFORM: "未知平台" }, /MORNING_PLATFORM 必须是以下平台之一/]
+    [{ MORNING_PLATFORM: "未知平台" }, /MORNING_PLATFORM 必须是以下平台之一/],
+    [{ ARCHIVE_SESSION_HOURS: "745" }, /ARCHIVE_SESSION_HOURS must be an integer/]
   ];
 
   for (const [extraEnv, message] of invalidConfigs) {
@@ -554,7 +555,8 @@ test("archive: invalid morning schedule or platform exits before the service lis
 test("hotspot and comment services reject invalid cache and upstream settings before listening", () => {
   const invalidConfigs = [
     ["hotspot-server.js", { CACHE_TTL_MS: "abc" }, /CACHE_TTL_MS must be an integer/],
-    ["comment-server.js", { UPSTREAM_RETRIES: "abc" }, /UPSTREAM_RETRIES must be an integer/]
+    ["comment-server.js", { UPSTREAM_RETRIES: "abc" }, /UPSTREAM_RETRIES must be an integer/],
+    ["hotspot-server.js", { PLATFORM_PROVIDER_TIMEOUT_MS: "Infinity" }, /PLATFORM_PROVIDER_TIMEOUT_MS must be an integer/]
   ];
 
   for (const [script, extraEnv, message] of invalidConfigs) {
