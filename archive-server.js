@@ -14,6 +14,7 @@ const { SUPPORTED_PLATFORMS, isSupportedPlatform } = require("./lib/platform-pro
 const PORT = parseIntegerConfig(process.env.ARCHIVE_PORT, { name: "ARCHIVE_PORT", min: 1, max: 65535, defaultValue: 8796 });
 const ARCHIVE_SESSION_HOURS = parseIntegerConfig(process.env.ARCHIVE_SESSION_HOURS, { name: "ARCHIVE_SESSION_HOURS", min: 1, max: 744, defaultValue: 12 });
 const MAX_BODY_BYTES = 5 * 1024 * 1024;
+const MAX_AUTH_BODY_BYTES = 4 * 1024;
 const cors = createCors({ allowedOrigins: process.env.ALLOWED_ORIGIN, methods: "GET, POST, PUT, DELETE, OPTIONS", allowFileOrigin: process.env.ALLOW_FILE_ORIGIN === "1" || process.env.NODE_ENV !== "production" });
 const RATE_LIMIT_WINDOW_MS = parseIntegerConfig(process.env.RATE_LIMIT_WINDOW_MS, { name: "RATE_LIMIT_WINDOW_MS", min: 1000, max: 2147483647, defaultValue: 60000 });
 const RATE_LIMIT_MAX = parseIntegerConfig(process.env.ARCHIVE_RATE_LIMIT_MAX, { name: "ARCHIVE_RATE_LIMIT_MAX", min: 1, defaultValue: 120 });
@@ -84,16 +85,17 @@ function sendJson(request, response, statusCode, payload, extraHeaders = {}) {
   response.end(JSON.stringify(payload));
 }
 
-function readJsonBody(request, response, onBody) {
+function readJsonBody(request, response, onBody, maxBytes = MAX_BODY_BYTES) {
   const chunks = [];
   let received = 0;
   let rejected = false;
   request.on("data", (chunk) => {
     if (rejected) return;
     received += chunk.length;
-    if (received > MAX_BODY_BYTES) {
+    if (received > maxBytes) {
       rejected = true;
-      sendJson(request, response, 413, { ok: false, error: "请求内容过大（上限 5MB）" });
+      const limitLabel = maxBytes >= 1024 * 1024 ? `${Math.floor(maxBytes / 1024 / 1024)}MB` : `${Math.floor(maxBytes / 1024)}KB`;
+      sendJson(request, response, 413, { ok: false, error: `请求内容过大（上限 ${limitLabel}）` });
       request.resume();
       return;
     }
@@ -670,7 +672,7 @@ const server = http.createServer((request, response) => {
         }
         sendJson(request, response, 401, { ok: false, error: "用户名或密码错误" });
       }
-    });
+    }, MAX_AUTH_BODY_BYTES);
     return;
   }
 

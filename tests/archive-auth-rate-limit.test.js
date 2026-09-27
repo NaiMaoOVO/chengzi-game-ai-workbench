@@ -20,7 +20,7 @@ const child = spawn(process.execPath, [path.join(projectRoot, "archive-server.js
     ARCHIVE_ADMIN_PASSWORD: "admin-password-2026",
     ARCHIVE_COOKIE_SECURE: "0",
     ARCHIVE_RATE_LIMIT_MAX: "100",
-    ARCHIVE_AUTH_RATE_LIMIT_MAX: "2",
+    ARCHIVE_AUTH_RATE_LIMIT_MAX: "3",
     RATE_LIMIT_WINDOW_MS: "60000",
     MORNING_GAMES: ""
   },
@@ -80,6 +80,13 @@ test.after(async () => {
 });
 
 test("archive login enforces its configured rate limit and returns Retry-After", async () => {
+  const oversized = await request("/auth/login", {
+    username: "ops-admin",
+    password: "wrong-password-2026",
+    extra: "x".repeat(5000)
+  });
+  assert.equal(oversized.status, 413);
+
   const attempts = [];
   for (let index = 0; index < 3; index += 1) {
     attempts.push(await request("/auth/login", { username: "ops-admin", password: "wrong-password-2026" }));
