@@ -294,7 +294,8 @@ function migrateOwnerColumns() {
   }
   db.exec(`
     CREATE INDEX IF NOT EXISTS idx_snapshots_owner_kind_time ON snapshots(owner_key, kind, created_at);
-    CREATE INDEX IF NOT EXISTS idx_snapshots_owner_kind_game ON snapshots(owner_key, kind, game);
+    CREATE INDEX IF NOT EXISTS idx_snapshots_owner_kind_game_time ON snapshots(owner_key, kind, game, created_at);
+    DROP INDEX IF EXISTS idx_snapshots_owner_kind_game;
     CREATE INDEX IF NOT EXISTS idx_publications_owner_game ON publications(owner_key, game);
     CREATE INDEX IF NOT EXISTS idx_risk_events_owner_game ON risk_events(owner_key, game);
     CREATE INDEX IF NOT EXISTS idx_risk_events_owner_status ON risk_events(owner_key, status);

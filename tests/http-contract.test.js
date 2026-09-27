@@ -745,6 +745,34 @@ test("archive stats honor Shanghai calendar window bounds", async () => {
   });
 });
 
+test("archive snapshot statistics use range indexes for both broad and game-filtered queries", async () => {
+  const databasePath = path.join(os.tmpdir(), `gameops-archive-stats-index-${process.pid}-${Date.now()}.db`);
+  const legacyDb = new DatabaseSync(databasePath);
+  legacyDb.exec("CREATE TABLE snapshots (id INTEGER PRIMARY KEY AUTOINCREMENT, owner_key TEXT NOT NULL DEFAULT 'default', kind TEXT NOT NULL, game TEXT NOT NULL DEFAULT '', source TEXT NOT NULL DEFAULT 'sample', payload TEXT NOT NULL, request_id TEXT, created_at TEXT NOT NULL)");
+  legacyDb.exec("CREATE INDEX idx_snapshots_owner_kind_game ON snapshots(owner_key, kind, game)");
+  legacyDb.close();
+
+  await withGuardedService("archive-server.js", "ARCHIVE_PORT", {
+    ARCHIVE_DB_PATH: databasePath,
+    MORNING_GAMES: ""
+  }, async () => {
+    const db = new DatabaseSync(databasePath);
+    try {
+      const indexes = db.prepare("PRAGMA index_list(snapshots)").all().map((row) => row.name);
+      assert.ok(indexes.includes("idx_snapshots_owner_kind_game_time"));
+      assert.equal(indexes.includes("idx_snapshots_owner_kind_game"), false, "the superseded prefix index should not remain write overhead");
+
+      const broadPlan = db.prepare("EXPLAIN QUERY PLAN SELECT payload, source, created_at FROM snapshots WHERE owner_key = ? AND kind = ? AND created_at >= ? ORDER BY created_at ASC").all("default", "feedback", "2026-09-01T00:00:00.000Z").map((row) => row.detail).join(" ");
+      const gamePlan = db.prepare("EXPLAIN QUERY PLAN SELECT payload, source, created_at FROM snapshots WHERE owner_key = ? AND kind = ? AND game = ? AND created_at >= ? ORDER BY created_at ASC").all("default", "feedback", "鸣潮", "2026-09-01T00:00:00.000Z").map((row) => row.detail).join(" ");
+      assert.match(broadPlan, /idx_snapshots_owner_kind_time/);
+      assert.match(gamePlan, /idx_snapshots_owner_kind_game_time/);
+      assert.doesNotMatch(gamePlan, /USE TEMP B-TREE FOR ORDER BY/);
+    } finally {
+      db.close();
+    }
+  });
+});
+
 // 发布台账效果回流：/video-effect 用假上游锁定归一化指标、缓存与防御行为。
 test("comment: /video-effect normalizes stats, caches hits, rejects bad input", async () => {
   const fakeUpstream = http.createServer((req, res) => {
