@@ -2,6 +2,16 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const { createRateLimiter, stableSerialize, createSingleFlightCache } = require("../lib/http-guards");
 
+function deferred() {
+  let resolve;
+  let reject;
+  const promise = new Promise((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
+}
+
 test("rate limiter does not trust forwarded headers unless enabled", () => {
   const limiter = createRateLimiter({ windowMs: 60000, max: 1, trustProxy: false });
   const request = (forwarded) => ({ socket: { remoteAddress: "127.0.0.1" }, headers: { "x-forwarded-for": forwarded } });
@@ -39,4 +49,57 @@ test("single-flight cache shares an in-flight producer and stable serializes key
   const [one, two] = await Promise.all([cache.getOrCreate("x", producer), cache.getOrCreate("x", producer)]);
   assert.deepEqual(one, two);
   assert.equal(calls, 1);
+});
+
+test("single-flight cache does not reinsert an in-flight result after capacity eviction", async () => {
+  const cache = createSingleFlightCache({ ttlMs: 1000, maxEntries: 1 });
+  const pending = deferred();
+  const first = cache.getOrCreate("first", () => pending.promise);
+  await Promise.resolve();
+  assert.equal(await cache.getOrCreate("second", () => Promise.resolve("second")), "second");
+
+  pending.resolve("first");
+  assert.equal(await first, "first");
+  assert.equal(cache.size(), 1);
+  assert.equal(cache.get("second"), "second");
+});
+
+test("an evicted single-flight result cannot overwrite a newer request for the same key", async () => {
+  const cache = createSingleFlightCache({ ttlMs: 1000, maxEntries: 1 });
+  const oldResult = deferred();
+  const newResult = deferred();
+  const oldRequest = cache.getOrCreate("same", () => oldResult.promise);
+  await Promise.resolve();
+  await cache.getOrCreate("evictor", () => Promise.resolve("evictor"));
+  let newProducerCalls = 0;
+  const newRequest = cache.getOrCreate("same", () => {
+    newProducerCalls += 1;
+    return newResult.promise;
+  });
+
+  oldResult.resolve("stale");
+  assert.equal(await oldRequest, "stale");
+  assert.equal(cache.hasInFlight("same"), true);
+  const joinedRequest = cache.getOrCreate("same", () => Promise.reject(new Error("duplicate producer")));
+  newResult.resolve("fresh");
+  assert.equal(await newRequest, "fresh");
+  assert.equal(await joinedRequest, "fresh");
+  assert.equal(newProducerCalls, 1);
+});
+
+test("an evicted single-flight failure cannot delete a newer request for the same key", async () => {
+  const cache = createSingleFlightCache({ ttlMs: 1000, maxEntries: 1 });
+  const oldResult = deferred();
+  const newResult = deferred();
+  const oldRequest = cache.getOrCreate("same", () => oldResult.promise);
+  await Promise.resolve();
+  await cache.getOrCreate("evictor", () => Promise.resolve("evictor"));
+  const newRequest = cache.getOrCreate("same", () => newResult.promise);
+
+  oldResult.reject(new Error("old failure"));
+  await assert.rejects(oldRequest, /old failure/);
+  assert.equal(cache.hasInFlight("same"), true);
+  newResult.resolve("fresh");
+  assert.equal(await newRequest, "fresh");
+  assert.equal(cache.get("same"), "fresh");
 });
