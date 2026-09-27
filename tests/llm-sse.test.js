@@ -107,6 +107,15 @@ function createFakeOpenAiUpstream(port, behavior = {}) {
         res.end(JSON.stringify({ error: { message: behavior.upstreamError } }));
         return;
       }
+      if (typeof behavior.fixedContent === "string") {
+        res.writeHead(200, { "Content-Type": body.stream === true ? "text/event-stream" : "application/json" });
+        if (body.stream === true) {
+          res.end("data: " + JSON.stringify({ choices: [{ delta: { content: behavior.fixedContent } }] }) + "\n\ndata: [DONE]\n\n");
+        } else {
+          res.end(JSON.stringify({ choices: [{ message: { content: behavior.fixedContent } }] }));
+        }
+        return;
+      }
       if (body.response_format && jsonModeFailuresRemaining > 0) {
         jsonModeFailuresRemaining -= 1;
         res.writeHead(400, { "Content-Type": "application/json" });
@@ -343,6 +352,33 @@ test("llm rejects oversized upstream responses in both JSON and SSE modes", asyn
     await withLlmService({
       LLM_PORT: String(llmPort),
       LLM_API_KEY: "size-limit-test-key",
+      LLM_BASE_URL: "http://127.0.0.1:" + upstreamPort + "/v1",
+      LLM_MODEL: "test-model",
+      LLM_RATE_LIMIT_MAX: "100"
+    }, async () => {
+      const jsonResponse = await postStream(llmPort, VERSION_COPY_BODY);
+      assert.equal(jsonResponse.status, 502);
+      assert.equal(JSON.parse(jsonResponse.text).error, "AI 服务暂不可用，请稍后重试");
+
+      const streamResponse = await postStream(llmPort, { ...VERSION_COPY_BODY, stream: true });
+      assert.equal(streamResponse.status, 200);
+      const events = parseSseEvents(streamResponse.text);
+      assert.equal(events.at(-1)?.event, "error");
+      assert.equal(events.some((event) => event.event === "done"), false);
+    });
+  } finally {
+    await upstream.close();
+  }
+});
+
+test("llm rejects non-object JSON results in both JSON and SSE modes", async () => {
+  const llmPort = 19541;
+  const upstreamPort = 19641;
+  const upstream = await createFakeOpenAiUpstream(upstreamPort, { fixedContent: "null" });
+  try {
+    await withLlmService({
+      LLM_PORT: String(llmPort),
+      LLM_API_KEY: "shape-limit-test-key",
       LLM_BASE_URL: "http://127.0.0.1:" + upstreamPort + "/v1",
       LLM_MODEL: "test-model",
       LLM_RATE_LIMIT_MAX: "100"

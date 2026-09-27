@@ -188,20 +188,27 @@ const TASKS = {
 
 function extractJsonObject(text) {
   const trimmed = String(text || "").trim();
+  const parseObject = (value) => {
+    const parsed = JSON.parse(value);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      throw new Error("LLM 返回内容不是 JSON 对象");
+    }
+    return parsed;
+  };
   try {
-    return JSON.parse(trimmed);
+    return parseObject(trimmed);
   } catch (_error) {
     const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/);
     if (fenced) {
       try {
-        return JSON.parse(fenced[1].trim());
+        return parseObject(fenced[1].trim());
       } catch (_e) { /* fallthrough */ }
     }
     const start = trimmed.indexOf("{");
     const end = trimmed.lastIndexOf("}");
     if (start >= 0 && end > start) {
       try {
-        return JSON.parse(trimmed.slice(start, end + 1));
+        return parseObject(trimmed.slice(start, end + 1));
       } catch (_e) { /* fallthrough */ }
     }
     throw new Error("LLM 返回内容无法解析为 JSON");
