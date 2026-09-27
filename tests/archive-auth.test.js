@@ -223,6 +223,22 @@ test("archive auth requires login, CSRF, and keeps each account's data private",
   assert.equal(adminDelete.status, 200);
 });
 
+test("authenticated archive data responses disable browser and intermediary caching", async () => {
+  const login = await request("/auth/login", {
+    method: "POST",
+    headers: jsonHeaders(),
+    body: JSON.stringify({ username: "ops-admin", password: "admin-password-2026" })
+  });
+  assert.equal(login.status, 200);
+  const cookie = sessionCookie(login);
+
+  for (const requestPath of ["/auth/session", "/daily-todos", "/creator-library", "/profile?game=" + encodeURIComponent("鸣潮")]) {
+    const response = await request(requestPath, { headers: { Cookie: cookie } });
+    assert.equal(response.status, 200);
+    assert.equal(response.headers["cache-control"], "no-store", requestPath + " must not cache account-private data");
+  }
+});
+
 test("corrupted creator libraries remain visible and cannot be overwritten", async () => {
   const login = await request("/auth/login", {
     method: "POST",

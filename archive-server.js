@@ -66,6 +66,7 @@ function computeStats(kind, days, game, ownerKey) {
 function sendJson(request, response, statusCode, payload, extraHeaders = {}) {
   response.writeHead(statusCode, {
     "Content-Type": "application/json; charset=utf-8",
+    "Cache-Control": "no-store",
     ...corsHeaders(request),
     ...extraHeaders
   });
