@@ -38,6 +38,17 @@ test("creator identity prefers account id or homepage over mutable display name"
   );
 });
 
+test("creator homepage identity normalizes URL host but preserves case-sensitive account paths", () => {
+  assert.equal(
+    creatorKey({ platform: "抖音", name: "达人甲", accountUrl: "https://WWW.DOUYIN.com/User/AbC/?from=share#profile" }),
+    creatorKey({ platform: "抖音", name: "达人甲改名", accountUrl: "https://www.douyin.com/User/AbC" })
+  );
+  assert.notEqual(
+    creatorKey({ platform: "抖音", name: "账号甲", accountUrl: "https://www.douyin.com/user/MS4wLjABAAA" }),
+    creatorKey({ platform: "抖音", name: "账号乙", accountUrl: "https://www.douyin.com/user/ms4wljabaaa" })
+  );
+});
+
 test("creator history turns structured delivery reviews into a bounded confidence signal", () => {
   assert.equal(getCreatorHistoryScore([]), null);
   const records = [

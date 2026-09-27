@@ -82,8 +82,17 @@
     const platform = normalize(row?.platform || "未标注");
     const accountId = normalize(row?.accountId);
     if (accountId) return `${platform}::id::${accountId}`;
-    const accountUrl = String(row?.accountUrl || "").trim().toLowerCase().replace(/[?#].*$/, "").replace(/\/+$/, "");
-    if (/^https?:\/\//i.test(accountUrl)) return `${platform}::url::${accountUrl}`;
+    let accountUrl = "";
+    try {
+      const parsedUrl = new URL(String(row?.accountUrl || "").trim());
+      if (/^https?:$/.test(parsedUrl.protocol)) {
+        parsedUrl.search = "";
+        parsedUrl.hash = "";
+        parsedUrl.pathname = parsedUrl.pathname.replace(/\/+$/, "");
+        accountUrl = `${parsedUrl.protocol}//${parsedUrl.host}${parsedUrl.pathname}`;
+      }
+    } catch (_error) { /* 缺少有效主页地址时退回平台与名称 */ }
+    if (accountUrl) return `${platform}::url::${accountUrl}`;
     return `${platform}::name::${normalize(row?.name || "未命名达人")}`;
   }
 
