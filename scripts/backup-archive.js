@@ -3,7 +3,7 @@ const os = require("node:os");
 const path = require("node:path");
 const { DatabaseSync } = require("node:sqlite");
 const { loadProjectEnv } = require("../lib/env-file");
-const { assertSafeArchiveBackupDirectory, parseArchiveBackupKeep, sha256File } = require("../lib/archive-backup");
+const { assertSafeArchiveBackupDirectory, parseArchiveBackupKeep, sha256File, verifyArchiveBackup } = require("../lib/archive-backup");
 
 const root = path.resolve(__dirname, "..");
 loadProjectEnv(root);
@@ -27,21 +27,31 @@ if (!fs.existsSync(databasePath)) {
   process.exit(1);
 }
 
+let destination = "";
+let checksumPath = "";
+let backupCreated = false;
+let checksumCreated = false;
+let backupVerified = false;
+
 try {
   const backupDir = assertSafeArchiveBackupDirectory(backupDirInput);
   fs.mkdirSync(backupDir, { recursive: true, mode: 0o700 });
   fs.chmodSync(backupDir, 0o700);
   const stamp = new Date().toISOString().replace(/[-:.TZ]/g, "");
-  const destination = path.join(backupDir, "archive-" + stamp + ".db");
+  destination = path.join(backupDir, "archive-" + stamp + ".db");
   const escapedDestination = "'" + destination.replace(/'/g, "''") + "'";
   const db = new DatabaseSync(databasePath);
   db.exec("VACUUM INTO " + escapedDestination);
+  backupCreated = true;
   db.close();
   fs.chmodSync(destination, 0o600);
   const digest = sha256File(destination);
-  const checksumPath = destination + ".sha256";
-  fs.writeFileSync(checksumPath, digest + "  " + path.basename(destination) + "\n", { mode: 0o600 });
+  checksumPath = destination + ".sha256";
+  fs.writeFileSync(checksumPath, digest + "  " + path.basename(destination) + "\n", { flag: "wx", mode: 0o600 });
+  checksumCreated = true;
   fs.chmodSync(checksumPath, 0o600);
+  verifyArchiveBackup(destination);
+  backupVerified = true;
 
   const backups = fs.readdirSync(backupDir)
     .filter((name) => /^archive-.*\.db$/.test(name))
@@ -53,6 +63,10 @@ try {
   }
   console.log("存档备份完成：" + destination + "（校验和已写入，保留 " + Math.min(keep, backups.length) + " 份）");
 } catch (error) {
+  if (!backupVerified) {
+    if (backupCreated) fs.rmSync(destination, { force: true });
+    if (checksumCreated) fs.rmSync(checksumPath, { force: true });
+  }
   console.error("存档备份失败：" + error.message);
   process.exit(1);
 }

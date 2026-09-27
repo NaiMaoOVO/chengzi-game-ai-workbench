@@ -74,6 +74,14 @@ test("archive backup writes a checksum and prunes older copies by retention", ()
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
+test("archive backup verifies the new copy before pruning older recovery points", () => {
+  const script = fs.readFileSync(path.join(root, "scripts", "backup-archive.js"), "utf8");
+  const verifyPosition = script.indexOf("verifyArchiveBackup(destination)");
+  const prunePosition = script.indexOf("fs.rmSync(path.join(backupDir, name), { force: true })");
+  assert.ok(verifyPosition >= 0, "new backup must pass checksum and SQLite integrity validation");
+  assert.ok(prunePosition > verifyPosition, "retention must not run before the new copy is verified");
+});
+
 test("archive backup rejects malformed retention before pruning existing copies", (t) => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "gameops-backup-retention-invalid-test-"));
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
