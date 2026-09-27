@@ -11,6 +11,9 @@ const { createArchiveAuth } = require("./lib/archive-auth");
 const { businessDate, businessDateStart, businessTime, isValidBusinessTime } = require("./lib/business-date");
 const { SUPPORTED_PLATFORMS, isSupportedPlatform } = require("./lib/platform-provider");
 
+const currentUmask = process.umask();
+process.umask(currentUmask | 0o077);
+
 const PORT = parseIntegerConfig(process.env.ARCHIVE_PORT, { name: "ARCHIVE_PORT", min: 1, max: 65535, defaultValue: 8796 });
 const ARCHIVE_SESSION_HOURS = parseIntegerConfig(process.env.ARCHIVE_SESSION_HOURS, { name: "ARCHIVE_SESSION_HOURS", min: 1, max: 744, defaultValue: 12 });
 const MAX_BODY_BYTES = 5 * 1024 * 1024;
@@ -131,9 +134,26 @@ function parseStoredObject(value) {
 
 let db;
 let dbPath;
+
+function secureExistingArchiveFiles(databasePath) {
+  for (const suffix of ["", "-journal", "-wal", "-shm"]) {
+    const filePath = databasePath + suffix;
+    let stats;
+    try {
+      stats = fs.statSync(filePath);
+    } catch (error) {
+      if (error.code === "ENOENT") continue;
+      throw error;
+    }
+    if (!stats.isFile()) throw new Error("存档数据库及 SQLite 侧文件必须是普通文件");
+    fs.chmodSync(filePath, 0o600);
+  }
+}
+
 try {
   dbPath = process.env.ARCHIVE_DB_PATH ? path.resolve(process.env.ARCHIVE_DB_PATH) : path.join(os.homedir(), ".gameops", "archive.db");
-  fs.mkdirSync(path.dirname(dbPath), { recursive: true });
+  fs.mkdirSync(path.dirname(dbPath), { recursive: true, mode: 0o700 });
+  secureExistingArchiveFiles(dbPath);
   db = new DatabaseSync(dbPath);
 } catch (error) {
   console.error("存档服务无法打开数据文件：" + error.message);

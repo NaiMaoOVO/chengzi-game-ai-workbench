@@ -1,6 +1,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const { spawn } = require("node:child_process");
+const fs = require("node:fs");
 const http = require("node:http");
 const os = require("node:os");
 const path = require("node:path");
@@ -17,6 +18,7 @@ seedDb.exec("CREATE TABLE project_profiles (owner_key TEXT NOT NULL DEFAULT 'def
 seedDb.exec("CREATE TABLE snapshots (id INTEGER PRIMARY KEY AUTOINCREMENT, owner_key TEXT NOT NULL DEFAULT 'default', kind TEXT NOT NULL, game TEXT NOT NULL DEFAULT '', source TEXT NOT NULL DEFAULT 'sample', payload TEXT NOT NULL, request_id TEXT, created_at TEXT NOT NULL); INSERT INTO snapshots (owner_key, kind, game, source, payload, created_at) VALUES ('default', 'corrupt', '损坏快照', 'sample', '{not-json', '2026-09-15T00:00:00.000Z');");
 seedDb.exec("CREATE TABLE morning_runs (owner_key TEXT NOT NULL DEFAULT 'default', run_date TEXT NOT NULL, game TEXT NOT NULL, platform TEXT NOT NULL, status TEXT NOT NULL, started_at TEXT NOT NULL, finished_at TEXT, error TEXT NOT NULL DEFAULT '', PRIMARY KEY (run_date, game, platform)); INSERT INTO morning_runs (owner_key, run_date, game, platform, status, started_at) VALUES ('user:999', '2026-09-18', '他人私有游戏', 'B站', 'success', '2026-09-18T01:00:00.000Z');");
 seedDb.close();
+if (process.platform !== "win32") fs.chmodSync(databasePath, 0o644);
 
 function request(requestPath, options = {}) {
   const { method = "GET", headers = {}, body = null } = options;
@@ -80,6 +82,11 @@ test.after(async () => {
     new Promise((resolve) => child.once("exit", resolve)),
     new Promise((resolve) => setTimeout(resolve, 3000))
   ]);
+});
+
+test("archive startup restricts permissions on an existing database", () => {
+  if (process.platform === "win32") return;
+  assert.equal(fs.statSync(databasePath).mode & 0o777, 0o600);
 });
 
 test("archive auth requires login, CSRF, and keeps each account's data private", async () => {

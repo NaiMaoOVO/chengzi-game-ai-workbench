@@ -80,6 +80,7 @@ test.after(async () => {
 });
 
 test("archive login caps request bodies and enforces its configured rate limit", async () => {
+  if (process.platform !== "win32") assert.equal(fs.statSync(databasePath).mode & 0o777, 0o600);
   const successful = await request("/auth/login", { username: "ops-admin", password: "admin-password-2026" });
   assert.equal(successful.status, 200);
 
