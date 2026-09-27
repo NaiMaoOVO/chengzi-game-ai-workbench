@@ -2,11 +2,10 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const { DatabaseSync } = require("node:sqlite");
-const { loadProjectEnv } = require("../lib/env-file");
-const { assertSafeArchiveBackupDirectory, parseArchiveBackupKeep, sha256File, verifyArchiveBackup } = require("../lib/archive-backup");
+const { assertSafeArchiveBackupDirectory, loadArchiveBackupEnv, parseArchiveBackupKeep, sha256File, verifyArchiveBackup } = require("../lib/archive-backup");
 
 const root = path.resolve(__dirname, "..");
-loadProjectEnv(root);
+loadArchiveBackupEnv(root);
 
 const databasePath = process.env.ARCHIVE_DB_PATH
   ? path.resolve(process.env.ARCHIVE_DB_PATH)

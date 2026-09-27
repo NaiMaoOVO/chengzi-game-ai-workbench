@@ -42,3 +42,9 @@ test("runtime manifest files all exist in the project", () => {
     assert.ok(fs.statSync(path.join(projectRoot, fileName), { throwIfNoEntry: false })?.isFile(), fileName + " 不存在");
   }
 });
+
+test("runtime manifest includes the automatic archive backup dependency chain", () => {
+  for (const fileName of ["lib/archive-backup.js", "lib/archive-backup-scheduler.js", "scripts/backup-archive.js"]) {
+    assert.ok(RUNTIME_FILES.includes(fileName), "runtime manifest 缺少自动备份依赖 " + fileName);
+  }
+});

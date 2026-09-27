@@ -10,6 +10,7 @@ const { createCors } = require("./lib/cors");
 const { createArchiveAuth } = require("./lib/archive-auth");
 const { businessDate, businessDateStart, businessTime, isValidBusinessTime } = require("./lib/business-date");
 const { SUPPORTED_PLATFORMS, isSupportedPlatform } = require("./lib/platform-provider");
+const { createArchiveBackupScheduler } = require("./lib/archive-backup-scheduler");
 
 const currentUmask = process.umask();
 process.umask(currentUmask | 0o077);
@@ -1620,6 +1621,8 @@ server.listen(PORT, "127.0.0.1", () => {
   console.log("🗄 存档服务已启动 → http://127.0.0.1:" + PORT);
   console.log("   数据文件: " + dbPath);
   console.log("   健康检查: http://127.0.0.1:" + PORT + "/health");
+  const backupScheduler = createArchiveBackupScheduler({ root: __dirname, databasePath: dbPath, env: process.env });
+  backupScheduler.start();
 });
 
 /* ---- 定时晨报抓取：每天 MORNING_SCHEDULE 抓取各游戏今日热点并落库 ---- */
