@@ -129,7 +129,12 @@ module.exports = {
     app("gameops-archive", "archive-server.js", {
       ARCHIVE_PORT: process.env.ARCHIVE_PORT || "8796",
       ARCHIVE_DB_PATH: process.env.ARCHIVE_DB_PATH || "",
-      ARCHIVE_RATE_LIMIT_MAX: process.env.ARCHIVE_RATE_LIMIT_MAX || "120"
+      ARCHIVE_RATE_LIMIT_MAX: process.env.ARCHIVE_RATE_LIMIT_MAX || "120",
+      ARCHIVE_AUTH_ENABLED: process.env.ARCHIVE_AUTH_ENABLED || "0",
+      ARCHIVE_ADMIN_USERNAME: process.env.ARCHIVE_ADMIN_USERNAME || "admin",
+      ARCHIVE_ADMIN_PASSWORD: process.env.ARCHIVE_ADMIN_PASSWORD || "",
+      ARCHIVE_COOKIE_SECURE: process.env.ARCHIVE_COOKIE_SECURE || "1",
+      ARCHIVE_SESSION_HOURS: process.env.ARCHIVE_SESSION_HOURS || "12"
     })
   ]
 };
