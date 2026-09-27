@@ -33,7 +33,7 @@ for (const filename of ["nginx.conf.example", "nginx-https.conf.example"]) {
   });
 }
 
-test("HTTPS API proxy routes inherit the server-level Basic Auth gate", () => {
+test("HTTPS site locations inherit the server-level Basic Auth gate", () => {
   const config = fs.readFileSync(path.join(root, "nginx-https.conf.example"), "utf8");
   const httpsServerStart = config.indexOf("listen 443 ssl");
   assert.notEqual(httpsServerStart, -1, "expected an HTTPS server block");
@@ -49,6 +49,12 @@ test("HTTPS API proxy routes inherit the server-level Basic Auth gate", () => {
     .filter((block) => /^\s*proxy_pass\s+/m.test(block));
   assert.equal(proxyLocations.length, 5);
   for (const block of proxyLocations) {
+    assert.doesNotMatch(block, /^\s*auth_basic\s+off\s*;/im);
+  }
+
+  const allLocations = [...config.matchAll(/location\s+[^{}]+\{([^{}]*)\}/g)];
+  assert.equal(allLocations.length, 12);
+  for (const [, block] of allLocations) {
     assert.doesNotMatch(block, /^\s*auth_basic\s+off\s*;/im);
   }
 });
