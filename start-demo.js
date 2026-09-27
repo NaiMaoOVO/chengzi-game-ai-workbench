@@ -1,16 +1,17 @@
 const { spawn } = require("node:child_process");
 const http = require("node:http");
 const fs = require("node:fs");
-const os = require("node:os");
 const path = require("node:path");
 require("./lib/env-file").loadProjectEnv(__dirname);
 const { getRestartDelay } = require("./lib/service-supervisor");
+const { getControllerInstanceId, getControllerStatePaths } = require("./lib/controller-instance");
 const { parseRequestUrl } = require("./lib/safe-request-url");
 const { createCors } = require("./lib/cors");
 const { parseIntegerConfig } = require("./lib/http-guards");
 
 const ROOT = __dirname;
-const STATE_FILE = path.join(os.tmpdir(), `gameops-workbench-${process.getuid?.() || "user"}.json`);
+const CONTROLLER_INSTANCE_ID = getControllerInstanceId(ROOT);
+const STATE_FILE = getControllerStatePaths(ROOT).current;
 function configuredPort(name, value, defaultValue) {
   return parseIntegerConfig(value, { name, min: 1, max: 65535, defaultValue });
 }
@@ -124,7 +125,7 @@ async function ensureServices() {
     if (!url) { j(400, {ok:false, message:"invalid request URL"}); return; }
     var parts = url.pathname.split("/").filter(Boolean);
     if (req.method !== "GET") { j(405, {ok:false, message:"method not allowed"}); return; }
-    if (parts[0] === "health" || parts[0] === "") { j(200, {ok:true, service:"gameops-local-controller", version:1}); return; }
+    if (parts[0] === "health" || parts[0] === "") { j(200, {ok:true, service:"gameops-local-controller", version:1, instanceId:CONTROLLER_INSTANCE_ID}); return; }
     if (parts[0] === "status") {
       var r = [];
       for (var s of SERVICES) {
@@ -142,7 +143,7 @@ async function ensureServices() {
     process.exit(1);
   });
   srv.listen(CONTROLLER_PORT, "127.0.0.1", function() {
-    fs.writeFileSync(STATE_FILE, JSON.stringify({pid:process.pid, project:ROOT}) + "\n", {mode:0o600});
+    fs.writeFileSync(STATE_FILE, JSON.stringify({pid:process.pid, project:ROOT, instanceId:CONTROLLER_INSTANCE_ID}) + "\n", {mode:0o600});
     console.log("\x1b[36mLauncher http://127.0.0.1:" + CONTROLLER_PORT + "\x1b[0m");
   });
 })();
@@ -181,7 +182,7 @@ async function main() {
     managedChildren.forEach((child) => child.kill());
     try {
       const state = JSON.parse(fs.readFileSync(STATE_FILE, "utf8"));
-      if (state.pid === process.pid) fs.rmSync(STATE_FILE, { force: true });
+      if (state.pid === process.pid && state.project === ROOT && state.instanceId === CONTROLLER_INSTANCE_ID) fs.rmSync(STATE_FILE, { force: true });
     } catch (_error) {
       // State may already have been removed by the restart helper.
     }

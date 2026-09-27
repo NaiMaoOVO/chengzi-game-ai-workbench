@@ -8,6 +8,7 @@ const os = require("node:os");
 const path = require("node:path");
 const { DatabaseSync } = require("node:sqlite");
 const { businessDate, businessDateStart } = require("../lib/business-date");
+const { getControllerInstanceId, getControllerStatePaths } = require("../lib/controller-instance");
 const { parseRequestUrl } = require("../lib/safe-request-url");
 
 const projectRoot = path.resolve(__dirname, "..");
@@ -170,12 +171,17 @@ test("local controller serves CORS headers for file pages and supervises child s
     },
     stdio: ["ignore", "pipe", "pipe"]
   });
+  const controllerStateFile = getControllerStatePaths(projectRoot).current;
   let stderrText = "";
   child.stderr.on("data", (chunk) => { stderrText += chunk.toString("utf8"); });
   try {
     await waitForHealth(ports.controller, 15000);
     const health = await fetch(`http://127.0.0.1:${ports.controller}/health`).then((r) => r.json());
     assert.equal(health.service, "gameops-local-controller");
+    assert.equal(health.instanceId, getControllerInstanceId(projectRoot));
+    const state = JSON.parse(fs.readFileSync(controllerStateFile, "utf8"));
+    assert.equal(state.project, projectRoot);
+    assert.equal(state.instanceId, health.instanceId);
 
     const corsResponse = await fetch(`http://127.0.0.1:${ports.controller}/health`, {
       headers: { Origin: "null" }
@@ -200,6 +206,7 @@ test("local controller serves CORS headers for file pages and supervises child s
   } finally {
     child.kill("SIGTERM");
     await new Promise((resolve) => child.once("exit", resolve));
+    assert.equal(fs.existsSync(controllerStateFile), false, "controller should remove only its own state file on shutdown");
   }
 });
 

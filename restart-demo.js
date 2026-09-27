@@ -1,44 +1,49 @@
 const { spawn, execFileSync } = require("node:child_process");
 const fs = require("node:fs");
 const http = require("node:http");
-const os = require("node:os");
 const path = require("node:path");
 require("./lib/env-file").loadProjectEnv(__dirname);
 const { parseIntegerConfig } = require("./lib/http-guards");
+const { getControllerInstanceId, getControllerStatePaths, isProjectControllerCommand } = require("./lib/controller-instance");
 
 const ROOT = __dirname;
-const STATE_FILE = path.join(os.tmpdir(), `gameops-workbench-${process.getuid?.() || "user"}.json`);
+const CONTROLLER_INSTANCE_ID = getControllerInstanceId(ROOT);
+const STATE_PATHS = getControllerStatePaths(ROOT);
+const STATE_FILE = STATE_PATHS.current;
 const CONTROLLER_PORT = parseIntegerConfig(process.env.CONTROLLER_PORT, { name: "CONTROLLER_PORT", min: 1, max: 65535, defaultValue: 8793 });
 const START_SCRIPT = path.join(ROOT, "start-demo.js");
 
-function isProjectController(pid) {
+function isProjectController(pid, { allowRelativeScript = false } = {}) {
   if (!Number.isInteger(pid) || pid <= 1) return false;
   try {
     const command = execFileSync("ps", ["-p", String(pid), "-o", "command="], {
       encoding: "utf8"
     }).trim();
-    const parts = command.split(/\s+/);
-    const nodeBin = parts[0] || "";
-    const nodeOk =
-      nodeBin === process.execPath ||
-      nodeBin === "node" ||
-      nodeBin.endsWith("/node") ||
-      nodeBin.endsWith("/node.exe");
-    const scriptOk = parts.slice(1).some(
-      (arg) => arg === START_SCRIPT || arg === "start-demo.js" || arg.endsWith("/start-demo.js")
-    );
-    return nodeOk && scriptOk;
+    return isProjectControllerCommand(command, ROOT, { allowRelativeScript });
   } catch (_error) {
     return false;
   }
 }
 
-function readStatePid() {
+function readStateFile(filePath, { legacy = false } = {}) {
   try {
-    return Number(JSON.parse(fs.readFileSync(STATE_FILE, "utf8")).pid);
+    const state = JSON.parse(fs.readFileSync(filePath, "utf8"));
+    if (state.project !== ROOT || !Number.isInteger(state.pid) || state.pid <= 1) return null;
+    if (state.instanceId && state.instanceId !== CONTROLLER_INSTANCE_ID) return null;
+    if (!legacy && state.instanceId !== CONTROLLER_INSTANCE_ID) return null;
+    return { pid: state.pid, filePath };
   } catch (_error) {
-    return 0;
+    return null;
   }
+}
+
+function readProjectState() {
+  return readStateFile(STATE_FILE) || readStateFile(STATE_PATHS.legacy, { legacy: true });
+}
+
+function removeOwnedState(filePath, legacy = false) {
+  const state = readStateFile(filePath, { legacy });
+  if (state) fs.rmSync(filePath, { force: true });
 }
 
 function findListenerPid(port) {
@@ -71,7 +76,8 @@ function checkControllerIdentity() {
           resolve(
             response.statusCode === 200 &&
               payload.ok === true &&
-              payload.service === "gameops-local-controller"
+              payload.service === "gameops-local-controller" &&
+              (!payload.instanceId || payload.instanceId === CONTROLLER_INSTANCE_ID)
           );
         } catch (_error) {
           resolve(false);
@@ -87,8 +93,8 @@ function checkControllerIdentity() {
 }
 
 async function resolveControllerPid() {
-  const statePid = readStatePid();
-  if (isProjectController(statePid)) return statePid;
+  const state = readProjectState();
+  if (state && isProjectController(state.pid, { allowRelativeScript: true })) return state.pid;
 
   const listenerPid = findListenerPid(CONTROLLER_PORT);
   if (!isProjectController(listenerPid)) return 0;
@@ -125,7 +131,8 @@ async function main() {
     const stopped = await waitForExit(pid);
     if (!stopped) throw new Error("旧控制进程未能在 5 秒内退出，请稍后重试");
   }
-  fs.rmSync(STATE_FILE, { force: true });
+  removeOwnedState(STATE_FILE);
+  removeOwnedState(STATE_PATHS.legacy, true);
 
   const child = spawn(process.execPath, [START_SCRIPT], {
     cwd: ROOT,
