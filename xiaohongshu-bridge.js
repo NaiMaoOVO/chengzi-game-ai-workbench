@@ -6,10 +6,11 @@ const { spawn } = require("node:child_process");
 const { loadProjectEnv } = require("./lib/env-file");
 const { createCors } = require("./lib/cors");
 const { parseRequestUrl } = require("./lib/safe-request-url");
+const { parseIntegerConfig } = require("./lib/http-guards");
 
 loadProjectEnv(__dirname);
 
-const PORT = Number(process.env.XHS_BRIDGE_PORT) || 8805;
+const PORT = parseIntegerConfig(process.env.XHS_BRIDGE_PORT, { name: "XHS_BRIDGE_PORT", min: 1, max: 65535, defaultValue: 8805 });
 const MCP_SERVER = process.env.XHS_MCP_SERVER || "xiaohongshu";
 const BRIDGE_TOKEN = process.env.XHS_BRIDGE_TOKEN || "";
 const MAX_OUTPUT_BYTES = 2 * 1024 * 1024;

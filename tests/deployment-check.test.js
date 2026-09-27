@@ -132,6 +132,25 @@ test("deployment check validates numeric service resource bounds", () => {
   assert.equal(boundaryValues.status, 0, boundaryValues.stderr);
 });
 
+test("deployment check validates configured service ports", () => {
+  const invalidPorts = [
+    ["HOTSPOT_PORT", "0"],
+    ["COMMENT_PORT", "65536"],
+    ["OCR_PORT", "abc"],
+    ["LLM_PORT", "-1"],
+    ["ARCHIVE_PORT", "Infinity"]
+  ];
+
+  for (const [name, value] of invalidPorts) {
+    const result = runCheck("https://gameops.test", { [name]: value });
+    assert.equal(result.status, 1, `${name}=${value} unexpectedly passed deployment checks`);
+    assert.match(result.stderr, new RegExp(`${name} 必须是 1-65535 之间的整数`));
+  }
+
+  const highestPort = runCheck("https://gameops.test", { HOTSPOT_PORT: "65535" });
+  assert.equal(highestPort.status, 0, highestPort.stderr);
+});
+
 test("deployment check validates the scheduled morning time and normalizes whitespace", () => {
   for (const value of ["9:00", "24:00", "12:60", "09:00x"]) {
     const result = runCheck("https://gameops.test", { MORNING_SCHEDULE: value });

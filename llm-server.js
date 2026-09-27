@@ -6,7 +6,7 @@ const { createCors } = require("./lib/cors");
 const { assertSafeProviderUrl } = require("./lib/platform-provider");
 require("./lib/env-file").loadProjectEnv(__dirname);
 
-const PORT = Number(process.env.LLM_PORT) || 8794;
+const PORT = parseIntegerConfig(process.env.LLM_PORT, { name: "LLM_PORT", min: 1, max: 65535, defaultValue: 8794 });
 const LLM_API_KEY = process.env.LLM_API_KEY || "";
 const LLM_BASE_URL = (process.env.LLM_BASE_URL || "https://api.deepseek.com/v1").replace(/\/+$/, "");
 const LLM_MODEL = process.env.LLM_MODEL || "deepseek-chat";

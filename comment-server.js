@@ -7,7 +7,7 @@ const { extractBvid, extractAid } = require("./lib/bilibili-url");
 const { createFetchWithRetry } = require("./lib/fetch-with-retry");
 const { createCors } = require("./lib/cors");
 
-const PORT = Number(process.env.COMMENT_PORT || 8791);
+const PORT = parseIntegerConfig(process.env.COMMENT_PORT, { name: "COMMENT_PORT", min: 1, max: 65535, defaultValue: 8791 });
 const VIDEO_INFO_URL = process.env.BILIBILI_VIDEO_INFO_URL || "https://api.bilibili.com/x/web-interface/view";
 const REPLY_URL = "https://api.bilibili.com/x/v2/reply/main";
 const REPLY_FALLBACK_URL = "https://api.bilibili.com/x/v2/reply";

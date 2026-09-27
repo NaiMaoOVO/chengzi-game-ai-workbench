@@ -120,7 +120,7 @@ for (const [index, item] of serviceCases.entries()) {
     const port = 18800 + index * 7;
     const child = spawn(process.execPath, [path.join(projectRoot, item.script)], {
       cwd: projectRoot,
-      env: { ...process.env, [item.envPort]: String(port), ...(item.script === "archive-server.js" ? { ARCHIVE_DB_PATH: path.join(require("node:os").tmpdir(), "gameops-archive-smoke-" + Date.now() + ".db") } : {}) },
+      env: { ...process.env, [item.envPort]: String(port), ...(item.script === "ocr-server.js" ? { OCR_PORT: "" } : {}), ...(item.script === "archive-server.js" ? { ARCHIVE_DB_PATH: path.join(require("node:os").tmpdir(), "gameops-archive-smoke-" + Date.now() + ".db") } : {}) },
       stdio: ["ignore", "pipe", "pipe"]
     });
     let stderrText = "";
@@ -159,7 +159,8 @@ test("local controller serves CORS headers for file pages and supervises child s
       CONTROLLER_PORT: String(ports.controller),
       HOTSPOT_PORT: String(ports.hotspot),
       COMMENT_PORT: String(ports.comment),
-      PORT: String(ports.ocr),
+      OCR_PORT: String(ports.ocr),
+      PORT: "",
       LLM_PORT: String(ports.llm),
       ARCHIVE_PORT: String(ports.archive),
       ARCHIVE_DB_PATH: path.join(require("node:os").tmpdir(), "gameops-chain-smoke-" + Date.now() + ".db"),
@@ -190,6 +191,7 @@ test("local controller serves CORS headers for file pages and supervises child s
     for (const service of status.services) {
       assert.equal(service.running, true, `${service.name} 应处于运行状态`);
     }
+    assert.equal(status.services.some((service) => service.name === "OCR 服务" && service.port === ports.ocr && service.running), true);
     assert.equal(status.services.some((service) => service.name === "存档服务" && service.port === ports.archive && service.running && service.ready), true);
   } catch (error) {
     assert.fail(`${error.message}\nstderr: ${stderrText.slice(-800)}`);
@@ -214,7 +216,8 @@ test("local controller distinguishes a running archive from writable storage", {
       CONTROLLER_PORT: String(ports.controller),
       HOTSPOT_PORT: String(ports.hotspot),
       COMMENT_PORT: String(ports.comment),
-      PORT: String(ports.ocr),
+      OCR_PORT: String(ports.ocr),
+      PORT: "",
       LLM_PORT: String(ports.llm),
       ARCHIVE_PORT: String(ports.archive),
       GAMEOPS_NO_OPEN: "1"
@@ -275,7 +278,7 @@ async function withGuardedService(script, envPortName, extraEnv, run) {
   nextGuardPort += 1;
   const child = spawn(process.execPath, [path.join(projectRoot, script)], {
     cwd: projectRoot,
-    env: { ...process.env, [envPortName]: String(port), ...extraEnv },
+    env: { ...process.env, [envPortName]: String(port), ...(envPortName === "PORT" ? { OCR_PORT: "" } : {}), ...extraEnv },
     stdio: ["ignore", "pipe", "pipe"]
   });
   let stderrText = "";
@@ -588,6 +591,38 @@ test("OCR and LLM services reject invalid timeouts, concurrency, and cache setti
     });
     assert.equal(result.status, 1, `${script} unexpectedly started with invalid config`);
     assert.match(result.stderr, message);
+  }
+});
+
+test("all service entry points reject out-of-range ports before binding", () => {
+  const invalidPorts = [
+    ["hotspot-server.js", "HOTSPOT_PORT", /HOTSPOT_PORT must be an integer between 1 and 65535/],
+    ["comment-server.js", "COMMENT_PORT", /COMMENT_PORT must be an integer between 1 and 65535/],
+    ["ocr-server.js", "PORT", /PORT must be an integer between 1 and 65535/],
+    ["llm-server.js", "LLM_PORT", /LLM_PORT must be an integer between 1 and 65535/],
+    ["archive-server.js", "ARCHIVE_PORT", /ARCHIVE_PORT must be an integer between 1 and 65535/],
+    ["xiaohongshu-bridge.js", "XHS_BRIDGE_PORT", /XHS_BRIDGE_PORT must be an integer between 1 and 65535/]
+  ];
+
+  for (const [script, envPort, message] of invalidPorts) {
+    const tempDir = script === "archive-server.js" ? fs.mkdtempSync(path.join(os.tmpdir(), "gameops-invalid-port-")) : null;
+    const extraEnv = { [envPort]: "65536" };
+    if (script === "ocr-server.js") extraEnv.OCR_PORT = "";
+    if (tempDir) extraEnv.ARCHIVE_DB_PATH = path.join(tempDir, "archive.db");
+
+    try {
+      const result = spawnSync(process.execPath, [path.join(projectRoot, script)], {
+        cwd: projectRoot,
+        env: { ...process.env, ...extraEnv },
+        encoding: "utf8",
+        timeout: 3000
+      });
+      assert.equal(result.status, 1, `${script} unexpectedly started with port 65536`);
+      assert.match(result.stderr, message);
+      if (tempDir) assert.equal(fs.existsSync(path.join(tempDir, "archive.db")), false, "invalid archive port must be rejected before opening SQLite");
+    } finally {
+      if (tempDir) fs.rmSync(tempDir, { recursive: true, force: true });
+    }
   }
 });
 

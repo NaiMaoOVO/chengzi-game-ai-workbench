@@ -11,7 +11,7 @@ const { createArchiveAuth } = require("./lib/archive-auth");
 const { businessDate, businessTime, isValidBusinessTime } = require("./lib/business-date");
 const { SUPPORTED_PLATFORMS, isSupportedPlatform } = require("./lib/platform-provider");
 
-const PORT = Number(process.env.ARCHIVE_PORT) || 8796;
+const PORT = parseIntegerConfig(process.env.ARCHIVE_PORT, { name: "ARCHIVE_PORT", min: 1, max: 65535, defaultValue: 8796 });
 const ARCHIVE_SESSION_HOURS = parseIntegerConfig(process.env.ARCHIVE_SESSION_HOURS, { name: "ARCHIVE_SESSION_HOURS", min: 1, max: 744, defaultValue: 12 });
 const MAX_BODY_BYTES = 5 * 1024 * 1024;
 const cors = createCors({ allowedOrigins: process.env.ALLOWED_ORIGIN, methods: "GET, POST, PUT, DELETE, OPTIONS", allowFileOrigin: process.env.ALLOW_FILE_ORIGIN === "1" || process.env.NODE_ENV !== "production" });

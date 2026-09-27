@@ -10,7 +10,8 @@ const { parseIntegerConfig, createRateLimiter } = require("./lib/http-guards");
 const { parseChineseNumber, detectImage } = require("./lib/ocr-heuristics");
 const { createCors } = require("./lib/cors");
 
-const PORT = Number(process.env.PORT) || 8787;
+const OCR_PORT_NAME = process.env.OCR_PORT ? "OCR_PORT" : "PORT";
+const PORT = parseIntegerConfig(process.env.OCR_PORT || process.env.PORT, { name: OCR_PORT_NAME, min: 1, max: 65535, defaultValue: 8787 });
 const MAX_UPLOAD_BYTES = 12 * 1024 * 1024;
 const MAX_REMOTE_RESPONSE_BYTES = 2 * 1024 * 1024;
 const UPLOAD_REJECT_GRACE_MS = 500;

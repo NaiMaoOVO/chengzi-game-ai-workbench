@@ -57,6 +57,22 @@ for (const [name, options, message] of [
   }
 }
 
+const configuredPorts = [
+  ["HOTSPOT_PORT", process.env.HOTSPOT_PORT],
+  ["COMMENT_PORT", process.env.COMMENT_PORT],
+  [process.env.OCR_PORT ? "OCR_PORT" : "PORT", process.env.OCR_PORT || process.env.PORT],
+  ["LLM_PORT", process.env.LLM_PORT],
+  ["ARCHIVE_PORT", process.env.ARCHIVE_PORT]
+];
+for (const [name, rawValue] of configuredPorts) {
+  if (rawValue === undefined || !String(rawValue).trim()) continue;
+  try {
+    parseIntegerConfig(rawValue, { name, min: 1, max: 65535 });
+  } catch (_error) {
+    throw new Error(`${name} 必须是 1-65535 之间的整数`);
+  }
+}
+
 function hasExampleHost(value) {
   try {
     const host = new URL(value.trim()).hostname.toLowerCase().replace(/\.+$/, "");

@@ -7,29 +7,33 @@ require("./lib/env-file").loadProjectEnv(__dirname);
 const { getRestartDelay } = require("./lib/service-supervisor");
 const { parseRequestUrl } = require("./lib/safe-request-url");
 const { createCors } = require("./lib/cors");
+const { parseIntegerConfig } = require("./lib/http-guards");
 
 const ROOT = __dirname;
 const STATE_FILE = path.join(os.tmpdir(), `gameops-workbench-${process.getuid?.() || "user"}.json`);
-const CONTROLLER_PORT = Number(process.env.CONTROLLER_PORT) || 8793;
+function configuredPort(name, value, defaultValue) {
+  return parseIntegerConfig(value, { name, min: 1, max: 65535, defaultValue });
+}
+const CONTROLLER_PORT = configuredPort("CONTROLLER_PORT", process.env.CONTROLLER_PORT, 8793);
+const OCR_PORT = configuredPort(process.env.OCR_PORT ? "OCR_PORT" : "PORT", process.env.OCR_PORT || process.env.PORT, 8787);
+const xhsBridgePort = configuredPort("XHS_BRIDGE_PORT", process.env.XHS_BRIDGE_PORT, 8805);
 const CORE_SERVICES = [
-  { name: "热点服务", script: "hotspot-server.js", port: Number(process.env.HOTSPOT_PORT) || 8790, identity: "gameops-hotspot" },
-  { name: "评论服务", script: "comment-server.js", port: Number(process.env.COMMENT_PORT) || 8791, identity: "gameops-comments" },
-  { name: "OCR 服务", script: "ocr-server.js", port: Number(process.env.PORT) || 8787, identity: "gameops-ocr" },
-  { name: "AI 增强服务", script: "llm-server.js", port: Number(process.env.LLM_PORT) || 8794, identity: "gameops-llm" },
-  { name: "存档服务", script: "archive-server.js", port: Number(process.env.ARCHIVE_PORT) || 8796, identity: "gameops-archive" }
+  { name: "热点服务", script: "hotspot-server.js", port: configuredPort("HOTSPOT_PORT", process.env.HOTSPOT_PORT, 8790), identity: "gameops-hotspot" },
+  { name: "评论服务", script: "comment-server.js", port: configuredPort("COMMENT_PORT", process.env.COMMENT_PORT, 8791), identity: "gameops-comments" },
+  { name: "OCR 服务", script: "ocr-server.js", port: OCR_PORT, identity: "gameops-ocr" },
+  { name: "AI 增强服务", script: "llm-server.js", port: configuredPort("LLM_PORT", process.env.LLM_PORT, 8794), identity: "gameops-llm" },
+  { name: "存档服务", script: "archive-server.js", port: configuredPort("ARCHIVE_PORT", process.env.ARCHIVE_PORT, 8796), identity: "gameops-archive" }
 ];
 function isLocalXhsBridgeConfigured() {
   if (!process.env.XIAOHONGSHU_PROVIDER_URL) return false;
   try {
     const url = new URL(process.env.XIAOHONGSHU_PROVIDER_URL);
-    const port = Number(process.env.XHS_BRIDGE_PORT) || 8805;
     return url.protocol === "http:" && ["127.0.0.1", "localhost", "::1"].includes(url.hostname)
-      && Number(url.port || 80) === port && url.pathname === "/search";
+      && Number(url.port || 80) === xhsBridgePort && url.pathname === "/search";
   } catch (_error) {
     return false;
   }
 }
-const xhsBridgePort = Number(process.env.XHS_BRIDGE_PORT) || 8805;
 const SERVICES = isLocalXhsBridgeConfigured()
   ? [...CORE_SERVICES, { name: "小红书 MCP 桥接", script: "xiaohongshu-bridge.js", port: xhsBridgePort, identity: "gameops-xiaohongshu-bridge", token: process.env.XHS_BRIDGE_TOKEN || "" }]
   : CORE_SERVICES;
