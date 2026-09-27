@@ -16,6 +16,13 @@ test("rate limiter trusts the proxy header only when explicitly enabled", () => 
   assert.equal(limiter(request("2.2.2.2")).allowed, true);
 });
 
+test("rate limiter rejects invalid bounds instead of silently allowing requests", () => {
+  assert.throws(() => createRateLimiter({ windowMs: Number.NaN, max: 1 }), /windowMs/);
+  assert.throws(() => createRateLimiter({ windowMs: 60000, max: Number.NaN }), /max/);
+  assert.throws(() => createRateLimiter({ windowMs: 0, max: 1 }), /windowMs/);
+  assert.throws(() => createRateLimiter({ windowMs: 60000, max: 1, maxKeys: 0 }), /maxKeys/);
+});
+
 test("single-flight cache shares an in-flight producer and stable serializes keys", async () => {
   assert.equal(stableSerialize({ b: 2, a: 1 }), stableSerialize({ a: 1, b: 2 }));
   const cache = createSingleFlightCache({ ttlMs: 1000, maxEntries: 2 });

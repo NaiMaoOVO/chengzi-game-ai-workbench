@@ -11,6 +11,20 @@ if (!new Set(["macos", "remote"]).has(ocrProvider)) {
   throw new Error("OCR_PROVIDER 必须是 macos 或 remote");
 }
 
+for (const name of [
+  "RATE_LIMIT_MAX",
+  "RATE_LIMIT_WINDOW_MS",
+  "ARCHIVE_RATE_LIMIT_MAX",
+  "ARCHIVE_AUTH_RATE_LIMIT_MAX",
+  "OCR_RATE_LIMIT_MAX",
+  "LLM_RATE_LIMIT_MAX"
+]) {
+  const rawValue = process.env[name];
+  if (rawValue === undefined || !String(rawValue).trim()) continue;
+  const value = Number(rawValue);
+  if (!Number.isSafeInteger(value) || value < 1) throw new Error(`${name} 必须是正整数`);
+}
+
 function hasExampleHost(value) {
   try {
     const host = new URL(value.trim()).hostname.toLowerCase().replace(/\.+$/, "");

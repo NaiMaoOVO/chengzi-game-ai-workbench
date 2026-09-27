@@ -81,6 +81,23 @@ test("deployment check rejects unsupported OCR providers and normalizes remote p
   assert.equal(config.stdout.trim(), "remote");
 });
 
+test("deployment check rejects malformed rate limit settings before PM2 starts services", () => {
+  const invalidSettings = [
+    ["RATE_LIMIT_MAX", "not-a-number"],
+    ["RATE_LIMIT_WINDOW_MS", "NaN"],
+    ["ARCHIVE_RATE_LIMIT_MAX", "0"],
+    ["ARCHIVE_AUTH_RATE_LIMIT_MAX", "1.5"],
+    ["OCR_RATE_LIMIT_MAX", "Infinity"],
+    ["LLM_RATE_LIMIT_MAX", "999999999999999999999"]
+  ];
+
+  for (const [name, value] of invalidSettings) {
+    const result = runCheck("https://gameops.test", { [name]: value });
+    assert.equal(result.status, 1, `${name} unexpectedly passed deployment checks`);
+    assert.match(result.stderr, new RegExp(`${name} 必须是正整数`));
+  }
+});
+
 test("deployment check validates production admin and remote OCR transport", () => {
   const invalidConfigs = [
     [{ ARCHIVE_ADMIN_USERNAME: "bad username" }, /ARCHIVE_ADMIN_USERNAME 必须是 3-40 位/],
