@@ -140,6 +140,32 @@ test("backup restore is cancelled when another tab changes the corrupt library a
   assert.match(harness.storage.issue(), /确认期间.*变化/);
 });
 
+test("cloud sync cannot overwrite a newer local creator library", () => {
+  const initial = JSON.stringify({ old: { name: "旧档案", platform: "B站" } });
+  const harness = createStorage(initial);
+  harness.storage.read();
+  const expectedRaw = harness.storage.rawSnapshot();
+  const newerLibrary = JSON.stringify({ latest: { name: "同步期间新增", platform: "小红书" } });
+  harness.setExternally(newerLibrary);
+
+  assert.equal(harness.storage.write({ old: { name: "旧档案", platform: "B站" } }, {
+    requireUnchanged: true,
+    expectedRaw
+  }), false);
+  assert.equal(harness.value(), newerLibrary);
+  assert.equal(harness.writes(), 0);
+  assert.equal(harness.storage.corrupt(), false);
+  assert.match(harness.storage.issue(), /同步期间.*变化/);
+
+  const syncStart = app.indexOf("async function syncCreatorLibrary()");
+  const syncEnd = app.indexOf("function explainCreatorScore", syncStart);
+  const syncSource = app.slice(syncStart, syncEnd);
+  assert.match(syncSource, /const expectedLocalRaw = creatorLibraryStorageRawSnapshot/);
+  assert.match(syncSource, /writeCreatorLibrary\(merged, \{ requireUnchanged: true, expectedRaw: expectedLocalRaw \}\)/);
+  assert.match(syncSource, /同步期间发生变化[\s\S]{0,80}请再次同步/);
+  assert.match(syncSource, /同步期间发生变化\/.test\(message\)/);
+});
+
 test("cloud creator sync stops before writing remotely when the local library is damaged", () => {
   const syncStart = app.indexOf("async function syncCreatorLibrary()");
   const syncEnd = app.indexOf("function explainCreatorScore", syncStart);

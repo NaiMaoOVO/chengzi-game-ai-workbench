@@ -6087,7 +6087,7 @@ function readCreatorLibrary() {
   }
 }
 
-function writeCreatorLibrary(library, { replaceCorrupt = false, expectedCorruptRaw } = {}) {
+function writeCreatorLibrary(library, { replaceCorrupt = false, expectedCorruptRaw, requireUnchanged = false, expectedRaw } = {}) {
   const previousIssue = creatorLibraryStorageIssue;
   const previousCorrupt = creatorLibraryStorageCorrupt;
   creatorLibraryStorageIssue = "";
@@ -6111,6 +6111,12 @@ function writeCreatorLibrary(library, { replaceCorrupt = false, expectedCorruptR
     if (!storage) throw new Error("浏览器存储不可用");
     const key = creatorLibraryStorageKey();
     const raw = storage.getItem(key);
+    if (requireUnchanged && raw !== expectedRaw) {
+      readCreatorLibrary();
+      const latestIssue = creatorLibraryStorageIssue;
+      creatorLibraryStorageIssue = `个人库在同步期间发生变化，已取消旧快照写入。${latestIssue ? ` ${latestIssue}` : "新数据已保留，请再次同步。"}`;
+      return false;
+    }
     if (replaceCorrupt && (typeof expectedCorruptRaw !== "string" || raw !== expectedCorruptRaw)) {
       readCreatorLibrary();
       const latestIssue = creatorLibraryStorageIssue;
@@ -6668,6 +6674,7 @@ async function syncCreatorLibrary() {
   setStatus("个人库：正在同步…");
   try {
     const localLibrary = readCreatorLibrary();
+    const expectedLocalRaw = creatorLibraryStorageRawSnapshot;
     if (creatorLibraryStorageIssue) throw new Error(creatorLibraryStorageIssue);
     const { response: remoteResponse, payload: remote } = await archiveJsonRequestWithTimeout(
       ARCHIVE_SERVICE_URL + "/creator-library",
@@ -6679,6 +6686,11 @@ async function syncCreatorLibrary() {
     const remoteLibrary = remote.library || {};
     const invalidCount = invalidCreatorLibraryEntries(localLibrary).length + invalidCreatorLibraryEntries(remoteLibrary).length;
     if (invalidCount) throw new Error(`个人库发现 ${invalidCount} 条损坏记录，已阻止覆盖；请恢复备份或导出后修复`);
+    readCreatorLibrary();
+    if (creatorLibraryStorageIssue) throw new Error(creatorLibraryStorageIssue);
+    if (creatorLibraryStorageRawSnapshot !== expectedLocalRaw) {
+      throw new Error("本机个人库在同步期间发生变化，已取消旧快照同步；请再次同步");
+    }
     let merged = mergeCreatorLibraries(localLibrary, remoteLibrary);
     const put = async (baseUpdatedAt, library) => {
       return archiveJsonRequestWithTimeout(ARCHIVE_SERVICE_URL + "/creator-library", {
@@ -6696,7 +6708,9 @@ async function syncCreatorLibrary() {
     }
     if (generation !== creatorLibrarySyncGeneration) return;
     if (!result.response.ok || !result.payload.ok) throw new Error(result.payload.error || `HTTP ${result.response.status}`);
-    if (!writeCreatorLibrary(merged)) throw new Error(creatorLibraryStorageIssue || "浏览器存储空间不足，无法写入同步结果");
+    if (!writeCreatorLibrary(merged, { requireUnchanged: true, expectedRaw: expectedLocalRaw })) {
+      throw new Error(creatorLibraryStorageIssue || "浏览器存储空间不足，无法写入同步结果");
+    }
     renderCreatorLibrary();
     renderCreatorTable(currentCreatorRows, document.querySelector("#creator-goal")?.value || "launch", document.querySelector("#creator-activity")?.value || "newLaunch");
     setStatus(`个人库：已同步 ${Object.keys(merged).length} 位创作者。`, true);
@@ -6705,7 +6719,7 @@ async function syncCreatorLibrary() {
     const message = String(error?.message || "");
     const detail = isArchiveServiceUnavailable(error)
       ? "本机存档服务未连接；启动服务后重试"
-      : /请先登录|数据损坏|个人库存储不可用|本机个人库|损坏记录|存储空间不足/.test(message)
+      : /请先登录|数据损坏|个人库存储不可用|本机个人库|损坏记录|存储空间不足|同步期间发生变化/.test(message)
         ? message
         : "暂不可用，请稍后重试";
     setStatus(`个人库：同步失败，${detail}。本地数据未受影响。`);

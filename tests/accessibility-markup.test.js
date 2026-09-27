@@ -2116,6 +2116,7 @@ test("creator library sync ignores a late previous-account response", async () =
     document: { querySelector: (selector) => selector === "#creator-status" ? { textContent: "", className: "" } : null },
     ARCHIVE_SERVICE_URL: "https://archive.example",
     creatorLibraryStorageIssue: "",
+    creatorLibraryStorageRawSnapshot: null,
     archiveRequest: async (_url, options) => {
       if (options.method === "PUT") return response({ ok: true });
       readCount += 1;
@@ -2156,6 +2157,86 @@ test("creator library sync ignores a late previous-account response", async () =
   await firstAccountSync;
   assert.equal(writes.length, 1);
   assert.equal(writes[0].library["remote-a"], undefined);
+});
+
+function createCreatorSyncHarness(archiveJsonRequestWithTimeout) {
+  let localRaw = JSON.stringify({ local: { name: "已有档案", platform: "B站" } });
+  const status = { textContent: "", className: "" };
+  const context = {
+    AbortController,
+    ARCHIVE_SERVICE_URL: "https://archive.example",
+    creatorLibraryStorageIssue: "",
+    creatorLibraryStorageRawSnapshot: undefined,
+    document: { querySelector: (selector) => selector === "#creator-status" ? status : null },
+    archiveJsonRequestWithTimeout,
+    readCreatorLibrary: () => {
+      context.creatorLibraryStorageRawSnapshot = localRaw;
+      return JSON.parse(localRaw);
+    },
+    writeCreatorLibrary: (library, options = {}) => {
+      if (options.requireUnchanged && localRaw !== options.expectedRaw) {
+        context.readCreatorLibrary();
+        context.creatorLibraryStorageIssue = "本机个人库在同步期间发生变化，已取消旧快照写入。新数据已保留，请再次同步。";
+        return false;
+      }
+      localRaw = JSON.stringify(library);
+      return true;
+    },
+    invalidCreatorLibraryEntries: () => [],
+    mergeCreatorLibraries: (local, remote) => ({ ...remote, ...local }),
+    renderCreatorLibrary: () => {},
+    renderCreatorTable: () => {},
+    currentCreatorRows: [],
+    isArchiveServiceUnavailable: () => false
+  };
+  const syncStart = app.indexOf("let creatorLibrarySyncGeneration = 0;");
+  const syncEnd = app.indexOf("function explainCreatorScore", syncStart);
+  vm.runInNewContext(`${app.slice(syncStart, syncEnd)}\nthis.syncLibrary = syncCreatorLibrary;`, context);
+  return {
+    context,
+    status,
+    localRaw: () => localRaw,
+    setLocalRaw: (value) => { localRaw = value; }
+  };
+}
+
+test("creator sync detects local changes while loading the remote library", async () => {
+  let resolveRead;
+  let putCount = 0;
+  const harness = createCreatorSyncHarness((_url, options) => {
+    if (options.method === "PUT") {
+      putCount += 1;
+      return Promise.resolve({ response: { ok: true, status: 200 }, payload: { ok: true, updated_at: "next" } });
+    }
+    return new Promise((resolve) => { resolveRead = resolve; });
+  });
+  const sync = harness.context.syncLibrary();
+  const newerRaw = JSON.stringify({ latest: { name: "同步期间新增", platform: "小红书" } });
+  harness.setLocalRaw(newerRaw);
+  resolveRead({ response: { ok: true, status: 200 }, payload: { ok: true, library: {}, updated_at: "remote" } });
+  await sync;
+
+  assert.equal(putCount, 0);
+  assert.equal(harness.localRaw(), newerRaw);
+  assert.match(harness.status.textContent, /同步期间发生变化.*再次同步/);
+});
+
+test("creator sync does not overwrite local changes made while saving remotely", async () => {
+  let resolveWrite;
+  const harness = createCreatorSyncHarness((_url, options) => {
+    if (options.method === "PUT") return new Promise((resolve) => { resolveWrite = resolve; });
+    return Promise.resolve({ response: { ok: true, status: 200 }, payload: { ok: true, library: {}, updated_at: "remote" } });
+  });
+  const sync = harness.context.syncLibrary();
+  await new Promise(setImmediate);
+  assert.equal(typeof resolveWrite, "function");
+  const newerRaw = JSON.stringify({ latest: { name: "网络写入期间新增", platform: "小红书" } });
+  harness.setLocalRaw(newerRaw);
+  resolveWrite({ response: { ok: true, status: 200 }, payload: { ok: true, updated_at: "next" } });
+  await sync;
+
+  assert.equal(harness.localRaw(), newerRaw);
+  assert.match(harness.status.textContent, /同步期间发生变化.*再次同步/);
 });
 
 test("creator profile merge keeps distinct legacy collaboration records without stable ids", () => {
