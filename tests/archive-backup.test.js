@@ -74,6 +74,37 @@ test("archive backup writes a checksum and prunes older copies by retention", ()
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
+test("archive backup rejects malformed retention before pruning existing copies", (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "gameops-backup-retention-invalid-test-"));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const databasePath = path.join(dir, "archive.db");
+  const backupDir = path.join(dir, "backups");
+  const db = new DatabaseSync(databasePath);
+  db.exec("CREATE TABLE check_rows (value TEXT NOT NULL); INSERT INTO check_rows VALUES ('live');");
+  db.close();
+  fs.mkdirSync(backupDir);
+
+  const existingBackup = path.join(backupDir, "archive-20200101000000000.db");
+  const existingDb = new DatabaseSync(existingBackup);
+  existingDb.exec("CREATE TABLE check_rows (value TEXT NOT NULL); INSERT INTO check_rows VALUES ('recovery point');");
+  existingDb.close();
+  const existingDigest = sha256File(existingBackup);
+  fs.writeFileSync(existingBackup + ".sha256", existingDigest + "  " + path.basename(existingBackup) + "\n");
+
+  for (const keep of ["1junk", "0", "101", "1.5", "NaN", "Infinity"]) {
+    const result = spawnSync(process.execPath, [path.join(root, "scripts", "backup-archive.js")], {
+      cwd: root,
+      env: { ...process.env, ARCHIVE_DB_PATH: databasePath, ARCHIVE_BACKUP_DIR: backupDir, ARCHIVE_BACKUP_KEEP: keep },
+      encoding: "utf8"
+    });
+    assert.equal(result.status, 1, `expected invalid retention ${keep} to be rejected`);
+    assert.match(result.stderr, /ARCHIVE_BACKUP_KEEP/);
+    assert.equal(fs.existsSync(existingBackup), true);
+    assert.equal(fs.existsSync(existingBackup + ".sha256"), true);
+    assert.equal(sha256File(existingBackup), existingDigest);
+  }
+});
+
 test("archive backup hardens an existing backup directory", () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "gameops-backup-mode-test-"));
   const databasePath = path.join(dir, "archive.db");
