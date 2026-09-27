@@ -40,9 +40,15 @@ function waitForArchiveService(timeoutMs = 15000) {
       try {
         const response = await fetch(LAUNCHER_SERVICE_URL + "/status", { cache: "no-store" });
         const payload = response.ok ? await response.json() : null;
-        if (payload?.service === "gameops-local-controller" && payload.services?.some((service) => service.name === "存档服务" && service.running)) {
-          resolve(true);
-          return;
+        const archiveProcessRunning = payload?.service === "gameops-local-controller"
+          && payload.services?.some((service) => service.name === "存档服务" && service.running);
+        if (archiveProcessRunning) {
+          const readinessResponse = await fetch(ARCHIVE_SERVICE_URL + "/ready", { cache: "no-store" });
+          const readiness = readinessResponse.ok ? await readinessResponse.json().catch(() => null) : null;
+          if (readiness?.service === "gameops-archive" && readiness.ready === true) {
+            resolve(true);
+            return;
+          }
         }
       } catch (_error) {
         /* The controller may still be starting its child services. */
@@ -130,9 +136,12 @@ async function checkLauncherStatus() {
     if (typeof serviceModeGuard !== "undefined" && !serviceModeGuard.isCurrent(modeGeneration)) return;
     if (data.service !== "gameops-local-controller") throw new Error("服务身份不匹配");
     if (data.services && data.services.length) {
-      var text = data.services.map(function(s) { return s.name + (s.running ? " ✅" : " ❌"); }).join(" / ");
+      var text = data.services.map(function(s) {
+        if (!s.running) return s.name + " ❌";
+        return s.name + (s.ready === false ? " ⚠️ 存储不可用" : " ✅");
+      }).join(" / ");
       status.textContent = "控制台状态：" + text;
-      status.className = "source-status source-real";
+      status.className = data.services.every(function(s) { return s.running && s.ready !== false; }) ? "source-status source-real" : "source-status source-mock";
     }
   } catch (error) {
     if (typeof serviceModeGuard !== "undefined" && !serviceModeGuard.isCurrent(modeGeneration)) return;

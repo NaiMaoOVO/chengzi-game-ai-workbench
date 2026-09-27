@@ -87,6 +87,11 @@ test("health identity is unchanged by the publications ledger", async (t) => {
   assert.match(payload.storage, /^gameops-publications-\d+-\d+\.db$/);
   const live = JSON.parse((await httpRequest("/live")).text);
   assert.equal(live.service, "gameops-archive");
+  const readyResponse = await httpRequest("/ready");
+  const ready = JSON.parse(readyResponse.text);
+  assert.equal(readyResponse.status, 200);
+  assert.equal(ready.ready, true);
+  assert.equal(ready.service, "gameops-archive");
 });
 
 test("create -> list roundtrip keeps fields and parses metrics into objects", async () => {

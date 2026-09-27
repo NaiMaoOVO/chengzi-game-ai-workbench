@@ -1,9 +1,9 @@
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
-const crypto = require("node:crypto");
 const { DatabaseSync } = require("node:sqlite");
 const { loadProjectEnv } = require("../lib/env-file");
+const { assertSafeArchiveBackupDirectory, sha256File } = require("../lib/archive-backup");
 
 const root = path.resolve(__dirname, "..");
 loadProjectEnv(root);
@@ -11,7 +11,7 @@ loadProjectEnv(root);
 const databasePath = process.env.ARCHIVE_DB_PATH
   ? path.resolve(process.env.ARCHIVE_DB_PATH)
   : path.join(os.homedir(), ".gameops", "archive.db");
-const backupDir = process.env.ARCHIVE_BACKUP_DIR
+const backupDirInput = process.env.ARCHIVE_BACKUP_DIR
   ? path.resolve(process.env.ARCHIVE_BACKUP_DIR)
   : path.join(path.dirname(databasePath), "backups");
 const keepRaw = Number.parseInt(process.env.ARCHIVE_BACKUP_KEEP, 10);
@@ -22,18 +22,18 @@ if (!fs.existsSync(databasePath)) {
   process.exit(1);
 }
 
-fs.mkdirSync(backupDir, { recursive: true, mode: 0o700 });
-fs.chmodSync(backupDir, 0o700);
-const stamp = new Date().toISOString().replace(/[-:.TZ]/g, "");
-const destination = path.join(backupDir, "archive-" + stamp + ".db");
-const escapedDestination = "'" + destination.replace(/'/g, "''") + "'";
-
 try {
+  const backupDir = assertSafeArchiveBackupDirectory(backupDirInput);
+  fs.mkdirSync(backupDir, { recursive: true, mode: 0o700 });
+  fs.chmodSync(backupDir, 0o700);
+  const stamp = new Date().toISOString().replace(/[-:.TZ]/g, "");
+  const destination = path.join(backupDir, "archive-" + stamp + ".db");
+  const escapedDestination = "'" + destination.replace(/'/g, "''") + "'";
   const db = new DatabaseSync(databasePath);
   db.exec("VACUUM INTO " + escapedDestination);
   db.close();
   fs.chmodSync(destination, 0o600);
-  const digest = crypto.createHash("sha256").update(fs.readFileSync(destination)).digest("hex");
+  const digest = sha256File(destination);
   const checksumPath = destination + ".sha256";
   fs.writeFileSync(checksumPath, digest + "  " + path.basename(destination) + "\n", { mode: 0o600 });
   fs.chmodSync(checksumPath, 0o600);

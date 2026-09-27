@@ -1,0 +1,133 @@
+const test = require("node:test");
+const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const vm = require("node:vm");
+
+const app = fs.readFileSync(require.resolve("../app.js"), "utf8");
+const start = app.indexOf("function readCreatorLibrary()");
+const end = app.indexOf("function creatorSnapshot(", start);
+assert.ok(start >= 0 && end > start, "creator library storage functions should exist in app.js");
+const source = app.slice(start, end);
+const profileValidatorStart = app.indexOf("function invalidCreatorLibraryEntries(");
+const profileValidatorEnd = app.indexOf("function mergeCreatorLibraries(", profileValidatorStart);
+const historyValidatorStart = app.indexOf("function invalidCreatorCollaborationEntries(");
+const historyValidatorEnd = app.indexOf("function exportCreatorLibrary(", historyValidatorStart);
+assert.ok(profileValidatorStart >= 0 && profileValidatorEnd > profileValidatorStart);
+assert.ok(historyValidatorStart >= 0 && historyValidatorEnd > historyValidatorStart);
+const validators = `${app.slice(profileValidatorStart, profileValidatorEnd)}\n${app.slice(historyValidatorStart, historyValidatorEnd)}`;
+
+function createStorage(initialValue, options = {}) {
+  let value = initialValue;
+  let writes = 0;
+  const localStorage = {
+    getItem() {
+      if (options.readError) throw new Error("storage denied");
+      return value;
+    },
+    setItem(_key, nextValue) {
+      writes += 1;
+      value = nextValue;
+    }
+  };
+  const storage = vm.runInNewContext(`(() => {
+    const CREATOR_LIBRARY_STORAGE_KEY = "creator-library";
+    let archiveSessionUser = null;
+    let creatorLibraryStorageIssue = "";
+    let creatorLibraryStorageCorrupt = false;
+    ${validators}
+    ${source}
+    return {
+      read: readCreatorLibrary,
+      write: writeCreatorLibrary,
+      issue: () => creatorLibraryStorageIssue,
+      key: creatorLibraryStorageKey
+    };
+  })()`, { window: { localStorage } });
+  return { storage, value: () => value, writes: () => writes };
+}
+
+test("corrupted local creator JSON is read-only and cannot be overwritten by normal saves", () => {
+  for (const raw of ["{broken", "[]", "null"]) {
+    const harness = createStorage(raw);
+    assert.deepEqual(JSON.parse(JSON.stringify(harness.storage.read())), {});
+    assert.match(harness.storage.issue(), /个人库.*损坏/);
+    assert.equal(harness.storage.write({ recovered: { name: "新档案", platform: "B站" } }), false);
+    assert.equal(harness.value(), raw);
+    assert.equal(harness.writes(), 0);
+  }
+});
+
+test("valid creator storage remains writable and keeps existing profiles", () => {
+  const initial = JSON.stringify({ old: { name: "旧档案", platform: "B站" } });
+  const harness = createStorage(initial);
+  assert.equal(harness.storage.write({ old: { name: "旧档案", platform: "B站" }, next: { name: "新档案", platform: "小红书" } }), true);
+  assert.equal(JSON.parse(harness.value()).next.name, "新档案");
+  assert.equal(harness.writes(), 1);
+});
+
+test("valid JSON with damaged creator profiles or collaboration history is read-only", () => {
+  const damagedLibraries = [
+    JSON.stringify({ broken: { name: "", platform: "B站" } }),
+    JSON.stringify({ broken: { name: "达人", platform: "B站", collaborations: [{ project: "鸣潮" }, null] } })
+  ];
+  for (const raw of damagedLibraries) {
+    const harness = createStorage(raw);
+    harness.storage.read();
+    assert.match(harness.storage.issue(), /个人库.*损坏/);
+    assert.equal(harness.storage.write({ safe: { name: "新档案", platform: "小红书" } }), false);
+    assert.equal(harness.value(), raw);
+    assert.equal(harness.writes(), 0);
+  }
+});
+
+test("writer rejects malformed replacement data even when explicit recovery is allowed", () => {
+  const harness = createStorage("{broken");
+  harness.storage.read();
+  assert.equal(harness.storage.write({ broken: { name: "", platform: "B站" } }, { replaceCorrupt: true }), false);
+  assert.equal(harness.value(), "{broken");
+  assert.equal(harness.writes(), 0);
+});
+
+test("unavailable local storage blocks writes without replacing existing creator data", () => {
+  const harness = createStorage("previous-data", { readError: true });
+  assert.deepEqual(JSON.parse(JSON.stringify(harness.storage.read())), {});
+  assert.match(harness.storage.issue(), /个人库存储不可用/);
+  assert.equal(harness.storage.write({ new: { name: "新档案", platform: "B站" } }), false);
+  assert.equal(harness.value(), "previous-data");
+  assert.equal(harness.writes(), 0);
+});
+
+test("replacing corrupt creator data is reserved for an explicit backup import confirmation", () => {
+  const raw = "{broken";
+  const harness = createStorage(raw);
+  harness.storage.read();
+  const backup = { safe: { name: "备份达人", platform: "B站" } };
+  assert.equal(harness.storage.write(backup, { replaceCorrupt: true }), true);
+  assert.equal(JSON.parse(harness.value()).safe.name, "备份达人");
+
+  const importStart = app.indexOf("function importCreatorLibrary(event)");
+  const importEnd = app.indexOf("function mergeCreatorProfiles", importStart);
+  const importSource = app.slice(importStart, importEnd);
+  const confirmIndex = importSource.indexOf("window.confirm(");
+  const freshLibraryIndex = importSource.indexOf("const library = replaceCorrupt ? {} : existingLibrary");
+  const replaceIndex = importSource.indexOf("writeCreatorLibrary(library, { replaceCorrupt })");
+  assert.ok(confirmIndex >= 0 && freshLibraryIndex > confirmIndex && replaceIndex > freshLibraryIndex, "confirmed recovery must replace damaged entries from a clean library before writing");
+});
+
+test("cloud creator sync stops before writing remotely when the local library is damaged", () => {
+  const syncStart = app.indexOf("async function syncCreatorLibrary()");
+  const syncEnd = app.indexOf("function explainCreatorScore", syncStart);
+  const source = app.slice(syncStart, syncEnd);
+  const readIndex = source.indexOf("const localLibrary = readCreatorLibrary()");
+  const guardIndex = source.indexOf("if (creatorLibraryStorageIssue) throw");
+  const putIndex = source.indexOf("let result = await put(");
+  assert.ok(readIndex >= 0 && guardIndex > readIndex && putIndex > guardIndex);
+});
+
+test("the creator library panel surfaces unreadable storage instead of an empty-library state", () => {
+  const renderStart = app.indexOf("function renderCreatorLibrary()");
+  const renderEnd = app.indexOf("function saveCreatorLibraryCard", renderStart);
+  const source = app.slice(renderStart, renderEnd);
+  assert.match(source, /creatorLibraryStorageIssue[\s\S]*role="status"/);
+  assert.match(source, /个人库暂时无法读取/);
+});

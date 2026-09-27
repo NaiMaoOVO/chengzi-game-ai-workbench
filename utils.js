@@ -97,6 +97,14 @@ function inferDefaultServiceMode() {
   return window.location.protocol === "file:" || isLocalHost ? "local" : "online";
 }
 
+function decodeURIComponentSafe(value, fallbackValue = "") {
+  try {
+    return decodeURIComponent(value);
+  } catch (_error) {
+    return fallbackValue;
+  }
+}
+
 function getServiceMode() {
   try {
     const stored = window.localStorage?.getItem(SERVICE_MODE_STORAGE_KEY);
@@ -232,8 +240,17 @@ function pickRowValue(row, headerMap, aliases, fallbackIndex) {
 
 
 function toCsv(rows) {
+  const escapeCell = (cell) => {
+    const value = String(cell ?? "");
+    const numeric = typeof cell === "number" && Number.isFinite(cell)
+      || /^-?(?:\d+(?:\.\d*)?|\.\d+)%?$/.test(value);
+    const safeValue = !numeric && /^(?:[\t\r\n]|[\u0000-\u0020]*[=+@]|[\u0000-\u0020]*-)/.test(value)
+      ? `'${value}`
+      : value;
+    return `"${safeValue.replace(/"/g, '""')}"`;
+  };
   return rows
-    .map((row) => row.map((cell) => `"${String(cell ?? "").replace(/"/g, '""')}"`).join(","))
+    .map((row) => row.map(escapeCell).join(","))
     .join("\n");
 }
 
@@ -243,8 +260,13 @@ function downloadFile(filename, content, mime) {
   const link = document.createElement("a");
   link.href = url;
   link.download = filename;
+  link.style.display = "none";
+  document.body.appendChild(link);
   link.click();
-  URL.revokeObjectURL(url);
+  setTimeout(() => {
+    link.remove();
+    URL.revokeObjectURL(url);
+  }, 1000);
 }
 
 function formatChange(current, baseline, threshold = getReviewPolicy().metricThreshold) {

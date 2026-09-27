@@ -26,6 +26,7 @@ LLM 网关内置请求缓存（10 分钟）、限流与并发控制，Prompt 内
 
 | 模块 | 说明 |
 |---|---|
+| 每日工作台 | 汇总多项目待办、风险工单、发布回流和今日简报；生成简报时刷新当前热点，并记录工作队列、匹配当前信号的 AI 洞察、项目归属与数据质量；平台数据区分真实、样例、混合和未核验来源，并将逐条来源标记传入 AI；项目快照记录热点所属游戏/平台、筛选范围和原时间，恢复时校验口径且不会重新归档，AI 会标注历史热点；筛选条件改变时标明旧列表的原口径，旧结果不进入简报或 AI 洞察，也不能复制、转待办或带入其他模块；数据刷新时保留旧洞察供查看但禁用填入待办，信号变化后需重新生成；短暂断连时保留同一账号最近一次成功同步的队列并标明同步时间，账号切换时取消旧请求并清除待办、AI 洞察、发布/风险列表、简报历史和项目档案列表，再加载当前账号数据；单个存档读取 12 秒无响应时独立超时，其他来源仍可部分展示；单一队列接口失败时保留其他成功来源，已完成记录或晨报单独不可用时不遮蔽未完成主队列，并明确标记不可用数据而不将其当作零；AI 优先动作可填入待办草稿，需手动确认后添加 |
 | 热点追踪 | 读取 B站公开搜索结果，按发布时间过滤 + 播放/弹幕/收藏/时间衰减计算综合热度；支持今日 / 24 小时 / 3 天 / 7 天筛选，点击可查看标题结构、爆点归因、风险与可跟进选题，导出 CSV |
 | 竞品内容拆解 | 根据游戏、平台和内容描述生成标题结构、选题方向和改写建议 |
 | 玩家评论分析 | 手动粘贴 / 单视频导入 / 按游戏自动抓取 B站热门视频评论；自动清洗重复、广告、纯表情样本，输出细分标签、情绪分布、舆情风险预警、高频关键词与运营动作建议 |
@@ -33,7 +34,7 @@ LLM 网关内置请求缓存（10 分钟）、限流与并发控制，Prompt 内
 | 直播数据复盘 | 拖入直播后台截图，macOS Vision OCR 识别 ACU / PCU / 曝光量 / 进房人数，多主播对比活动场与近期均值，判定正 / 负 / 中性反馈 |
 | 版本包装助手 | 输入版本主题与更新点，生成公告、多平台社媒文案、视频脚本、Push 标题、发布节奏表、素材清单与 A/B 测试标题 |
 | 玩家分层策略 | 按玩家标签、生命周期阶段、版本节点生成核心洞察、触达文案、活动推荐、奖励成本与多渠道话术 |
-| KOL/KOC 筛选 | 导入达人表格（CSV/TSV/XLSX），按粉丝量、互动率、内容质量、品类匹配、预估报价与商单密度动态打分，输出场景化排序、预算组合、达人 brief 与数据异常识别 |
+| KOL/KOC 筛选与个人库 | 导入达人表格（CSV/TSV/XLSX），按粉丝量、互动率、内容质量、品类匹配、预估报价与商单密度动态打分；可保存稳定身份档案、记录合作历史与实测效果，分别追踪报价和实际成本，并用于历史性价比判断；线上账号各自使用独立的浏览器缓存，旧本地库保留且不会自动并入任一账号，可手动导出后导入指定账号；切换账号会取消旧个人库同步，防止迟到响应写入新账号 |
 
 ## 项目结构
 
@@ -46,7 +47,7 @@ hotspot-server.js   热点抓取服务（B站搜索 + 热度排序，端口 8790
 comment-server.js   评论抓取服务（B站视频评论，端口 8791）
 ocr-server.js       本地截图识别服务（macOS Vision，端口 8787）
 llm-server.js       LLM 增强网关（OpenAI 兼容，端口 8794）
-archive-server.js   本地存档服务：简报与分析快照持久化（SQLite，端口 8796）
+archive-server.js   SQLite 存档服务：待办、简报、项目档案、发布台账、风险工单、创作者库与晨报运行记录（端口 8796）
 start-demo.js       一键启动全部本地服务 + 打开页面
 restart-demo.js     安全重启（PID 状态文件 + 脚本路径校验，不误杀进程）
 scripts/            构建与启动器安装脚本
@@ -67,7 +68,7 @@ node start-demo.js
 
 也可以在网页里一键启动：首次执行一次 `npm run launcher:install` 安装 macOS 启动器，之后页面按钮通过 `gameops://start` / `gameops://restart` 两个固定动作唤起服务。启动器不执行网页传入的任意命令。
 
-安装器会把运行脚本和当前 `.env` 复制到 `~/Library/Application Support/GameOpsLauncher/runtime`，其中 `.env` 权限设为仅当前用户可读写。修改脚本或 `.env` 后需重新执行一次 `npm run launcher:install`，再点击页面的“重启本地服务”。
+首次安装会将项目 `.env` 复制到 `~/Library/Application Support/GameOpsLauncher/runtime`；重新安装时优先保留运行目录中已有的 `.env`，权限设为仅当前用户可读写。修改脚本后需重新执行 `npm run launcher:install`；修改网页启动器使用的配置，请编辑运行目录中的 `.env`，再点击页面的“重启本地服务”。直接用 `npm start` 时则读取项目目录的 `.env`。
 
 可用 `npm run launcher:check` 检查已安装运行快照是否与当前源码一致。
 
@@ -79,9 +80,10 @@ node restart-demo.js
 
 ### 服务健康语义
 
-- `/health`：进程存活检查，恒返回 200，`ocr` 字段区分 `ready / preparing / not_ready`
-- `/ready`：严格就绪检查，仅 ready 时返回 200
-- 所有健康检查都校验固定 `service` 身份字段，防止端口被其他程序占用时误报正常
+- `/health`：确认响应端服务身份；对 OCR、LLM 和存档服务而言，它不等同于业务依赖已就绪
+- `/ready`：存档服务会探测 SQLite，OCR 检查本地识别提供器，LLM 检查提供器配置；未就绪返回 503。LLM 检查不主动调用上游模型
+- `/live`：存档、OCR 和 LLM 提供进程存活检查；其他服务目前通过 `/health` 确认身份
+- 健康响应都带固定 `service` 身份字段，避免端口被其他程序占用时误报正常
 
 ### 多平台数据源
 
@@ -153,7 +155,7 @@ XIAOHONGSHU_PROVIDER_URL=http://127.0.0.1:8805/search npm run restart
 ```bash
 npm install -g pm2
 cp .env.example .env
-npm run build:public     # 仅复制前端所需静态文件到 public/
+npm run build:public     # 生成前端静态包及线上用的中性启动器状态文件
 npm run deploy:check     # 校验环境变量与构建产物，配置不完整拒绝启动
 npm run deploy:start && pm2 save && pm2 startup
 ```
@@ -189,7 +191,7 @@ ARCHIVE_SESSION_HOURS=12
 npm run archive:backup
 ```
 
-备份默认写入与 `archive.db` 同级的 `backups/`，可用 `ARCHIVE_BACKUP_DIR` 改位置；默认保留最近 7 份，可用 `ARCHIVE_BACKUP_KEEP` 调整（范围 1-100）。每份备份同时生成 `.sha256` 校验文件，恢复前可执行 `npm run archive:verify -- /path/to/archive-*.db` 校验文件完整性。恢复时先停止 archive 服务，再用备份文件替换数据库文件后重启。生产环境必须使用 HTTPS，并保持 `ARCHIVE_COOKIE_SECURE=1`。
+备份默认写入与 `archive.db` 同级的 `backups/`，可用 `ARCHIVE_BACKUP_DIR` 改位置；请指定专用的嵌套目录，脚本会拒绝文件系统根目录、系统一级目录、用户主目录及其上级目录，并在改权限前解析符号链接。默认保留最近 7 份，可用 `ARCHIVE_BACKUP_KEEP` 调整（范围 1-100）。每份备份同时生成 `.sha256` 校验文件；可用 `npm run archive:verify -- /path/to/archive-*.db` 单独校验。恢复前先停止 archive 服务，然后运行 `npm run archive:restore -- /path/to/archive-*.db --service-stopped`；命令会校验 SHA-256 与 SQLite 完整性，将当前数据库及 `-wal`、`-shm`、`-journal` 侧文件保留为旁边的 `*.pre-restore-*` 副本，再替换数据库。不要在 archive 服务运行时执行。生产环境必须使用 HTTPS，并保持 `ARCHIVE_COOKIE_SECURE=1`。
 
 ## 安全设计
 
@@ -203,5 +205,5 @@ npm run archive:backup
 ## 技术特点
 
 - 零 npm 依赖：全部使用 Node.js 内置模块与浏览器原生 API，克隆即用
-- 优雅降级：真实数据（B站接口、OCR）失败时自动切换本地样例数据，核心链路永远可演示
+- 可控降级：个人工作默认关闭样例数据；显式开启“允许样例兜底（演示）”后，真实数据不可用时才使用并标记样例，LLM 不可用时则回退到本地规则引擎
 - macOS Vision OCR：本地 Swift 脚本识别截图，支持 JPG/PNG/GIF/HEIC/WebP 与中文数字单位（万/千/w/k），识别结果带人工校正兜底

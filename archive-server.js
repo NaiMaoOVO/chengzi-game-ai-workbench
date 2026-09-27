@@ -281,6 +281,7 @@ function migrateOwnerColumns() {
   }
   db.exec(`
     CREATE INDEX IF NOT EXISTS idx_snapshots_owner_kind_time ON snapshots(owner_key, kind, created_at);
+    CREATE INDEX IF NOT EXISTS idx_snapshots_owner_kind_game ON snapshots(owner_key, kind, game);
     CREATE INDEX IF NOT EXISTS idx_publications_owner_game ON publications(owner_key, game);
     CREATE INDEX IF NOT EXISTS idx_risk_events_owner_game ON risk_events(owner_key, game);
     CREATE INDEX IF NOT EXISTS idx_risk_events_owner_status ON risk_events(owner_key, status);
@@ -370,11 +371,22 @@ function latestSnapshot(url, ownerKey) {
 
 function creatorLibraryOwner(session) { return recordOwner(session); }
 
+function isValidCreatorLibrary(library) {
+  return Object.values(library).every((profile) => {
+    if (!profile || typeof profile !== "object" || Array.isArray(profile)) return false;
+    if (Object.hasOwn(profile, "name") && typeof profile.name !== "string") return false;
+    if (Object.hasOwn(profile, "platform") && typeof profile.platform !== "string") return false;
+    if (!Object.hasOwn(profile, "collaborations")) return true;
+    return Array.isArray(profile.collaborations)
+      && profile.collaborations.every((item) => item && typeof item === "object" && !Array.isArray(item));
+  });
+}
+
 function readCreatorLibraryRow(ownerKey) {
   const row = getCreatorLibraryStatement.get(ownerKey);
   if (!row) return { library: {}, updated_at: null, invalid: false };
   const parsed = parseStoredObject(row.payload);
-  return { library: parsed.value, updated_at: row.updated_at, invalid: !parsed.valid };
+  return { library: parsed.value, updated_at: row.updated_at, invalid: !parsed.valid || !isValidCreatorLibrary(parsed.value) };
 }
 
 /* ---- 发布台账（P-2）：记录内容发布与效果数据回流 ---- */
@@ -568,8 +580,17 @@ const server = http.createServer((request, response) => {
     sendJson(request, response, 200, { ok: true, service: "gameops-archive" });
     return;
   }
-  if (request.method === "GET" && (request.url === "/health" || request.url === "/ready")) {
+  if (request.method === "GET" && request.url === "/health") {
     sendJson(request, response, 200, { ok: true, service: "gameops-archive", storage: path.basename(dbPath), auth_required: archiveAuth.enabled });
+    return;
+  }
+  if (request.method === "GET" && request.url === "/ready") {
+    try {
+      db.exec("BEGIN IMMEDIATE; ROLLBACK;");
+      sendJson(request, response, 200, { ok: true, service: "gameops-archive", ready: true, storage: path.basename(dbPath), auth_required: archiveAuth.enabled });
+    } catch {
+      sendJson(request, response, 503, { ok: false, service: "gameops-archive", ready: false, error: "storage_unavailable" });
+    }
     return;
   }
   if (request.method === "POST" && url.pathname === "/auth/login") {
@@ -657,6 +678,10 @@ const server = http.createServer((request, response) => {
       readJsonBody(request, response, (body) => {
         try {
           if (!body.library || typeof body.library !== "object" || Array.isArray(body.library)) throw new Error("library 必须是对象");
+          if (!isValidCreatorLibrary(body.library)) {
+            sendJson(request, response, 400, { ok: false, error: "creator_library_invalid_payload" });
+            return;
+          }
           const serialized = JSON.stringify(body.library);
           if (Buffer.byteLength(serialized, "utf8") > MAX_BODY_BYTES) throw new Error("个人库内容过大");
           const current = readCreatorLibraryRow(ownerKey);

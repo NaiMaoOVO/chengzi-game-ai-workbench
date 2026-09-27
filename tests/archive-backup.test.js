@@ -6,8 +6,27 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const { DatabaseSync } = require("node:sqlite");
+const { assertSafeArchiveBackupDirectory, sha256File } = require("../lib/archive-backup");
 
 const root = path.resolve(__dirname, "..");
+
+test("archive backup refuses filesystem-level and symlinked broad directories", () => {
+  const filesystemRoot = path.parse(path.resolve(".")).root;
+  assert.throws(() => assertSafeArchiveBackupDirectory(filesystemRoot), /备份目录/);
+  assert.throws(() => assertSafeArchiveBackupDirectory(path.dirname(os.homedir())), /备份目录/);
+
+  const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "gameops-backup-path-test-"));
+  try {
+    const rootLink = path.join(scratch, "root-link");
+    fs.symlinkSync(filesystemRoot, rootLink);
+    assert.throws(() => assertSafeArchiveBackupDirectory(rootLink), /备份目录/);
+
+    const safeDirectory = path.join(fs.realpathSync(scratch), "archive-backups", "daily");
+    assert.equal(assertSafeArchiveBackupDirectory(safeDirectory), safeDirectory);
+  } finally {
+    fs.rmSync(scratch, { recursive: true, force: true });
+  }
+});
 
 test("archive backup creates a consistent SQLite copy outside the live database path", () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "gameops-backup-test-"));
@@ -131,5 +150,82 @@ test("archive backup verification binds the checksum to the target filename", ()
   const result = spawnSync(process.execPath, [verifier, target], { cwd: root, encoding: "utf8" });
   assert.equal(result.status, 1);
   assert.match(result.stderr, /文件名|校验失败/);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test("archive restore requires a stopped-service acknowledgement and preserves the replaced database and sidecars", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "gameops-backup-restore-test-"));
+  const databasePath = path.join(dir, "archive.db");
+  const backupDir = path.join(dir, "backups");
+  const db = new DatabaseSync(databasePath);
+  db.exec("CREATE TABLE check_rows (value TEXT NOT NULL); INSERT INTO check_rows VALUES ('before backup');");
+  db.close();
+  const env = { ...process.env, ARCHIVE_DB_PATH: databasePath, ARCHIVE_BACKUP_DIR: backupDir };
+  const backup = spawnSync(process.execPath, [path.join(root, "scripts", "backup-archive.js")], { cwd: root, env, encoding: "utf8" });
+  assert.equal(backup.status, 0, backup.stderr || backup.stdout);
+  const backupFile = path.join(backupDir, fs.readdirSync(backupDir).find((name) => /^archive-.*\.db$/.test(name)));
+
+  const live = new DatabaseSync(databasePath);
+  live.exec("INSERT INTO check_rows VALUES ('after backup');");
+  live.close();
+  const beforeRestore = fs.readFileSync(databasePath);
+  fs.writeFileSync(databasePath + "-wal", "old-wal-sidecar");
+  fs.writeFileSync(databasePath + "-shm", "old-shm-sidecar");
+
+  const restoreScript = path.join(root, "scripts", "restore-archive-backup.js");
+  const blocked = spawnSync(process.execPath, [restoreScript, backupFile], { cwd: root, env, encoding: "utf8" });
+  assert.equal(blocked.status, 2);
+  assert.equal(fs.readFileSync(databasePath + "-wal", "utf8"), "old-wal-sidecar");
+
+  const restored = spawnSync(process.execPath, [restoreScript, backupFile, "--service-stopped"], { cwd: root, env, encoding: "utf8" });
+  assert.equal(restored.status, 0, restored.stderr || restored.stdout);
+  const recovered = new DatabaseSync(databasePath, { readOnly: true });
+  assert.deepEqual(recovered.prepare("SELECT value FROM check_rows ORDER BY rowid").all().map((row) => row.value), ["before backup"]);
+  recovered.close();
+  assert.equal(fs.existsSync(databasePath + "-wal"), false);
+  assert.equal(fs.existsSync(databasePath + "-shm"), false);
+
+  const safetyFiles = fs.readdirSync(dir).filter((name) => name.startsWith("archive.db.pre-restore-"));
+  const safetyMain = safetyFiles.find((name) => /^archive\.db\.pre-restore-[^-]+-\d+-[a-f0-9]+$/.test(name));
+  assert.ok(safetyMain, "expected a preserved pre-restore database");
+  assert.deepEqual(fs.readFileSync(path.join(dir, safetyMain)), beforeRestore);
+  assert.equal(fs.readFileSync(path.join(dir, safetyMain + "-wal"), "utf8"), "old-wal-sidecar");
+  assert.equal(fs.readFileSync(path.join(dir, safetyMain + "-shm"), "utf8"), "old-shm-sidecar");
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test("archive restore rejects a checksum-valid non-SQLite backup without touching the live database", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "gameops-backup-restore-invalid-test-"));
+  const databasePath = path.join(dir, "archive.db");
+  const invalidBackup = path.join(dir, "archive-invalid.db");
+  const db = new DatabaseSync(databasePath);
+  db.exec("CREATE TABLE check_rows (value TEXT NOT NULL); INSERT INTO check_rows VALUES ('keep live data');");
+  db.close();
+  fs.writeFileSync(invalidBackup, "not a sqlite database");
+  const digest = crypto.createHash("sha256").update(fs.readFileSync(invalidBackup)).digest("hex");
+  fs.writeFileSync(invalidBackup + ".sha256", digest + "  archive-invalid.db\n");
+
+  const result = spawnSync(process.execPath, [path.join(root, "scripts", "restore-archive-backup.js"), invalidBackup, "--service-stopped"], {
+    cwd: root,
+    env: { ...process.env, ARCHIVE_DB_PATH: databasePath },
+    encoding: "utf8"
+  });
+  assert.equal(result.status, 1);
+  const stillLive = new DatabaseSync(databasePath, { readOnly: true });
+  assert.equal(stillLive.prepare("SELECT value FROM check_rows").get().value, "keep live data");
+  stillLive.close();
+  assert.equal(fs.readdirSync(dir).some((name) => name.includes("pre-restore")), false);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test("archive file hashing streams large files through a bounded buffer", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "gameops-backup-hash-test-"));
+  const file = path.join(dir, "large-backup.db");
+  const chunk = Buffer.alloc(1024 * 1024, 0xa5);
+  const descriptor = fs.openSync(file, "w");
+  for (let index = 0; index < 8; index += 1) fs.writeSync(descriptor, chunk);
+  fs.closeSync(descriptor);
+  const expected = crypto.createHash("sha256").update(fs.readFileSync(file)).digest("hex");
+  assert.equal(sha256File(file), expected);
   fs.rmSync(dir, { recursive: true, force: true });
 });

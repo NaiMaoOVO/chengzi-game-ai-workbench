@@ -2,7 +2,7 @@ const { execFileSync } = require("node:child_process");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
-const { preserveRuntimeEnv, replaceDirectoryWithRollback, writeLauncherSyncStatus } = require("../lib/launcher-runtime");
+const { preserveRuntimeEnv, replaceDirectoriesWithRollback, retryRegistration, writeLauncherSyncStatus } = require("../lib/launcher-runtime");
 const { RUNTIME_FILES } = require("../lib/runtime-manifest");
 
 const APP_NAME = "GameOpsLauncher.app";
@@ -113,15 +113,21 @@ try {
   execFileSync("/usr/bin/plutil", ["-lint", path.join(contentsPath, "Info.plist")], {
     stdio: "pipe"
   });
-  replaceDirectoryWithRollback(runtimePath, runtimeStagingPath);
-  replaceDirectoryWithRollback(appPath, stagingPath);
-  if (process.env.GAMEOPS_LAUNCHER_SKIP_REGISTER !== "1") {
-    execFileSync(
-      "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister",
-      ["-f", appPath],
-      { stdio: "pipe" }
-    );
-  }
+  replaceDirectoriesWithRollback([
+    { targetPath: runtimePath, stagingPath: runtimeStagingPath },
+    { targetPath: appPath, stagingPath }
+  ], () => {
+    if (process.env.GAMEOPS_LAUNCHER_SKIP_REGISTER !== "1") {
+      retryRegistration(
+        () => execFileSync(
+          "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister",
+          ["-f", appPath],
+          { stdio: "pipe" }
+        ),
+        () => execFileSync("/bin/sleep", ["2"], { stdio: "ignore" })
+      );
+    }
+  });
 } catch (error) {
   fs.rmSync(stagingPath, { recursive: true, force: true });
   fs.rmSync(runtimeStagingPath, { recursive: true, force: true });

@@ -39,16 +39,17 @@ const restartTimers = new Map();
 let shuttingDown = false;
 let monitorTimer = null;
 
-function checkPort(port, identity, token = "") {
+function checkPort(port, identity, token = "", endpoint = "/health", requireReady = false) {
   return new Promise((resolve) => {
     const headers = token ? { Authorization: `Bearer ${token}` } : undefined;
-    const request = http.get(`http://127.0.0.1:${port}/health`, { headers }, (response) => {
+    const request = http.get(`http://127.0.0.1:${port}${endpoint}`, { headers }, (response) => {
       let body = "";
       response.setEncoding("utf8");
       response.on("data", (chunk) => { body += chunk; });
       response.on("end", () => {
         try {
-          resolve(JSON.parse(body).service === identity);
+          const payload = JSON.parse(body);
+          resolve(response.statusCode === 200 && payload.service === identity && (!requireReady || payload.ready === true));
         } catch (_error) {
           resolve(false);
         }
@@ -122,7 +123,12 @@ async function ensureServices() {
     if (parts[0] === "health" || parts[0] === "") { j(200, {ok:true, service:"gameops-local-controller", version:1}); return; }
     if (parts[0] === "status") {
       var r = [];
-      for (var s of SERVICES) r.push({name:s.name, port:s.port, running:await checkPort(s.port, s.identity, s.token)});
+      for (var s of SERVICES) {
+        var running = await checkPort(s.port, s.identity, s.token);
+        var item = {name:s.name, port:s.port, running};
+        if (s.identity === "gameops-archive") item.ready = running && await checkPort(s.port, s.identity, s.token, "/ready", true);
+        r.push(item);
+      }
       j(200, {ok:true, service:"gameops-local-controller", version:1, services:r}); return;
     }
     j(404, {ok:false, message:"\u672a\u77e5\u8def\u5f84"});

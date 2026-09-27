@@ -42,6 +42,21 @@ test("corsHeaders echoes allowed origins and answers disallowed ones with fixed 
   assert.equal(wildcard.corsHeaders(request("http://evil.example"))["Access-Control-Allow-Origin"], "*");
 });
 
+test("archive CORS permits idempotent write and CSRF request headers", () => {
+  const cors = createCors({
+    allowedOrigins: "http://localhost:3000",
+    methods: "GET, POST, PUT, DELETE, OPTIONS",
+    allowFileOrigin: true
+  });
+  const headers = cors.corsHeaders(request("null"));
+  const allowedHeaders = headers["Access-Control-Allow-Headers"].toLowerCase().split(/\s*,\s*/);
+  assert.equal(cors.isOriginAllowed(request("null")), true);
+  assert.equal(headers["Access-Control-Allow-Origin"], "null");
+  assert.ok(allowedHeaders.includes("content-type"));
+  assert.ok(allowedHeaders.includes("x-csrf-token"));
+  assert.ok(allowedHeaders.includes("idempotency-key"));
+});
+
 test("all service presets share the same default origin whitelist", () => {
   const origins = parseAllowedOrigins(DEFAULT_ALLOWED_ORIGIN);
   for (const origin of ["http://localhost:8793", "http://127.0.0.1:8793", "http://localhost:3000", "http://localhost:5173"]) {

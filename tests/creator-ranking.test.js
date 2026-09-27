@@ -1,6 +1,16 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { CREATOR_TIER, chooseCreatorsByBudget, compareCreatorPriority, creatorKey, getCreatorHistoryScore, scoreByGoal, scoreCreator } = require("../creator-ranking");
+const { CREATOR_TIER, chooseCreatorsByBudget, compareCreatorPriority, creatorKey, getCreatorHistoryScore, getCreatorLibraryDisplayProfiles, parseMetricValue, parseRateValue, sortCreatorCollaborationsByDate, scoreByGoal, scoreCreator } = require("../creator-ranking");
+
+test("creator numeric imports treat negative and non-finite values as missing", () => {
+  assert.equal(parseMetricValue("-1200"), 0);
+  assert.equal(parseMetricValue("Infinity"), 0);
+  assert.equal(parseMetricValue("1e308万"), 0);
+  assert.equal(parseMetricValue("2.4万"), 24000);
+  assert.equal(parseRateValue("-3%"), 0);
+  assert.equal(parseRateValue("Infinity%"), 0);
+  assert.equal(parseRateValue("2.5%"), 2.5);
+});
 
 test("creator library keys keep same-name creators on different platforms separate", () => {
   assert.notEqual(
@@ -30,13 +40,46 @@ test("creator identity prefers account id or homepage over mutable display name"
 
 test("creator history turns structured delivery reviews into a bounded confidence signal", () => {
   assert.equal(getCreatorHistoryScore([]), null);
-  const result = getCreatorHistoryScore([
+  const records = [
     { quality: 5, onTime: "yes", recommendation: "again" },
     { quality: 3, onTime: "no", recommendation: "observe" }
-  ]);
+  ];
+  const result = getCreatorHistoryScore(records);
+  assert.deepEqual(getCreatorHistoryScore([null, [], "bad", ...records]), result);
   assert.equal(result.count, 2);
   assert.ok(result.score >= 0 && result.score <= 100);
   assert.ok(result.score > 50);
+});
+
+test("creator collaboration history sorts by actual event date, not when it was backfilled", () => {
+  const latest = { project: "新合作", occurredOn: "2026-09-01", createdAt: "2026-09-20T10:00:00Z" };
+  const backfilled = { project: "补录旧合作", occurredOn: "2025-05-01", createdAt: "2026-09-23T10:00:00Z" };
+  const legacy = { project: "旧格式记录", createdAt: "2025-12-01T10:00:00Z" };
+  const malformedDate = { project: "日期损坏", occurredOn: "not-a-date", createdAt: "2026-01-01T10:00:00Z" };
+  assert.deepEqual(sortCreatorCollaborationsByDate([latest, null, "bad", [], backfilled, legacy, malformedDate]), [latest, malformedDate, legacy, backfilled]);
+  assert.deepEqual(sortCreatorCollaborationsByDate(null), []);
+});
+
+test("creator library display skips corrupt profile values without changing the source object", () => {
+  const library = {
+    good: { name: "可读档案", platform: "B站" },
+    empty: null,
+    invalid: [],
+    text: "bad",
+    missingPlatform: { name: "缺平台" },
+    blankName: { name: "  ", platform: "B站" },
+    valid: { name: "短视频创作者", platform: "抖音" }
+  };
+  assert.deepEqual(getCreatorLibraryDisplayProfiles(library), [library.good, library.valid]);
+  assert.deepEqual(library, {
+    good: { name: "可读档案", platform: "B站" },
+    empty: null,
+    invalid: [],
+    text: "bad",
+    missingPlatform: { name: "缺平台" },
+    blankName: { name: "  ", platform: "B站" },
+    valid: { name: "短视频创作者", platform: "抖音" }
+  });
 });
 
 test("history confidence nudges ranking without replacing public-data scoring", () => {
@@ -65,9 +108,36 @@ test("history score incorporates actual reach, cost efficiency, and conversion w
 });
 
 test("missing actual metrics stay neutral instead of lowering history score", () => {
-  const result = getCreatorHistoryScore([{ quality: 4, onTime: "yes", recommendation: "again", actualCost: 0 }]);
+  const result = getCreatorHistoryScore([{ quality: 4, onTime: "yes", recommendation: "again", actualCost: null }]);
   assert.equal(result.dataSignals, 0);
   assert.ok(result.score >= 70);
+});
+
+test("an explicit zero actual cost is retained as data and improves cost efficiency", () => {
+  const result = getCreatorHistoryScore([{ quality: 4, onTime: "yes", recommendation: "again", actualViews: 10000, baselineViews: 10000, actualCost: 0, baselineQuote: 1000 }]);
+  assert.equal(result.dataSignals, 2);
+  assert.ok(result.score > 80);
+});
+
+test("an explicit zero-view result is retained and lowers historical performance", () => {
+  const result = getCreatorHistoryScore([{ quality: 4, onTime: "yes", recommendation: "again", actualViews: 0, baselineViews: 10000 }]);
+  assert.equal(result.dataSignals, 1);
+  assert.ok(result.score < 80);
+  const withSpend = getCreatorHistoryScore([{ quality: 4, onTime: "yes", recommendation: "again", actualViews: 0, baselineViews: 10000, actualCost: 1000, baselineQuote: 1000 }]);
+  assert.equal(withSpend.dataSignals, 2);
+  assert.ok(Number.isFinite(withSpend.score));
+  assert.ok(withSpend.score < result.score);
+});
+
+test("historical engagement change contributes to creator performance and keeps zero outcomes", () => {
+  const baseline = [{ quality: 4, onTime: "yes", recommendation: "again" }];
+  const improved = getCreatorHistoryScore([{ ...baseline[0], actualEngagementRate: 10, baselineEngagementRate: 5 }]);
+  const zero = getCreatorHistoryScore([{ ...baseline[0], actualEngagementRate: 0, baselineEngagementRate: 5 }]);
+  const neutral = getCreatorHistoryScore(baseline);
+  assert.equal(improved.dataSignals, 1);
+  assert.equal(zero.dataSignals, 1);
+  assert.ok(improved.score > neutral.score);
+  assert.ok(zero.score < neutral.score);
 });
 
 test("a creator without a verified quote is held for data completion instead of being recommended", () => {
@@ -87,6 +157,60 @@ test("a creator without a verified quote is held for data completion instead of 
   assert.equal(row.tier, CREATOR_TIER.PENDING);
   assert.equal(row.scores.value, 0);
   assert.ok(row.dataGaps.includes("预估报价"));
+});
+
+test("missing optional quality and ad-density inputs stay neutral instead of becoming risk", () => {
+  const base = {
+    name: "缺少可选字段的达人",
+    platform: "B站",
+    followers: 500000,
+    avgViews: 200000,
+    engagementRate: 8,
+    contentType: "攻略",
+    gameHistory: "赛车/竞速",
+    quote: 10000
+  };
+  const missing = scoreCreator(base, { category: "赛车/竞速" });
+  const explicitNeutral = scoreCreator({ ...base, commentQuality: "中", commercialDensity: "中" }, { category: "赛车/竞速" });
+
+  assert.deepEqual(missing.scores, explicitNeutral.scores);
+  assert.equal(missing.tier, explicitNeutral.tier);
+  assert.ok(missing.dataGaps.includes("评论质量"));
+  assert.ok(missing.dataGaps.includes("商单密度"));
+  assert.notEqual(missing.tier, CREATOR_TIER.RISK);
+});
+
+test("creator ratings use explicit labels instead of positive or negative substrings", () => {
+  const base = {
+    name: "评分标签测试",
+    platform: "B站",
+    followers: 500000,
+    avgViews: 200000,
+    engagementRate: 8,
+    contentType: "攻略",
+    gameHistory: "赛车/竞速",
+    quote: 10000,
+    commercialDensity: "中"
+  };
+  const needsImprovement = scoreCreator({
+    ...base,
+    commentQuality: "评论质量：待优化（负向评论较多）"
+  }, { category: "赛车/竞速" });
+  const notHigh = scoreCreator({
+    ...base,
+    commentQuality: "中",
+    commercialDensity: "不高"
+  }, { category: "赛车/竞速" });
+  const highDensity = scoreCreator({
+    ...base,
+    commentQuality: "高",
+    commercialDensity: "商单密度：偏高（近期频繁植入）"
+  }, { category: "赛车/竞速" });
+
+  assert.ok(needsImprovement.risks.includes("评论质量偏低"));
+  assert.equal(needsImprovement.tier, CREATOR_TIER.RISK);
+  assert.ok(!notHigh.risks.includes("商单密度偏高"));
+  assert.ok(highDensity.risks.includes("商单密度偏高"));
 });
 
 test("creator admission tier is ordered before its target score", () => {

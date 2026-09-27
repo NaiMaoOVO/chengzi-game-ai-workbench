@@ -4,14 +4,17 @@ const crypto = require("node:crypto");
 
 const root = path.resolve(__dirname, "..");
 const output = path.join(root, "public");
-const files = ["index.html", "styles.css", "utils.js", "launcher.js", "creator-ranking.js", "app.js", "daily-workbench.js", "lib/business-date.js", "lib/project-slots.js", "lib/ui-guards.js", "lib/safe-storage.js"];
+const sourceFiles = ["index.html", "styles.css", "utils.js", "launcher.js", "creator-ranking.js", "app.js", "daily-workbench.js", "lib/business-date.js", "lib/project-slots.js", "lib/ui-guards.js", "lib/safe-storage.js"];
+const generatedFiles = { "launcher-sync-status.js": "// Public pages do not control a local launcher.\nwindow.__LAUNCHER_SYNC__ = null;\n" };
+const files = [...sourceFiles, ...Object.keys(generatedFiles)];
 
 fs.mkdirSync(output, { recursive: true });
 
 for (const file of files) {
   const destination = path.join(output, file);
   fs.mkdirSync(path.dirname(destination), { recursive: true });
-  fs.copyFileSync(path.join(root, file), destination);
+  if (Object.prototype.hasOwnProperty.call(generatedFiles, file)) fs.writeFileSync(destination, generatedFiles[file]);
+  else fs.copyFileSync(path.join(root, file), destination);
 }
 
 // 静态资源内容指纹：线上发版后浏览器立即拉新文件，不再吃旧缓存。

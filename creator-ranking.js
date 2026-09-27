@@ -35,32 +35,34 @@
   function parseMetricValue(value) {
     const raw = String(value || "").trim().replace(/,/g, "");
     if (!raw) return 0;
-    const number = Number(raw.replace(/[%万wWkK千+]/g, "")) || 0;
-    if (/[万wW]/.test(raw)) return number * 10000;
-    if (/[kK千]/.test(raw)) return number * 1000;
-    return number;
+    const number = Number(raw.replace(/[%万wWkK千+]/g, ""));
+    if (!Number.isFinite(number) || number < 0) return 0;
+    const multiplier = /[万wW]/.test(raw) ? 10000 : /[kK千]/.test(raw) ? 1000 : 1;
+    const result = number * multiplier;
+    return Number.isFinite(result) ? result : 0;
   }
 
   function parseRateValue(value) {
     const raw = String(value || "").trim();
-    const number = Number(raw.replace("%", "")) || 0;
+    const number = Number(raw.replace("%", ""));
+    if (!Number.isFinite(number) || number < 0) return 0;
     if (raw.includes("%")) return number;
     if (number > 0 && number <= 1) return number * 100;
     return number;
   }
 
   function qualityScore(value) {
-    const text = String(value || "");
-    if (text.includes("高") || text.includes("优")) return 90;
-    if (text.includes("低") || text.includes("差") || text.includes("水")) return 35;
-    return text ? 65 : 0;
+    const text = String(value || "").trim().replace(/^(评论区质量|评论质量|质量)\s*[：:]?\s*/, "").split(/[（(，,；;。]/)[0].trim();
+    if (["高", "偏高", "较高", "优", "优秀", "优质", "好", "良好"].includes(text)) return 90;
+    if (["低", "偏低", "较低", "差", "较差", "待优化", "需优化", "需要优化", "不佳", "水"].includes(text)) return 35;
+    return 65;
   }
 
   function densityScore(value) {
-    const text = String(value || "");
-    if (text.includes("高")) return 30;
-    if (text.includes("低")) return 85;
-    return text ? 60 : 0;
+    const text = String(value || "").trim().replace(/^(商单密度|商业密度|密度)\s*[：:]?\s*/, "").split(/[（(，,；;。]/)[0].trim();
+    if (["高", "偏高", "较高"].includes(text)) return 30;
+    if (["低", "偏低", "较低"].includes(text)) return 85;
+    return 60;
   }
 
   function hasAny(text, words) {
@@ -133,7 +135,7 @@
     const value = quote > 0 ? clampScore(100 - Math.min(60, cpm * 1.3) - Math.min(25, cpe * 0.2) + engagementScore * 0.25 + quality * 0.2 + density * 0.12 + conversionScore * 0.12 - riskPenalty * 0.45) : 0;
     const overall = clampScore(launch * 0.28 + review * 0.24 + guide * 0.24 + value * 0.24);
     const risks = [];
-    if (row.commercialDensity && row.commercialDensity.includes("高")) risks.push("商单密度偏高");
+    if (density < 50) risks.push("商单密度偏高");
     if (quality > 0 && quality < 50) risks.push("评论质量偏低");
     if (row.engagementRate > 18) risks.push("互动率异常，需核查刷量");
     if (!projectMatch) risks.push("与当前项目品类匹配不足");
@@ -176,7 +178,9 @@
   }
 
   function getCreatorHistoryScore(collaborations) {
-    const records = Array.isArray(collaborations) ? collaborations.filter((item) => item && typeof item === "object") : [];
+    const records = Array.isArray(collaborations)
+      ? collaborations.filter((item) => item && typeof item === "object" && !Array.isArray(item))
+      : [];
     if (!records.length) return null;
     const scores = records.map((record) => {
       const quality = Number(record.quality);
@@ -190,19 +194,37 @@
       ];
       const actualViews = Number(record.actualViews);
       const baselineViews = Number(record.baselineViews);
-      if (actualViews > 0 && baselineViews > 0) {
+      const hasActualViews = record.actualViews !== null && record.actualViews !== undefined && record.actualViews !== ""
+        && Number.isFinite(actualViews) && actualViews >= 0;
+      if (hasActualViews && baselineViews > 0) {
         components.push({ score: clampScore(50 + (actualViews / baselineViews - 1) * 50), weight: 0.2 });
       }
       const actualCost = Number(record.actualCost);
       const baselineQuote = Number(record.baselineQuote);
-      if (actualCost > 0 && actualViews > 0 && baselineQuote > 0 && baselineViews > 0) {
-        const actualCpm = actualCost / actualViews;
+      const hasActualCost = record.actualCost !== null && record.actualCost !== undefined && record.actualCost !== ""
+        && Number.isFinite(actualCost) && actualCost >= 0;
+      if (hasActualCost && hasActualViews && baselineQuote > 0 && baselineViews > 0) {
         const baselineCpm = baselineQuote / baselineViews;
-        components.push({ score: clampScore(50 + (1 - actualCpm / baselineCpm) * 50), weight: 0.15 });
+        const costEfficiencyScore = actualViews > 0
+          ? clampScore(50 + (1 - actualCost / actualViews / baselineCpm) * 50)
+          : actualCost > 0 ? 0 : 50;
+        components.push({ score: costEfficiencyScore, weight: 0.15 });
+      }
+      const actualEngagementValue = record.actualEngagementRate;
+      const actualEngagementRate = parseRateValue(actualEngagementValue);
+      const baselineEngagementRate = parseRateValue(record.baselineEngagementRate);
+      const hasActualEngagementRate = actualEngagementValue !== null && actualEngagementValue !== undefined && actualEngagementValue !== ""
+        && Number.isFinite(actualEngagementRate) && actualEngagementRate >= 0;
+      if (hasActualEngagementRate && baselineEngagementRate > 0) {
+        components.push({ score: clampScore(50 + (actualEngagementRate / baselineEngagementRate - 1) * 50), weight: 0.1 });
       }
       const actualConversionRate = parseRateValue(record.actualConversionRate ?? record.conversionRate);
       const baselineConversionRate = parseRateValue(record.baselineConversionRate);
-      if (actualConversionRate > 0) {
+      const hasActualConversionRate = (record.actualConversionRate ?? record.conversionRate) !== null
+        && (record.actualConversionRate ?? record.conversionRate) !== undefined
+        && (record.actualConversionRate ?? record.conversionRate) !== ""
+        && Number.isFinite(actualConversionRate) && actualConversionRate >= 0;
+      if (hasActualConversionRate) {
         const conversionScore = baselineConversionRate > 0
           ? clampScore(50 + (actualConversionRate / baselineConversionRate - 1) * 50)
           : clampScore(actualConversionRate * 5);
@@ -214,8 +236,33 @@
     return {
       score: clampScore(scores.reduce((sum, score) => sum + score, 0) / scores.length),
       count: records.length,
-      dataSignals: records.reduce((count, record) => count + [record.actualViews, record.actualCost, record.actualConversions, record.actualConversionRate ?? record.conversionRate].filter((value) => Number(value) > 0).length, 0)
+      dataSignals: records.reduce((count, record) => count + [record.actualViews, record.actualEngagementRate, record.actualConversions, record.actualConversionRate ?? record.conversionRate]
+        .filter((value) => value !== null && value !== undefined && value !== "" && Number.isFinite(Number(value)) && Number(value) >= 0).length
+        + (record.actualCost !== null && record.actualCost !== undefined && record.actualCost !== "" && Number.isFinite(Number(record.actualCost)) && Number(record.actualCost) >= 0 ? 1 : 0), 0)
     };
+  }
+
+  function sortCreatorCollaborationsByDate(history) {
+    return [...(Array.isArray(history) ? history : [])]
+      .filter((item) => item && typeof item === "object" && !Array.isArray(item))
+      .map((item, index) => {
+        const occurredOn = Date.parse(item?.occurredOn || "");
+        const createdAt = Date.parse(item?.createdAt || "");
+        return { item, index, timestamp: Number.isFinite(occurredOn) ? occurredOn : Number.isFinite(createdAt) ? createdAt : 0 };
+      })
+      .sort((a, b) => b.timestamp - a.timestamp || b.index - a.index)
+      .map(({ item }) => item);
+  }
+
+  function getCreatorLibraryDisplayProfiles(library) {
+    if (!library || typeof library !== "object" || Array.isArray(library)) return [];
+    return Object.values(library).filter((profile) => profile
+      && typeof profile === "object"
+      && !Array.isArray(profile)
+      && typeof profile.name === "string"
+      && profile.name.trim()
+      && typeof profile.platform === "string"
+      && profile.platform.trim());
   }
 
   function isEligibleCreator(row) {
@@ -258,6 +305,8 @@
     creatorKey,
     getActivityConfig,
     getCreatorHistoryScore,
+    sortCreatorCollaborationsByDate,
+    getCreatorLibraryDisplayProfiles,
     scoreCreator,
     scoreByGoal,
     isEligibleCreator,

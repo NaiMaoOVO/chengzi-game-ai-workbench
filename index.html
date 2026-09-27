@@ -62,7 +62,7 @@
           <button class="command-trigger" id="command-trigger" type="button" aria-haspopup="dialog" aria-controls="command-palette">
             <span>搜索功能、数据或直接向 AI 提问…</span><kbd>⌘ K</kbd>
           </button>
-          <div class="topbar-utility" aria-label="工作台状态">
+          <div class="topbar-utility" role="group" aria-label="工作台状态">
             <span id="topbar-date"></span>
             <span id="topbar-service-state">数据检查中</span>
           </div>
@@ -84,7 +84,7 @@
           </div>
           <div>
             <span class="chain-label">数据口径</span>
-            <strong id="chain-source-text">真实数据 · B站公开搜索 · 近24h · 已过滤旧视频</strong><button class="secondary-button caliber-trigger" id="caliber-trigger" type="button" title="查看当前模块数据口径说明">口径说明</button>
+            <strong id="chain-source-text">等待同步 · B站 · 近24h</strong><button class="secondary-button caliber-trigger" id="caliber-trigger" type="button" title="查看当前模块数据口径说明">口径说明</button>
           </div>
         </section>
         <p class="archive-sync-status source-status" id="archive-sync-status" aria-live="polite">存档：等待写入。</p>
@@ -107,7 +107,7 @@
   </div>
 </div>
                 <button class="secondary-button" id="load-project-state" type="button">载入上次项目</button>
-                <div class="service-mode-switch" aria-label="服务运行模式">
+                <div class="service-mode-switch" role="group" aria-label="服务运行模式">
                   <span>服务模式</span>
                   <button class="service-mode-button" type="button" data-service-mode="local" title="连接当前设备的 127.0.0.1 服务">本地开发</button>
                   <button class="service-mode-button" type="button" data-service-mode="online" title="连接当前域名下的 /api 服务">线上服务</button>
@@ -255,7 +255,7 @@
                 <button class="secondary-button launcher-primary-action" type="submit">添加</button>
               </form>
 
-              <div class="daily-filter-bar" aria-label="行动队列筛选">
+              <div class="daily-filter-bar" role="group" aria-label="行动队列筛选">
                 <button class="daily-filter active" type="button" data-daily-filter="all" aria-pressed="true">全部</button>
                 <button class="daily-filter" type="button" data-daily-filter="risk" aria-pressed="false">风险</button>
                 <button class="daily-filter" type="button" data-daily-filter="publication" aria-pressed="false">待回流</button>
@@ -276,6 +276,7 @@
               </details>
             </section>
 
+            <div class="daily-insight-rail" role="group" aria-label="运营信号">
             <section class="section-block daily-insight-panel" aria-label="AI 洞察">
               <div class="daily-insight-head">
                 <div>
@@ -284,7 +285,7 @@
                 </div>
                 <span class="daily-insight-status" id="daily-insight-status">自动归纳</span>
               </div>
-              <div class="daily-insight-signal-grid" aria-label="AI 洞察当前信号">
+              <div class="daily-insight-signal-grid" role="group" aria-label="AI 洞察当前信号">
                 <span><small>风险</small><strong id="daily-ai-risk-count">—</strong></span>
                 <span><small>待回流</small><strong id="daily-ai-publication-count">—</strong></span>
                 <span><small>待办</small><strong id="daily-ai-todo-count">—</strong></span>
@@ -292,8 +293,9 @@
               <p class="daily-insight-summary" id="daily-insight-summary" aria-live="polite">正在整理风险、回流与待办信号…</p>
               <ol class="daily-insight-list" id="daily-insight-recommendations"></ol>
               <article class="daily-ai-insight-result" id="daily-ai-insight-result" aria-live="polite" hidden></article>
+              <p class="muted-copy daily-ai-privacy-note">仅在你点击生成时，发送每类最多 5 条信号及项目归属、必要数量口径、热点来源/筛选范围/快照时间到已配置的 AI 服务；样例及历史热点会明确标注，敏感内容请先脱敏。</p>
               <div class="daily-insight-actions">
-                <button class="secondary-button" id="generate-daily-ai-insight" type="button" title="仅基于当前待办、风险和待回流内容生成">生成 AI 洞察</button>
+                <button class="secondary-button" id="generate-daily-ai-insight" type="button" title="手动触发；每类最多发送 5 条信号及项目、数量、热点来源/范围和快照时间至已配置的 AI 服务">生成 AI 洞察</button>
                 <button class="secondary-button" id="daily-insight-action" type="button" hidden>查看下一步</button>
               </div>
             </section>
@@ -303,14 +305,14 @@
                 <div>
                   <p class="eyebrow">Platform signals</p>
                   <h3>平台数据概览</h3>
-                  <p class="muted-copy">汇总已读取的热点条目与待回流内容，不代表平台全量数据。</p>
+                  <p class="muted-copy">按当前项目展示热点存档与待回流内容；最多检查最近 50 份热点存档，较久未更新的平台可能未显示。</p>
                 </div>
                 <span class="daily-platform-status" id="daily-platform-status" aria-live="polite">等待同步</span>
               </div>
-              <div class="daily-platform-table-wrap" tabindex="0">
+              <div class="daily-platform-table-wrap" tabindex="0" role="region" aria-label="平台数据概览表格，可横向滚动查看完整内容">
                 <table class="daily-platform-table">
                   <thead>
-                    <tr><th scope="col">平台</th><th scope="col">热点条目</th><th scope="col">待回流</th><th scope="col">数据状态</th></tr>
+                    <tr><th scope="col">平台</th><th scope="col">热点 / TOP5 播放</th><th scope="col">待回流</th><th scope="col">数据状态</th></tr>
                   </thead>
                   <tbody id="daily-platform-list">
                     <tr><td colspan="4" class="daily-platform-empty">正在同步平台信号…</td></tr>
@@ -318,10 +320,11 @@
                 </table>
               </div>
               <div class="daily-platform-footer">
-                <p class="muted-copy" id="daily-platform-note">热点数据会按当前热点追踪设置同步。</p>
+                <p class="muted-copy" id="daily-platform-note">正在载入当前项目最近的热点存档。</p>
                 <button class="secondary-button" id="daily-platform-trending-action" type="button">查看热点追踪</button>
               </div>
             </section>
+            </div>
 
             <section class="section-block briefing-panel" id="briefing-panel" aria-label="今日运营简报">
               <div class="daily-panel-head">
@@ -339,7 +342,7 @@
                   <button class="secondary-button" id="copy-briefing-im" type="button" disabled title="生成简报后可复制">复制为飞书/企微消息</button>
                 </div>
               </div>
-              <div class="daily-briefing-workflow" aria-label="简报工作流">
+                <div class="daily-briefing-workflow" role="group" aria-label="简报工作流">
                 <span><b>1</b>汇总今日信号</span>
                 <span><b>2</b>确认下一步</span>
                 <span><b>3</b>存档并同步</span>
@@ -349,8 +352,8 @@
               <div class="trend-section" id="trend-section" hidden>
                 <h4>近 14 天趋势</h4>
                 <p class="muted-copy" id="trend-conclusion"></p>
-                <div class="trend-chart" id="trend-chart-feedback" aria-label="每日负向评论占比"></div>
-                <div class="trend-chart" id="trend-chart-trending" aria-label="每日热点快照条数"></div>
+                <div class="trend-chart" id="trend-chart-feedback" role="img" aria-label="每日负向评论占比"></div>
+                <div class="trend-chart" id="trend-chart-trending" role="img" aria-label="每日热点快照条数"></div>
               </div>
               <div class="briefing-archive-list" id="briefing-archive-list"></div>
             </section>
@@ -679,7 +682,7 @@
                   <option value="7d">近 7 天</option>
                 </select>
               </label>
-              <div class="segmented-control" aria-label="评论导入平台" id="feedback-platform-switch">
+              <div class="segmented-control" role="group" aria-label="评论导入平台" id="feedback-platform-switch">
                 <button class="segment-button active" type="button" data-feedback-import-target="bili" aria-pressed="true">B站视频</button>
                 <button class="segment-button" type="button" data-feedback-import-target="xhs" aria-pressed="false">小红书笔记</button>
               </div>
@@ -694,7 +697,8 @@
                 <button class="secondary-button" id="check-comment-services" type="button">服务自检</button>
                 <button class="secondary-button" id="export-feedback" type="button">导出分析</button>
               </div>
-              <p class="source-status" id="feedback-source-status" aria-live="polite">评论来源：手动输入</p>
+              <p class="source-status" id="feedback-source-status" aria-live="polite">当前评论内容为演示样例；手动编辑后来源标为未核验。</p>
+              <p class="source-status" id="comment-services-status" aria-live="polite">服务状态：尚未检查。</p>
               <div class="fetch-diagnostic" id="feedback-fetch-diagnostic">
                 <strong>抓取诊断</strong>
                 <span>未开始抓取。服务启动后会优先读取真实评论；遇到平台风控或服务不可用时，可用样例兜底继续演示分析链路。</span>
@@ -756,7 +760,7 @@
         <section class="view" id="review-view" data-screen-label="活动复盘生成" data-caliber="常规活动复盘：使用曝光→点击→参与→付费漏斗模型。主播直播复盘：对比活动场 ACU/PCU/曝光/进房与近期均值，按口径配置判定正/负反馈。判断口径支持标准/保守/激进取值。">
           <div class="tool-layout">
             <form class="input-panel" id="review-form">
-              <div class="segmented-control" aria-label="复盘类型">
+              <div class="segmented-control" role="group" aria-label="复盘类型">
                 <button class="segment-button active" type="button" data-review-mode="campaign">常规活动复盘</button>
                 <button class="segment-button" type="button" data-review-mode="livestream">主播直播数据复盘</button>
               </div>
@@ -789,7 +793,7 @@
                 </label>
                 <div class="drop-zone" id="stream-drop-zone" role="button" aria-label="选择或拖入主播直播数据截图" tabindex="0">
                   <strong>拖入主播直播数据截图</strong>
-                  <span>支持多张图片；当前模式对应的 OCR 服务会识别活动场数据，识别后可继续校正 ACU、PCU、曝光量、进房人数和近期均值。</span>
+                  <span>最多保留 40 张截图，待识别队列最多 20 张，每批最多 20 张，单张不超过 12 MiB；队列满时可等任务完成，列表满时请先删除旧截图。OCR 逐张识别活动场数据，识别后可校正 ACU、PCU、曝光量、进房人数和近期均值。</span>
                   <input id="stream-screenshots" type="file" accept="image/*" aria-label="选择主播直播数据截图" multiple />
                 </div>
                 <p class="muted-copy ocr-privacy-note">线上远程 OCR 会把原始截图发送给配置的第三方服务，请勿上传包含账号、收入或内部经营信息的敏感截图。</p>
@@ -882,8 +886,8 @@
                   <option value="7d">近 7 天</option>
                 </select>
               </label>
-              <label>
-                热点类型偏好（可多选）
+              <fieldset class="tag-select-field">
+                <legend>热点类型偏好（可多选）</legend>
                 <div class="tag-select-group" id="trending-tags">
                   <label class="tag-checkbox"><input type="checkbox" value="攻略" checked /> 攻略</label>
                   <label class="tag-checkbox"><input type="checkbox" value="资讯" checked /> 资讯</label>
@@ -891,7 +895,7 @@
                   <label class="tag-checkbox"><input type="checkbox" value="争议" checked /> 争议</label>
                   <label class="tag-checkbox"><input type="checkbox" value="二创" checked /> 二创</label>
                 </div>
-              </label>
+              </fieldset>
               <div class="trending-actions">
                 <button type="submit">抓取热点</button>
                 <button class="secondary-button" id="refresh-trending" type="button">刷新榜单</button>
@@ -901,7 +905,7 @@
               <p class="muted-copy centered-copy">B站真实抓取支持任意关键词，不限于建议列表。</p>
               <div class="fetch-diagnostic" id="trending-fetch-diagnostic">
                 <strong>抓取诊断</strong>
-                <span>未开始抓取。若出现 HTTP 412 或结果为空，系统会标记原因并保留样例兜底，方便演示完整运营链路。</span>
+                <span>未开始抓取。失败或无结果时会标记原因；只有开启演示模式才使用样例兜底。</span>
               </div>
             </form>
 
@@ -913,6 +917,7 @@
                 </div>
                 <p class="source-status" id="trending-source-status" aria-live="polite">数据源：样例兜底榜单</p>
                 <p class="source-status" id="trending-method" aria-live="polite">口径：B站公开搜索结果，按播放、弹幕、收藏和发布时间衰减计算综合热度；不等同于 B站官方全站榜。</p>
+                <p class="source-status source-mock" id="trending-scope-status" aria-live="polite" hidden></p>
               </div>
               <ol class="trending-list" id="trending-list"></ol>
               <div class="section-block">
@@ -1183,7 +1188,7 @@
                 <div class="section-heading-row">
                   <div>
                     <h3>我的创作者库 <span class="creator-library-count" id="creator-library-count">0</span></h3>
-                    <p class="muted-copy">保存值得长期关注的达人，并记录合作状态、实际结果和历史性价比。默认保存在当前浏览器，也可登录存档服务后跨浏览器同步。</p>
+                    <p class="muted-copy">保存值得长期关注的达人，并记录合作状态、实际结果和历史性价比。未登录时保存在本机；线上账号各自独立同步。本机旧库不会自动并入账号，如需迁移请先导出，再登录目标账号导入。</p>
                   </div>
                   <div class="creator-library-actions">
                     <button class="secondary-button" id="save-eligible-creators" type="button">保存可推进达人</button>
@@ -1306,7 +1311,7 @@
       <input id="command-palette-input" type="search" placeholder="搜索功能或操作…" autocomplete="off" />
       <kbd>ESC</kbd>
     </div>
-    <div class="command-palette-list" aria-label="可用操作">
+    <div class="command-palette-list" role="group" aria-label="可用操作">
       <p id="command-palette-title" class="command-palette-label">快速前往</p>
       <button type="button" data-command-view="daily">每日工作台 <small>查看今天的队列</small></button>
       <button type="button" data-command-view="trending">热点追踪 <small>发现值得关注的话题</small></button>

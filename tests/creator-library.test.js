@@ -4,9 +4,11 @@ const { spawn } = require("node:child_process");
 const http = require("node:http");
 const os = require("node:os");
 const path = require("node:path");
+const { DatabaseSync } = require("node:sqlite");
 
 const projectRoot = path.resolve(__dirname, "..");
 const PORT = 19716;
+const databasePath = path.join(os.tmpdir(), "gameops-creator-library-" + process.pid + "-" + Date.now() + ".db");
 
 function request(requestPath, options = {}) {
   const { method = "GET", headers = {}, body = null } = options;
@@ -42,7 +44,7 @@ const child = spawn(process.execPath, [path.join(projectRoot, "archive-server.js
   env: {
     ...process.env,
     ARCHIVE_PORT: String(PORT),
-    ARCHIVE_DB_PATH: path.join(os.tmpdir(), "gameops-creator-library-" + process.pid + "-" + Date.now() + ".db"),
+    ARCHIVE_DB_PATH: databasePath,
     ARCHIVE_AUTH_ENABLED: "1",
     ARCHIVE_ADMIN_USERNAME: "creator-admin",
     ARCHIVE_ADMIN_PASSWORD: "creator-password-2026",
@@ -92,4 +94,85 @@ test("creator library sync is authenticated and rejects stale writes", async () 
   });
   assert.equal(stale.status, 409);
   assert.equal(stale.payload.error, "creator_library_conflict");
+});
+
+test("creator library rejects malformed profile and collaboration records without overwriting saved data", async () => {
+  const login = await request("/auth/login", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ username: "creator-admin", password: "creator-password-2026" })
+  });
+  assert.equal(login.status, 200);
+  const cookie = cookieOf(login);
+  const headers = {
+    "Content-Type": "application/json",
+    Cookie: cookie,
+    "X-CSRF-Token": login.payload.csrf_token
+  };
+  const beforeSave = await request("/creator-library", { headers: { Cookie: cookie } });
+  const saved = await request("/creator-library", {
+    method: "PUT",
+    headers,
+    body: JSON.stringify({
+      base_updated_at: beforeSave.payload.updated_at,
+      library: { ...beforeSave.payload.library, profile: { name: "有效档案", platform: "B站" } }
+    })
+  });
+  assert.equal(saved.status, 200);
+  const current = await request("/creator-library", { headers: { Cookie: cookie } });
+
+  for (const library of [
+    { profile: null },
+    { profile: { name: "有效档案", platform: "B站", collaborations: [{ project: "鸣潮" }, null] } }
+  ]) {
+    const rejected = await request("/creator-library", {
+      method: "PUT",
+      headers,
+      body: JSON.stringify({ base_updated_at: current.payload.updated_at, library })
+    });
+    assert.equal(rejected.status, 400);
+    assert.equal(rejected.payload.error, "creator_library_invalid_payload");
+  }
+
+  const after = await request("/creator-library", { headers: { Cookie: cookie } });
+  assert.deepEqual(after.payload.library, current.payload.library);
+  assert.equal(after.payload.updated_at, current.payload.updated_at);
+});
+
+test("creator library marks structurally damaged stored data invalid and blocks valid overwrites", async () => {
+  const login = await request("/auth/login", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ username: "creator-admin", password: "creator-password-2026" })
+  });
+  assert.equal(login.status, 200);
+  const cookie = cookieOf(login);
+  const csrf = login.payload.csrf_token;
+  const ownerKey = "user:" + login.payload.user.id;
+  const damagedLibrary = {
+    preserved: { name: "应保留的档案", platform: "B站", collaborations: { malformed: true } }
+  };
+  const updatedAt = "2026-09-27T00:00:00.000Z";
+  const database = new DatabaseSync(databasePath);
+  database.prepare("UPDATE creator_libraries SET payload = ?, updated_at = ? WHERE owner_key = ?")
+    .run(JSON.stringify(damagedLibrary), updatedAt, ownerKey);
+  database.close();
+
+  const current = await request("/creator-library", { headers: { Cookie: cookie } });
+  assert.equal(current.status, 200);
+  assert.equal(current.payload.invalid, true);
+  assert.deepEqual(current.payload.library, damagedLibrary);
+
+  const overwrite = await request("/creator-library", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", Cookie: cookie, "X-CSRF-Token": csrf },
+    body: JSON.stringify({ base_updated_at: updatedAt, library: {} })
+  });
+  assert.equal(overwrite.status, 409);
+  assert.equal(overwrite.payload.error, "creator_library_invalid");
+
+  const after = await request("/creator-library", { headers: { Cookie: cookie } });
+  assert.equal(after.payload.invalid, true);
+  assert.deepEqual(after.payload.library, damagedLibrary);
+  assert.equal(after.payload.updated_at, updatedAt);
 });

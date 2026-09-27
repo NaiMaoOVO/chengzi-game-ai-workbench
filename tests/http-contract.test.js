@@ -152,12 +152,47 @@ test("local controller serves CORS headers for file pages and supervises child s
     for (const service of status.services) {
       assert.equal(service.running, true, `${service.name} 应处于运行状态`);
     }
-    assert.equal(status.services.some((service) => service.name === "存档服务" && service.port === ports.archive && service.running), true);
+    assert.equal(status.services.some((service) => service.name === "存档服务" && service.port === ports.archive && service.running && service.ready), true);
   } catch (error) {
     assert.fail(`${error.message}\nstderr: ${stderrText.slice(-800)}`);
   } finally {
     child.kill("SIGTERM");
     await new Promise((resolve) => child.once("exit", resolve));
+  }
+});
+
+test("local controller distinguishes a running archive from writable storage", { timeout: 60000 }, async () => {
+  const ports = { controller: 19023, hotspot: 19020, comment: 19021, ocr: 19022, llm: 19024, archive: 19026 };
+  const archive = http.createServer((request, response) => {
+    const ready = request.url === "/ready";
+    response.writeHead(ready ? 503 : 200, { "Content-Type": "application/json" });
+    response.end(JSON.stringify({ service: "gameops-archive", ready: !ready }));
+  });
+  await new Promise((resolve) => archive.listen(ports.archive, "127.0.0.1", resolve));
+  const child = spawn(process.execPath, [path.join(projectRoot, "start-demo.js")], {
+    cwd: projectRoot,
+    env: {
+      ...process.env,
+      CONTROLLER_PORT: String(ports.controller),
+      HOTSPOT_PORT: String(ports.hotspot),
+      COMMENT_PORT: String(ports.comment),
+      PORT: String(ports.ocr),
+      LLM_PORT: String(ports.llm),
+      ARCHIVE_PORT: String(ports.archive),
+      GAMEOPS_NO_OPEN: "1"
+    },
+    stdio: "ignore"
+  });
+  try {
+    await waitForHealth(ports.controller, 15000);
+    const status = await fetch(`http://127.0.0.1:${ports.controller}/status`).then((response) => response.json());
+    const archiveStatus = status.services.find((service) => service.name === "存档服务");
+    assert.equal(archiveStatus.running, true);
+    assert.equal(archiveStatus.ready, false);
+  } finally {
+    child.kill("SIGTERM");
+    if (child.exitCode === null) await new Promise((resolve) => child.once("exit", resolve));
+    await new Promise((resolve) => archive.close(resolve));
   }
 });
 
