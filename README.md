@@ -162,6 +162,8 @@ npm run deploy:start && pm2 save && pm2 startup
 
 Nginx 配置见 `nginx.conf.example` / `nginx-https.conf.example`。HTTPS 模板的 Basic Auth 是个人站点的外层访问门槛；archive 登录用于区分每位账号自己的业务数据。若使用自定义反向代理，必须为 API 路由配置等效的访问认证，不要把仅有 CORS 或限流的服务接口直接暴露到公网。Linux 服务器设置 `OCR_PROVIDER=remote` 并配置远端 OCR 服务；macOS 服务器可用 `OCR_PROVIDER=macos` 直接调用系统 Vision。
 
+HTTPS 模板默认只为配置的站点主机启用一年期 HSTS。可选的 `includeSubDomains` 仅在确认该主机名下所有子域都已正确配置 HTTPS 后才应启用；否则可能导致未启用 HTTPS 的子域无法访问。
+
 首次启用 HTTPS 模板前，先安装 `htpasswd` 工具并创建模板引用的认证文件：
 
 ```bash

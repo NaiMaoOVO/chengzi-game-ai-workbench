@@ -91,3 +91,14 @@ test("HTTPS cache locations keep inheriting the server-level security headers", 
   assert.match(staticAssets, /^\s*expires\s+30d\s*;/m);
   assert.match(indexHtml, /^\s*expires\s+-1\s*;/m);
 });
+
+test("HSTS template defaults to the configured host until subdomains are confirmed", () => {
+  const config = fs.readFileSync(path.join(root, "nginx-https.conf.example"), "utf8");
+  const readme = fs.readFileSync(path.join(root, "README.md"), "utf8");
+  const hsts = config.match(/^\s*add_header\s+Strict-Transport-Security\s+"([^"]+)"/m)?.[1];
+
+  assert.ok(hsts, "expected an HSTS header in the HTTPS template");
+  assert.doesNotMatch(hsts, /includeSubDomains/i);
+  assert.match(config, /^\s*#.*所有子域都支持 HTTPS 时.*includeSubDomains/m);
+  assert.match(readme, /`includeSubDomains`.*所有子域.*HTTPS/);
+});
