@@ -375,3 +375,19 @@ test("database delete errors return 500 without stopping the archive service", a
   assert.ok(todos.items.some((item) => item.id === todoId), "失败的删除不应移除待办");
   assert.ok(risks.items.some((item) => item.id === risk.id), "失败的删除不应移除风险事件");
 });
+
+test("project profile storage errors return 500 without exposing database details", async () => {
+  const db = new DatabaseSync(databasePath);
+  db.exec("CREATE TRIGGER reject_profile_write BEFORE INSERT ON project_profiles BEGIN SELECT RAISE(ABORT, 'blocked'); END;");
+  db.close();
+
+  const response = await httpRequest("/profile", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ game: "鸣潮", profile: { version: "2.8" } })
+  });
+  assert.equal(response.status, 500);
+  assert.deepEqual(JSON.parse(response.text), { ok: false, error: "项目档案暂时无法保存，请稍后重试" });
+  assert.doesNotMatch(response.text, /blocked|sqlite/i);
+  assert.equal((await httpRequest("/health")).status, 200);
+});
