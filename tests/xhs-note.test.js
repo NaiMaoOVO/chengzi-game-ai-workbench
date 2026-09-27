@@ -168,13 +168,18 @@ test("runMcpCall surfaces mcp isError text as a rejection", async () => {
   await assert.rejects(pending, /登录已失效/);
 });
 
-test("runMcpCall prefers stderr output when mcporter exits non-zero", async () => {
+test("runMcpCall drains but does not retain sensitive stderr when mcporter exits non-zero", async () => {
   const child = createFakeChild();
   const pending = runMcpCall(["call", "xiaohongshu.get_feed_detail"], { spawnImpl: () => child, timeoutMs: 5000 });
   await Promise.resolve();
-  child.stderr.write("mcporter boom\n");
+  const token = "fake-xsec-token-never-return-this";
+  child.stderr.write(`mcporter failed with ${token}\n`);
   child.emit("close", 1);
-  await assert.rejects(pending, /mcporter boom/);
+  await assert.rejects(pending, (error) => {
+    assert.equal(error.message, "mcporter exited with code 1");
+    assert.equal(error.message.includes(token), false);
+    return true;
+  });
 });
 
 test("runMcpCall kills hung children and names the tool in the timeout error", async () => {

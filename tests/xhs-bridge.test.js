@@ -2,8 +2,13 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const { EventEmitter } = require("node:events");
 const { PassThrough } = require("node:stream");
-
+const { spawn } = require("node:child_process");
+const fs = require("node:fs");
+const os = require("node:os");
 const path = require("node:path");
+const net = require("node:net");
+
+const projectRoot = path.resolve(__dirname, "..");
 
 const {
   buildSearchArgs,
@@ -11,7 +16,8 @@ const {
   createSearchGate,
   resolveMcporterBin,
   runMcpSearch,
-  buildChildEnv
+  buildChildEnv,
+  publicMcpError
 } = require("../xiaohongshu-bridge");
 
 test("bridge builds a fixed read-only MCP search command", () => {
@@ -30,6 +36,21 @@ test("bridge builds a fixed read-only MCP search command", () => {
 test("bridge maps the workbench range to the MCP publish_time filter", () => {
   const args = JSON.parse(buildSearchArgs("xiaohongshu", "鸣潮", "7d")[3]);
   assert.equal(args.filters.publish_time, "一周内");
+});
+
+test("bridge maps MCP failures to useful public messages without echoing provider details", () => {
+  const token = "fake-xsec-token-never-return-this";
+  const timeout = new Error(`timeout ${token}`);
+  timeout.code = "MCP_TIMEOUT";
+  assert.match(publicMcpError(timeout), /超时/);
+
+  const auth = new Error(`login expired ${token}`);
+  assert.match(publicMcpError(auth), /登录态/);
+
+  const unknown = new Error(`internal provider detail ${token}`);
+  const publicMessage = publicMcpError(unknown);
+  assert.match(publicMessage, /检查登录态与 mcporter/);
+  assert.equal(publicMessage.includes(token), false);
 });
 
 test("bridge parses JSON and fenced JSON from mcporter output", () => {
@@ -82,4 +103,51 @@ test("bridge kills a hung mcporter process after its own timeout", async () => {
     /超时/
   );
   assert.equal(child.killed, true);
+});
+
+test("bridge does not return mcporter stderr that echoes a signed note token", async () => {
+  const token = "fake-xsec-token-never-return-this";
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "gameops-xhs-bridge-"));
+  const fakeMcporter = path.join(tempDir, "mcporter");
+  fs.writeFileSync(fakeMcporter, "#!/usr/bin/env node\nprocess.stderr.write(process.argv.join(' '));\nprocess.exit(1);\n");
+  fs.chmodSync(fakeMcporter, 0o700);
+
+  const portServer = net.createServer();
+  await new Promise((resolve, reject) => {
+    portServer.once("error", reject);
+    portServer.listen(0, "127.0.0.1", resolve);
+  });
+  const port = portServer.address().port;
+  await new Promise((resolve) => portServer.close(resolve));
+
+  const bridge = spawn(process.execPath, [path.join(projectRoot, "xiaohongshu-bridge.js")], {
+    cwd: projectRoot,
+    env: { ...process.env, XHS_BRIDGE_PORT: String(port), MCPORTER_BIN: fakeMcporter },
+    stdio: ["ignore", "ignore", "ignore"]
+  });
+
+  try {
+    const deadline = Date.now() + 5000;
+    let response;
+    while (Date.now() < deadline) {
+      try {
+        response = await fetch(`http://127.0.0.1:${port}/health`, { signal: AbortSignal.timeout(500) });
+        if (response.ok) break;
+      } catch (_error) { /* wait for the bridge to listen */ }
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    assert.ok(response?.ok, "bridge should start for the integration test");
+
+    const noteUrl = new URL("https://www.xiaohongshu.com/explore/0123456789abcdef01234567");
+    noteUrl.searchParams.set("xsec_token", token);
+    const result = await fetch(`http://127.0.0.1:${port}/note?url=${encodeURIComponent(noteUrl.toString())}`);
+    const body = await result.text();
+    assert.equal(result.status, 502);
+    assert.equal(body.includes(token), false);
+    assert.match(body, /小红书.*失败|检查.*登录态/);
+  } finally {
+    bridge.kill("SIGTERM");
+    await new Promise((resolve) => bridge.once("exit", resolve));
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
 });

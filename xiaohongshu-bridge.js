@@ -57,6 +57,16 @@ function buildChildEnv(baseEnv = process.env) {
   return { ...baseEnv, PATH: entries.join(path.delimiter) };
 }
 
+function publicMcpError(error) {
+  if (error?.code === "MCP_TIMEOUT") return "小红书数据源响应超时，请稍后重试。";
+  if (error?.code === "MCP_OUTPUT_TOO_LARGE") return "小红书数据源返回内容过大，请缩小请求范围后重试。";
+  if (error?.code === "MCPORTER_START_FAILED") return "无法启动小红书数据源工具，请检查 mcporter 是否已安装。";
+  if (/未登录|登录失效|login required|unauthorized|authentication/i.test(String(error?.message || ""))) {
+    return "小红书登录态可能已失效，请重新登录后重试。";
+  }
+  return "小红书数据源调用失败，请检查登录态与 mcporter 服务后重试。";
+}
+
 function mcpPublishTime(range) {
   return {
     today: "一天内",
@@ -237,7 +247,6 @@ function runMcpCall(argv, options = {}) {
     });
     const chunks = [];
     let received = 0;
-    let stderr = "";
     let settled = false;
     let timer;
     const finish = (error, value) => {
@@ -247,7 +256,9 @@ function runMcpCall(argv, options = {}) {
       error ? reject(error) : resolve(value);
     };
     timer = setTimeout(() => {
-      finish(new Error(`xiaohongshu-mcp ${label} 超时（${timeoutMs}ms）`));
+      const error = new Error(`xiaohongshu-mcp ${label} 超时（${timeoutMs}ms）`);
+      error.code = "MCP_TIMEOUT";
+      finish(error);
       child.kill?.("SIGTERM");
     }, timeoutMs);
 
@@ -255,17 +266,21 @@ function runMcpCall(argv, options = {}) {
       received += chunk.length;
       if (received <= MAX_OUTPUT_BYTES) chunks.push(chunk);
       else {
-        finish(new Error("xiaohongshu-mcp 输出过大"));
+        const error = new Error("xiaohongshu-mcp 输出过大");
+        error.code = "MCP_OUTPUT_TOO_LARGE";
+        finish(error);
         child.kill?.("SIGTERM");
       }
     });
-    child.stderr.on("data", (chunk) => {
-      stderr += chunk.toString("utf8").slice(0, 2000);
+    child.stderr.resume();
+    child.on("error", () => {
+      const error = new Error("无法启动 mcporter");
+      error.code = "MCPORTER_START_FAILED";
+      finish(error);
     });
-    child.on("error", (error) => finish(new Error(`无法启动 mcporter：${error.message}`)));
     child.on("close", (code) => {
       if (code !== 0) {
-        finish(new Error(stderr.trim() || `mcporter 退出码 ${code}`));
+        finish(new Error(`mcporter exited with code ${code}`));
         return;
       }
       try {
@@ -346,7 +361,7 @@ const server = http.createServer(async (request, response) => {
       }
       sendJson(request, response, 200, { note: payload });
     } catch (error) {
-      sendJson(request, response, 502, { error: "xiaohongshu_mcp_failed", message: error.message });
+      sendJson(request, response, 502, { error: "xiaohongshu_mcp_failed", message: publicMcpError(error) });
     } finally {
       noteGate.release();
     }
@@ -372,7 +387,7 @@ const server = http.createServer(async (request, response) => {
       : { ...payload, providerRangeVerified: exactRange ? range : "" };
     sendJson(request, response, 200, result);
   } catch (error) {
-    sendJson(request, response, 502, { error: "xiaohongshu_mcp_failed", message: error.message });
+    sendJson(request, response, 502, { error: "xiaohongshu_mcp_failed", message: publicMcpError(error) });
   } finally {
     searchGate.release();
   }
@@ -399,5 +414,6 @@ module.exports = {
   mcpPublishTime,
   createSearchGate,
   resolveMcporterBin,
-  buildChildEnv
+  buildChildEnv,
+  publicMcpError
 };
