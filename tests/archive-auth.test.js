@@ -251,6 +251,42 @@ test("corrupted creator libraries remain visible and cannot be overwritten", asy
   assert.equal(overwrite.payload.error, "creator_library_invalid");
 });
 
+test("admin user creation storage errors return a sanitized 500 without creating an account", async () => {
+  const login = await request("/auth/login", {
+    method: "POST",
+    headers: jsonHeaders(),
+    body: JSON.stringify({ username: "ops-admin", password: "admin-password-2026" })
+  });
+  assert.equal(login.status, 200);
+  const cookie = sessionCookie(login);
+  const csrf = login.payload.csrf_token;
+
+  const setup = new DatabaseSync(databasePath);
+  setup.exec("CREATE TRIGGER reject_user_insert BEFORE INSERT ON archive_users WHEN NEW.username = 'storage-failure' BEGIN SELECT RAISE(ABORT, 'blocked'); END;");
+  setup.close();
+
+  let response;
+  const cleanup = new DatabaseSync(databasePath);
+  try {
+    response = await request("/auth/users", {
+      method: "POST",
+      headers: jsonHeaders({ cookie, csrf }),
+      body: JSON.stringify({ username: "storage-failure", password: "member-password-2026", role: "member" })
+    });
+  } finally {
+    cleanup.exec("DROP TRIGGER IF EXISTS reject_user_insert");
+    cleanup.close();
+  }
+
+  assert.equal(response.status, 500);
+  assert.deepEqual(response.payload, { ok: false, error: "用户暂时无法创建，请稍后重试" });
+  assert.doesNotMatch(JSON.stringify(response.payload), /blocked|sqlite/i);
+  const check = new DatabaseSync(databasePath);
+  assert.equal(check.prepare("SELECT COUNT(*) AS count FROM archive_users WHERE username = ?").get("storage-failure").count, 0);
+  check.close();
+  assert.equal((await request("/health")).status, 200);
+});
+
 test("admin user list storage errors return a sanitized 500 and keep the service alive", async () => {
   const login = await request("/auth/login", {
     method: "POST",

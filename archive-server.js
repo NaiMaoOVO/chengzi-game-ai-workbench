@@ -688,6 +688,10 @@ const server = http.createServer((request, response) => {
           const user = archiveAuth.createUser(body);
           sendJson(request, response, 201, { ok: true, user });
         } catch (error) {
+          if (error.code === "AUTH_STORAGE_FAILED") {
+            sendJson(request, response, 500, { ok: false, error: "用户暂时无法创建，请稍后重试" });
+            return;
+          }
           sendJson(request, response, 400, { ok: false, error: error.message });
         }
       });
