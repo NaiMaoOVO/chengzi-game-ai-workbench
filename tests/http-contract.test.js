@@ -42,6 +42,35 @@ const serviceCases = [
         assert.equal(post.status, 201);
         const list = await fetch(`http://127.0.0.1:${port}/snapshots?kind=smoke`).then((r) => r.json());
         assert.equal(list.items.length >= 1, true);
+        assert.equal(list.items[0].source, "sample");
+        const invalidSnapshotSourceType = await fetch(`http://127.0.0.1:${port}/snapshots`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ kind: "smoke", game: "测试", source: 1, payload: { invalid: true } })
+        });
+        assert.equal(invalidSnapshotSourceType.status, 400);
+        const invalidSnapshotSourceValue = await fetch(`http://127.0.0.1:${port}/snapshots`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ kind: "smoke", game: "测试", source: "verified", payload: { invalid: true } })
+        });
+        assert.equal(invalidSnapshotSourceValue.status, 400);
+        const defaultSnapshotSource = await fetch(`http://127.0.0.1:${port}/snapshots`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ kind: "smoke-default", game: "测试", payload: { ok: true } })
+        });
+        assert.equal(defaultSnapshotSource.status, 201);
+        const defaultSnapshotList = await fetch(`http://127.0.0.1:${port}/snapshots?kind=smoke-default`).then((r) => r.json());
+        assert.equal(defaultSnapshotList.items[0].source, "sample");
+        const realSnapshotSource = await fetch(`http://127.0.0.1:${port}/snapshots`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ kind: "smoke-real", game: "测试", source: "real", payload: { ok: true } })
+        });
+        assert.equal(realSnapshotSource.status, 201);
+        const realSnapshotList = await fetch(`http://127.0.0.1:${port}/snapshots?kind=smoke-real`).then((r) => r.json());
+        assert.equal(realSnapshotList.items[0].source, "real");
         const invalidSnapshotGame = await fetch(`http://127.0.0.1:${port}/snapshots`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },

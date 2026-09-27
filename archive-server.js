@@ -1294,7 +1294,14 @@ const server = http.createServer((request, response) => {
       sendJson(request, response, 400, { error: error.message });
       return;
     }
-    const source = body.source === "real" ? "real" : "sample";
+    let source = "sample";
+    if (Object.hasOwn(body, "source")) {
+      if (body.source !== "real" && body.source !== "sample") {
+        sendJson(request, response, 400, { error: "source 不合法（允许：real、sample）" });
+        return;
+      }
+      source = body.source;
+    }
     let requestId;
     try {
       requestId = requestIdOf(request, body);
