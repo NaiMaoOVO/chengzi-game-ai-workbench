@@ -3133,6 +3133,30 @@ test("briefing renderer degrades safely when archived fields have malformed shap
   assert.match(body.innerHTML, /暂无热点数据/);
 });
 
+test("briefing renderer escapes data issues restored from archived payloads", () => {
+  const renderStart = app.indexOf("function normalizeBriefingPayload");
+  const renderEnd = app.indexOf("async function generateDailyBriefing", renderStart);
+  assert.ok(renderStart >= 0 && renderEnd > renderStart);
+  const body = { hidden: true, innerHTML: "" };
+  const escapeHtml = (value) => String(value ?? "").replace(/[&<>\"']/g, (character) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    "\"": "&quot;",
+    "'": "&#39;"
+  })[character]);
+  const context = {
+    document: { querySelector: (selector) => selector === "#briefing-body" ? body : null },
+    formatBusinessDateTime: () => "2026-09-27 10:00",
+    escapeHtml,
+    setBriefingActionsAvailable: () => {}
+  };
+  vm.runInNewContext(app.slice(renderStart, renderEnd) + "\nthis.renderBriefing = renderBriefing;", context);
+  context.renderBriefing({ dataIssues: ['<img src=x onerror="alert(1)">'] });
+  assert.doesNotMatch(body.innerHTML, /<img src=x onerror=/);
+  assert.match(body.innerHTML, /&lt;img src=x onerror=&quot;alert\(1\)&quot;&gt;/);
+});
+
 test("daily briefing enables archive and copy only after a briefing is rendered", () => {
   assert.match(html, /id="archive-briefing" type="button" disabled/);
   assert.match(html, /id="copy-briefing-im" type="button" disabled/);
