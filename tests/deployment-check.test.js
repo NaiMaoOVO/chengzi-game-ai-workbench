@@ -60,7 +60,9 @@ test("deployment check validates production admin and remote OCR transport", () 
     [{ ARCHIVE_COOKIE_SECURE: "0" }, /线上部署必须保持 ARCHIVE_COOKIE_SECURE=1/],
     [{ OCR_PROVIDER: "remote", OCR_REMOTE_URL: "not-a-url" }, /OCR_REMOTE_URL 必须是有效的 HTTP\/HTTPS URL/],
     [{ OCR_PROVIDER: "remote", OCR_REMOTE_URL: "ftp://ocr.test/api" }, /OCR_REMOTE_URL 必须是有效的 HTTP\/HTTPS URL/],
-    [{ OCR_PROVIDER: "remote", OCR_REMOTE_URL: "http://ocr-provider.test/api" }, /公网 OCR 使用 HTTP 时必须设置 OCR_ALLOW_INSECURE_REMOTE=true/]
+    [{ OCR_PROVIDER: "remote", OCR_REMOTE_URL: "http://ocr-provider.test/api" }, /公网 OCR 使用 HTTP 时必须设置 OCR_ALLOW_INSECURE_REMOTE=true/],
+    [{ OCR_PROVIDER: "remote", OCR_REMOTE_URL: "https://EXAMPLE.COM/api" }, /OCR_PROVIDER=remote 时必须设置真实的 OCR_REMOTE_URL/],
+    [{ OCR_PROVIDER: "remote", OCR_REMOTE_URL: "https://ocr.example.com./api" }, /OCR_PROVIDER=remote 时必须设置真实的 OCR_REMOTE_URL/]
   ];
 
   for (const [extraEnv, message] of invalidConfigs) {
@@ -74,6 +76,9 @@ test("deployment check validates production admin and remote OCR transport", () 
 test("deployment check accepts secure and explicitly allowed OCR transports", () => {
   const validConfigs = [
     { OCR_PROVIDER: "remote", OCR_REMOTE_URL: "https://ocr-provider.test/api" },
+    { OCR_PROVIDER: "remote", OCR_REMOTE_URL: "https://notexample.com/api" },
+    { OCR_PROVIDER: "remote", OCR_REMOTE_URL: "https://ocr-provider.test/api/example.com" },
+    { OCR_PROVIDER: "remote", OCR_REMOTE_URL: "https://example.com.evil.test/api" },
     { OCR_PROVIDER: "remote", OCR_REMOTE_URL: "http://127.0.0.1:8787/api" },
     { OCR_PROVIDER: "remote", OCR_REMOTE_URL: "http://ocr.internal/api", OCR_ALLOW_INSECURE_REMOTE: "true" }
   ];

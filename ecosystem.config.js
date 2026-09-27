@@ -7,15 +7,17 @@ const cwd = __dirname;
 const allowedOrigin = process.env.ALLOWED_ORIGIN || "";
 const ocrProvider = process.env.OCR_PROVIDER || "macos";
 
+function hasExampleHost(value) {
+  try {
+    const host = new URL(value.trim()).hostname.toLowerCase().replace(/\.+$/, "");
+    return host === "example.com" || host.endsWith(".example.com");
+  } catch (_error) {
+    return false;
+  }
+}
+
 function isPlaceholderOrigin(value) {
-  return value.split(",").some((origin) => {
-    try {
-      const host = new URL(origin.trim()).hostname.toLowerCase();
-      return host === "example.com" || host.endsWith(".example.com");
-    } catch (_error) {
-      return false;
-    }
-  });
+  return value.split(",").some(hasExampleHost);
 }
 
 if (!allowedOrigin || isPlaceholderOrigin(allowedOrigin)) {
@@ -82,7 +84,7 @@ if ((process.env.ARCHIVE_COOKIE_SECURE || "1") !== "1") {
 
 if (ocrProvider === "remote") {
   const remoteOcrUrl = String(process.env.OCR_REMOTE_URL || "");
-  if (!remoteOcrUrl || remoteOcrUrl.includes("example.com")) {
+  if (!remoteOcrUrl || hasExampleHost(remoteOcrUrl)) {
     throw new Error("OCR_PROVIDER=remote 时必须设置真实的 OCR_REMOTE_URL");
   }
 
