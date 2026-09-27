@@ -7794,6 +7794,15 @@ function restoreProjectState(state) {
   analyzeCreators();
 }
 
+function isProjectStateRestorable(state) {
+  const isRecord = (value) => Boolean(value && typeof value === "object" && !Array.isArray(value));
+  return isRecord(state)
+    && isRecord(state.controls)
+    && (state.streamers === undefined || (Array.isArray(state.streamers) && state.streamers.every(isRecord)))
+    && (state.currentTrendingTopics === undefined
+      || (Array.isArray(state.currentTrendingTopics) && state.currentTrendingTopics.every(isRecord)));
+}
+
 function saveProjectState() {
   const status = document.querySelector("#overview-status");
   try {
@@ -7807,8 +7816,7 @@ function saveProjectState() {
       } catch {
         state = null;
       }
-      const readable = state && typeof state === "object" && !Array.isArray(state)
-        && state.controls && typeof state.controls === "object" && !Array.isArray(state.controls);
+      const readable = isProjectStateRestorable(state);
       if (!readable) {
         if (!window.confirm("现有项目快照损坏或无法载入。覆盖前请先备份原始数据；仍要用当前页面状态替换吗？")) {
           if (status) {
@@ -7864,6 +7872,11 @@ function loadProjectState() {
     state = JSON.parse(raw);
   } catch {
     setLoadError("项目快照格式损坏，原始数据未修改；请先备份后再保存新的快照。");
+    return;
+  }
+
+  if (!isProjectStateRestorable(state)) {
+    setLoadError("项目快照结构异常，原始数据未修改，未应用任何项目内容；请先备份后再保存新的快照。");
     return;
   }
 

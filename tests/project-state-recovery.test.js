@@ -4,6 +4,10 @@ const fs = require("node:fs");
 const vm = require("node:vm");
 
 const app = fs.readFileSync(require.resolve("../app.js"), "utf8");
+const shapeStart = app.indexOf("function isProjectStateRestorable(state) {");
+const shapeEnd = app.indexOf("\nfunction saveProjectState", shapeStart);
+assert.ok(shapeStart >= 0 && shapeEnd > shapeStart, "project state shape guard should exist in app.js");
+const shapeSource = app.slice(shapeStart, shapeEnd);
 const start = app.indexOf("function loadProjectState() {");
 const end = app.indexOf("\nfunction getViewElements", start);
 assert.ok(start >= 0 && end > start, "loadProjectState should exist in app.js");
@@ -22,7 +26,7 @@ function createHarness(getItem) {
     document: { querySelector: () => status },
     restoreProjectState: (value) => restored.push(value)
   };
-  const load = vm.runInNewContext(`(() => { ${source}; return loadProjectState; })()`, context);
+  const load = vm.runInNewContext(`(() => { ${shapeSource}; ${source}; return loadProjectState; })()`, context);
   return { load, status, restored };
 }
 
@@ -43,7 +47,7 @@ function createSaveHarness(initial, confirmResult = false, readError = false, mu
     document: { querySelector: () => status },
     collectProjectState: () => ({ controls: { game: "鸣潮" } })
   };
-  const save = vm.runInNewContext(`(() => { ${saveSource}; return saveProjectState; })()`, context);
+  const save = vm.runInNewContext(`(() => { ${shapeSource}; ${saveSource}; return saveProjectState; })()`, context);
   return { save, status, raw: () => raw, writes: () => writes, confirmations: () => confirmations };
 }
 
@@ -126,4 +130,22 @@ test("saving does not overwrite a snapshot updated in another tab during confirm
   assert.equal(harness.writes(), 0);
   assert.equal(harness.raw(), newer);
   assert.match(harness.status.textContent, /其他标签页已更新/);
+});
+
+test("loading a snapshot with a null creator rejects it before applying any project state", () => {
+  const state = { controls: { game: "原神" }, streamers: [null] };
+  const harness = createHarness(() => JSON.stringify(state));
+  harness.load();
+  assert.equal(harness.restored.length, 0);
+  assert.match(harness.status.textContent, /结构异常/);
+  assert.match(harness.status.textContent, /未应用/);
+});
+
+test("loading a snapshot with a null hotspot also rejects it before applying project state", () => {
+  const state = { controls: {}, currentTrendingTopics: [null] };
+  const harness = createHarness(() => JSON.stringify(state));
+  harness.load();
+  assert.equal(harness.restored.length, 0);
+  assert.match(harness.status.textContent, /结构异常/);
+  assert.match(harness.status.textContent, /未应用/);
 });
