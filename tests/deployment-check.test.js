@@ -83,18 +83,19 @@ test("deployment check rejects unsupported OCR providers and normalizes remote p
 
 test("deployment check rejects malformed rate limit settings before PM2 starts services", () => {
   const invalidSettings = [
-    ["RATE_LIMIT_MAX", "not-a-number"],
-    ["RATE_LIMIT_WINDOW_MS", "NaN"],
-    ["ARCHIVE_RATE_LIMIT_MAX", "0"],
-    ["ARCHIVE_AUTH_RATE_LIMIT_MAX", "1.5"],
-    ["OCR_RATE_LIMIT_MAX", "Infinity"],
-    ["LLM_RATE_LIMIT_MAX", "999999999999999999999"]
+    ["RATE_LIMIT_MAX", "not-a-number", /RATE_LIMIT_MAX 必须是正整数/],
+    ["RATE_LIMIT_WINDOW_MS", "NaN", /RATE_LIMIT_WINDOW_MS 必须是 1000-2147483647 毫秒的整数/],
+    ["RATE_LIMIT_WINDOW_MS", "999", /RATE_LIMIT_WINDOW_MS 必须是 1000-2147483647 毫秒的整数/],
+    ["ARCHIVE_RATE_LIMIT_MAX", "0", /ARCHIVE_RATE_LIMIT_MAX 必须是正整数/],
+    ["ARCHIVE_AUTH_RATE_LIMIT_MAX", "1.5", /ARCHIVE_AUTH_RATE_LIMIT_MAX 必须是正整数/],
+    ["OCR_RATE_LIMIT_MAX", "Infinity", /OCR_RATE_LIMIT_MAX 必须是正整数/],
+    ["LLM_RATE_LIMIT_MAX", "999999999999999999999", /LLM_RATE_LIMIT_MAX 必须是正整数/]
   ];
 
-  for (const [name, value] of invalidSettings) {
+  for (const [name, value, message] of invalidSettings) {
     const result = runCheck("https://gameops.test", { [name]: value });
     assert.equal(result.status, 1, `${name} unexpectedly passed deployment checks`);
-    assert.match(result.stderr, new RegExp(`${name} 必须是正整数`));
+    assert.match(result.stderr, message);
   }
 });
 
@@ -124,6 +125,7 @@ test("deployment check validates numeric service resource bounds", () => {
   }
 
   const boundaryValues = runCheck("https://gameops.test", {
+    RATE_LIMIT_WINDOW_MS: "1000",
     CACHE_TTL_MS: "0",
     LLM_CACHE_TTL_MS: "0",
     UPSTREAM_RETRIES: "0",

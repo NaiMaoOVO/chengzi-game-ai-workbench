@@ -15,11 +15,12 @@ const PORT = parseIntegerConfig(process.env.ARCHIVE_PORT, { name: "ARCHIVE_PORT"
 const ARCHIVE_SESSION_HOURS = parseIntegerConfig(process.env.ARCHIVE_SESSION_HOURS, { name: "ARCHIVE_SESSION_HOURS", min: 1, max: 744, defaultValue: 12 });
 const MAX_BODY_BYTES = 5 * 1024 * 1024;
 const cors = createCors({ allowedOrigins: process.env.ALLOWED_ORIGIN, methods: "GET, POST, PUT, DELETE, OPTIONS", allowFileOrigin: process.env.ALLOW_FILE_ORIGIN === "1" || process.env.NODE_ENV !== "production" });
-const RATE_LIMIT_WINDOW_MS = Math.max(1000, Number(process.env.RATE_LIMIT_WINDOW_MS || 60000));
-const RATE_LIMIT_MAX = Math.max(1, Number(process.env.ARCHIVE_RATE_LIMIT_MAX || 120));
+const RATE_LIMIT_WINDOW_MS = parseIntegerConfig(process.env.RATE_LIMIT_WINDOW_MS, { name: "RATE_LIMIT_WINDOW_MS", min: 1000, max: 2147483647, defaultValue: 60000 });
+const RATE_LIMIT_MAX = parseIntegerConfig(process.env.ARCHIVE_RATE_LIMIT_MAX, { name: "ARCHIVE_RATE_LIMIT_MAX", min: 1, defaultValue: 120 });
 const checkRateLimit = createRateLimiter({ windowMs: RATE_LIMIT_WINDOW_MS, max: RATE_LIMIT_MAX, trustProxy: process.env.TRUST_PROXY === "1" });
 const ARCHIVE_AUTH_ENABLED = process.env.ARCHIVE_AUTH_ENABLED === "1";
-const checkLoginRateLimit = createRateLimiter({ windowMs: RATE_LIMIT_WINDOW_MS, max: Math.max(1, Number(process.env.ARCHIVE_AUTH_RATE_LIMIT_MAX || 8)), trustProxy: process.env.TRUST_PROXY === "1" });
+const ARCHIVE_AUTH_RATE_LIMIT_MAX = parseIntegerConfig(process.env.ARCHIVE_AUTH_RATE_LIMIT_MAX, { name: "ARCHIVE_AUTH_RATE_LIMIT_MAX", min: 1, defaultValue: 8 });
+const checkLoginRateLimit = createRateLimiter({ windowMs: RATE_LIMIT_WINDOW_MS, max: ARCHIVE_AUTH_RATE_LIMIT_MAX, trustProxy: process.env.TRUST_PROXY === "1" });
 const MORNING_SCHEDULE = (process.env.MORNING_SCHEDULE || "09:00").trim();
 if (!isValidBusinessTime(MORNING_SCHEDULE)) {
   console.error("存档服务配置无效：MORNING_SCHEDULE 必须是 24 小时制 HH:mm（00:00-23:59）");

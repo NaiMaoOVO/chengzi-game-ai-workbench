@@ -31,8 +31,14 @@ for (const name of [
 ]) {
   const rawValue = process.env[name];
   if (rawValue === undefined || !String(rawValue).trim()) continue;
-  const value = Number(rawValue);
-  if (!Number.isSafeInteger(value) || value < 1) throw new Error(`${name} 必须是正整数`);
+  const min = name === "RATE_LIMIT_WINDOW_MS" ? 1000 : 1;
+  const max = name === "RATE_LIMIT_WINDOW_MS" ? 2147483647 : Number.MAX_SAFE_INTEGER;
+  try {
+    parseIntegerConfig(rawValue, { name, min, max });
+  } catch (_error) {
+    if (name === "RATE_LIMIT_WINDOW_MS") throw new Error("RATE_LIMIT_WINDOW_MS 必须是 1000-2147483647 毫秒的整数");
+    throw new Error(`${name} 必须是正整数`);
+  }
 }
 
 for (const [name, options, message] of [

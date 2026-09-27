@@ -22,7 +22,7 @@ const OCR_MAX_CONCURRENCY = parseIntegerConfig(process.env.OCR_MAX_CONCURRENCY, 
 const OCR_ALLOW_INSECURE_REMOTE = process.env.OCR_ALLOW_INSECURE_REMOTE === "true";
 const cors = createCors({ allowedOrigins: process.env.ALLOWED_ORIGIN, methods: "GET, POST, OPTIONS", allowFileOrigin: process.env.ALLOW_FILE_ORIGIN === "1" || process.env.NODE_ENV !== "production" });
 const RATE_LIMIT_WINDOW_MS = 60 * 1000;
-const RATE_LIMIT_MAX = Number(process.env.OCR_RATE_LIMIT_MAX) || 30;
+const RATE_LIMIT_MAX = parseIntegerConfig(process.env.OCR_RATE_LIMIT_MAX, { name: "OCR_RATE_LIMIT_MAX", min: 1, defaultValue: 30 });
 const rateLimiter = createRateLimiter({
   windowMs: RATE_LIMIT_WINDOW_MS,
   max: RATE_LIMIT_MAX,

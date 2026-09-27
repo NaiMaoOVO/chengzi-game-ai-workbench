@@ -526,10 +526,12 @@ test("llm: identity, disallowed Origin -> 403, bad bodies -> 400, exceeding limi
   });
 });
 
-test("archive: invalid morning schedule or platform exits before the service listens", () => {
+test("archive: invalid schedule, platform, rate limit, or session setting exits before SQLite opens", () => {
   const invalidConfigs = [
     [{ MORNING_SCHEDULE: "9:00" }, /MORNING_SCHEDULE 必须是 24 小时制 HH:mm/],
     [{ MORNING_PLATFORM: "未知平台" }, /MORNING_PLATFORM 必须是以下平台之一/],
+    [{ ARCHIVE_RATE_LIMIT_MAX: "0" }, /ARCHIVE_RATE_LIMIT_MAX must be an integer/],
+    [{ ARCHIVE_AUTH_RATE_LIMIT_MAX: "0" }, /ARCHIVE_AUTH_RATE_LIMIT_MAX must be an integer/],
     [{ ARCHIVE_SESSION_HOURS: "745" }, /ARCHIVE_SESSION_HOURS must be an integer/]
   ];
 
@@ -549,6 +551,7 @@ test("archive: invalid morning schedule or platform exits before the service lis
 
       assert.equal(result.status, 1);
       assert.match(result.stderr, message);
+      assert.equal(fs.existsSync(path.join(tempDir, "archive.db")), false, "invalid archive config must be rejected before opening SQLite");
     } finally {
       fs.rmSync(tempDir, { recursive: true, force: true });
     }
@@ -559,7 +562,9 @@ test("hotspot and comment services reject invalid cache and upstream settings be
   const invalidConfigs = [
     ["hotspot-server.js", { CACHE_TTL_MS: "abc" }, /CACHE_TTL_MS must be an integer/],
     ["comment-server.js", { UPSTREAM_RETRIES: "abc" }, /UPSTREAM_RETRIES must be an integer/],
-    ["hotspot-server.js", { PLATFORM_PROVIDER_TIMEOUT_MS: "Infinity" }, /PLATFORM_PROVIDER_TIMEOUT_MS must be an integer/]
+    ["hotspot-server.js", { PLATFORM_PROVIDER_TIMEOUT_MS: "Infinity" }, /PLATFORM_PROVIDER_TIMEOUT_MS must be an integer/],
+    ["hotspot-server.js", { RATE_LIMIT_MAX: "0" }, /RATE_LIMIT_MAX must be an integer/],
+    ["comment-server.js", { RATE_LIMIT_WINDOW_MS: "500" }, /RATE_LIMIT_WINDOW_MS must be an integer/]
   ];
 
   for (const [script, extraEnv, message] of invalidConfigs) {
@@ -578,8 +583,10 @@ test("OCR and LLM services reject invalid timeouts, concurrency, and cache setti
   const invalidConfigs = [
     ["ocr-server.js", { OCR_PROVIDER: "remote", OCR_TIMEOUT_MS: "-1" }, /OCR_TIMEOUT_MS must be an integer/],
     ["ocr-server.js", { OCR_PROVIDER: "remote", OCR_MAX_CONCURRENCY: "Infinity" }, /OCR_MAX_CONCURRENCY must be an integer/],
+    ["ocr-server.js", { OCR_PROVIDER: "remote", OCR_RATE_LIMIT_MAX: "0" }, /OCR_RATE_LIMIT_MAX must be an integer/],
     ["llm-server.js", { LLM_TIMEOUT_MS: "-1" }, /LLM_TIMEOUT_MS must be an integer/],
-    ["llm-server.js", { LLM_CACHE_TTL_MS: "Infinity" }, /LLM_CACHE_TTL_MS must be an integer/]
+    ["llm-server.js", { LLM_CACHE_TTL_MS: "Infinity" }, /LLM_CACHE_TTL_MS must be an integer/],
+    ["llm-server.js", { LLM_RATE_LIMIT_MAX: "0" }, /LLM_RATE_LIMIT_MAX must be an integer/]
   ];
 
   for (const [script, extraEnv, message] of invalidConfigs) {

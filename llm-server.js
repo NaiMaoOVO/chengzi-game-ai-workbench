@@ -15,7 +15,7 @@ const LLM_TIMEOUT_MS = parseIntegerConfig(process.env.LLM_TIMEOUT_MS, { name: "L
 const LLM_MAX_CONCURRENCY = parseIntegerConfig(process.env.LLM_MAX_CONCURRENCY, { name: "LLM_MAX_CONCURRENCY", min: 1, defaultValue: 2 });
 const CACHE_TTL_MS = parseIntegerConfig(process.env.LLM_CACHE_TTL_MS, { name: "LLM_CACHE_TTL_MS", min: 0, defaultValue: 600000 });
 const RATE_LIMIT_WINDOW_MS = 60 * 1000;
-const RATE_LIMIT_MAX = Number(process.env.LLM_RATE_LIMIT_MAX) || 20;
+const RATE_LIMIT_MAX = parseIntegerConfig(process.env.LLM_RATE_LIMIT_MAX, { name: "LLM_RATE_LIMIT_MAX", min: 1, defaultValue: 20 });
 const MAX_REQUEST_BYTES = 256 * 1024;
 const MAX_UPSTREAM_RESPONSE_BYTES = 1024 * 1024;
 
