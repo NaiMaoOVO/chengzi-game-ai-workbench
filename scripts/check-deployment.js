@@ -1,5 +1,6 @@
 try {
   require("../ecosystem.config.js");
+  require("../lib/archive-backup").parseArchiveBackupKeep(process.env.ARCHIVE_BACKUP_KEEP);
   console.log("deployment environment ok");
 } catch (error) {
   const message = String(error && error.message ? error.message : "未知错误").split(/\r?\n/, 1)[0];

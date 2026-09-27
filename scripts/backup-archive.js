@@ -3,7 +3,7 @@ const os = require("node:os");
 const path = require("node:path");
 const { DatabaseSync } = require("node:sqlite");
 const { loadProjectEnv } = require("../lib/env-file");
-const { assertSafeArchiveBackupDirectory, sha256File } = require("../lib/archive-backup");
+const { assertSafeArchiveBackupDirectory, parseArchiveBackupKeep, sha256File } = require("../lib/archive-backup");
 
 const root = path.resolve(__dirname, "..");
 loadProjectEnv(root);
@@ -14,10 +14,11 @@ const databasePath = process.env.ARCHIVE_DB_PATH
 const backupDirInput = process.env.ARCHIVE_BACKUP_DIR
   ? path.resolve(process.env.ARCHIVE_BACKUP_DIR)
   : path.join(path.dirname(databasePath), "backups");
-const keepSetting = process.env.ARCHIVE_BACKUP_KEEP?.trim() || "";
-const keep = keepSetting ? Number(keepSetting) : 7;
-if (keepSetting && (!/^\d+$/.test(keepSetting) || !Number.isSafeInteger(keep) || keep < 1 || keep > 100)) {
-  console.error("存档备份失败：ARCHIVE_BACKUP_KEEP 必须是 1–100 的整数");
+let keep;
+try {
+  keep = parseArchiveBackupKeep(process.env.ARCHIVE_BACKUP_KEEP);
+} catch (error) {
+  console.error("存档备份失败：" + error.message);
   process.exit(1);
 }
 

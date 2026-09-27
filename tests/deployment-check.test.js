@@ -51,6 +51,19 @@ test("deployment check refuses online archive access without authentication", ()
   assert.match(result.stderr, /线上部署必须设置 ARCHIVE_AUTH_ENABLED=1/);
 });
 
+test("deployment check validates archive backup retention boundaries", () => {
+  for (const value of ["1junk", "0", "101", "1.5", "NaN", "Infinity"]) {
+    const result = runCheck("https://gameops.test", { ARCHIVE_BACKUP_KEEP: value });
+    assert.equal(result.status, 1, `ARCHIVE_BACKUP_KEEP=${value} unexpectedly passed deployment checks`);
+    assert.match(result.stderr, /ARCHIVE_BACKUP_KEEP 必须是 1-100 的整数/);
+  }
+
+  for (const value of ["1", "100"]) {
+    const result = runCheck("https://gameops.test", { ARCHIVE_BACKUP_KEEP: value });
+    assert.equal(result.status, 0, `ARCHIVE_BACKUP_KEEP=${value} should be accepted: ${result.stderr}`);
+  }
+});
+
 test("deployment check rejects unsupported OCR providers and normalizes remote provider names", () => {
   const unsupported = runCheck("https://gameops.test", { OCR_PROVIDER: "unknown" });
   assert.equal(unsupported.status, 1);
