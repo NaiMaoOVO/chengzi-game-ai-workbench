@@ -7803,12 +7803,41 @@ function isProjectStateRestorable(state) {
       || (Array.isArray(state.currentTrendingTopics) && state.currentTrendingTopics.every(isRecord)));
 }
 
+let projectStateStorageBaseline = null;
+let projectStateStorageBaselineKnown = false;
+
+function captureProjectStateStorageBaseline() {
+  try {
+    projectStateStorageBaseline = window.localStorage.getItem(PROJECT_STORAGE_KEY);
+    projectStateStorageBaselineKnown = true;
+  } catch (_error) {
+    projectStateStorageBaselineKnown = false;
+  }
+}
+
 function saveProjectState() {
   const status = document.querySelector("#overview-status");
   try {
     const storage = window.localStorage;
     if (!storage) throw new Error("浏览器存储不可用");
     const existing = storage.getItem(PROJECT_STORAGE_KEY);
+    if (!projectStateStorageBaselineKnown) {
+      if (status) {
+        status.textContent = "总览状态：无法确认快照版本，本次保存已取消；请先导出或记录当前内容，再刷新页面后重试。";
+        status.className = "source-status source-mock";
+      }
+      return;
+    }
+    const reportSnapshotConflict = () => {
+      if (status) {
+        status.textContent = "总览状态：其他标签页已更新本机快照；当前页面改动尚未保存，请先导出或记录当前内容，再刷新并重新应用后保存。";
+        status.className = "source-status source-mock";
+      }
+    };
+    if (existing !== projectStateStorageBaseline) {
+      reportSnapshotConflict();
+      return;
+    }
     if (existing) {
       let state;
       try {
@@ -7825,16 +7854,15 @@ function saveProjectState() {
           }
           return;
         }
-        if (storage.getItem(PROJECT_STORAGE_KEY) !== existing) {
-          if (status) {
-            status.textContent = "总览状态：其他标签页已更新本机快照，本次覆盖已取消；请重新载入后再保存。";
-            status.className = "source-status source-mock";
-          }
-          return;
-        }
       }
     }
-    storage.setItem(PROJECT_STORAGE_KEY, JSON.stringify(collectProjectState()));
+    const serialized = JSON.stringify(collectProjectState());
+    if (storage.getItem(PROJECT_STORAGE_KEY) !== existing) {
+      reportSnapshotConflict();
+      return;
+    }
+    storage.setItem(PROJECT_STORAGE_KEY, serialized);
+    projectStateStorageBaseline = serialized;
   } catch (_error) {
     if (status) {
       status.textContent = "总览状态：保存失败，本机存储暂不可用。";
@@ -7863,6 +7891,8 @@ function loadProjectState() {
     return;
   }
   if (!raw) {
+    projectStateStorageBaseline = raw;
+    projectStateStorageBaselineKnown = true;
     setLoadError("尚无本机保存的项目，可先完成项目配置再保存。");
     return;
   }
@@ -7871,11 +7901,15 @@ function loadProjectState() {
   try {
     state = JSON.parse(raw);
   } catch {
+    projectStateStorageBaseline = raw;
+    projectStateStorageBaselineKnown = true;
     setLoadError("项目快照格式损坏，原始数据未修改；请先备份后再保存新的快照。");
     return;
   }
 
   if (!isProjectStateRestorable(state)) {
+    projectStateStorageBaseline = raw;
+    projectStateStorageBaselineKnown = true;
     setLoadError("项目快照结构异常，原始数据未修改，未应用任何项目内容；请先备份后再保存新的快照。");
     return;
   }
@@ -7886,6 +7920,8 @@ function loadProjectState() {
     setLoadError("项目快照无法恢复，可能存在不兼容字段；原始数据未修改，请先备份后再试。");
     return;
   }
+  projectStateStorageBaseline = raw;
+  projectStateStorageBaselineKnown = true;
   if (status) {
     status.textContent = "总览状态：已载入上次保存的项目内容。";
     status.className = "source-status source-real";
@@ -9217,6 +9253,7 @@ document.querySelector("#topbar-date").textContent = new Intl.DateTimeFormat("zh
   weekday: "short"
 }).format(new Date());
 purgeSensitiveProjectStateStorage();
+captureProjectStateStorageBaseline();
 const archiveSessionReady = refreshArchiveSession();
 checkOcrHealth();
 checkLauncherStatus();
