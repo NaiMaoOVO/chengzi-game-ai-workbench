@@ -1452,6 +1452,54 @@ test("daily AI insight submits the current action queue and labelled hotspot sig
   assert.match(llmServer, /样例兜底，只能称为离线样例或演示信号/);
 });
 
+test("daily AI insight enforces the two-watchout output limit", () => {
+  const start = dailyWorkbench.indexOf("function renderDailyAiInsightResult(");
+  const end = dailyWorkbench.indexOf("async function generateDailyAiInsight(", start);
+  assert.ok(start >= 0 && end > start);
+  const result = {
+    hidden: true,
+    children: [],
+    replaceChildren(...items) { this.children = items; },
+    append(...items) { this.children.push(...items); }
+  };
+  const renderer = vm.runInNewContext(`(() => {
+    let dailyAiInsightSnapshot = null;
+    let dailyAiInsightResultKey = "current-context";
+    let dailyAiInsightUserKey = "";
+    function button(label, onClick) {
+      return { textContent: label, onClick, classList: { add() {} } };
+    }
+    ${dailyWorkbench.slice(start, end)}
+    return { render: renderDailyAiInsightResult, snapshot: () => dailyAiInsightSnapshot };
+  })()`, {
+    document: {
+      querySelector: (selector) => selector === "#daily-ai-insight-result" ? result : null,
+      createElement: () => ({
+        textContent: "",
+        className: "",
+        children: [],
+        append(...items) { this.children.push(...items); }
+      })
+    },
+    buildDailyAiInsightContext: () => ({ current: true }),
+    dailyAiInsightContextKey: () => "current-context",
+    dailyQueueSessionKey: () => "test-user",
+    dailyAiInsightInputLabel: () => "1 条待办",
+    setDailyAiInsightStatus() {},
+    titleEl: () => null,
+    setStatus() {},
+    window: { confirm: () => true }
+  });
+
+  renderer.render({
+    summary: "先处理关键事项。",
+    priority_actions: [],
+    watchouts: ["核实来源", "补充指标", "确认时效"]
+  });
+
+  assert.deepEqual(Array.from(renderer.snapshot().watchouts), ["核实来源", "补充指标"]);
+});
+
 test("retained AI insight actions are disabled and revalidated while source data is stale", () => {
   const renderStart = dailyWorkbench.indexOf("function renderDailyAiInsightResult(");
   const renderEnd = dailyWorkbench.indexOf("async function generateDailyAiInsight(", renderStart);

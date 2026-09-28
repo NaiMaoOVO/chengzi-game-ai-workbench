@@ -17,6 +17,29 @@ test("installer and checker consume the shared runtime manifest", () => {
   assert.doesNotMatch(checkerSource, /const files = \[/, "检查脚本不得内联清单副本");
 });
 
+test("installer signs and verifies the completed app bundle before replacing the installed app", () => {
+  const plistMutation = installerSource.indexOf("const plistCommands = [");
+  const configWrite = installerSource.indexOf('path.join(resourcesPath, "config.json")');
+  const sign = installerSource.indexOf('execFileSync("/usr/bin/codesign", ["--force", "--deep", "--sign", "-", stagingPath]');
+  const verify = installerSource.indexOf('execFileSync("/usr/bin/codesign", ["--verify", "--deep", "--strict", stagingPath]');
+  const replace = installerSource.indexOf("replaceDirectoriesWithRollback([");
+
+  assert.ok(plistMutation >= 0 && configWrite > plistMutation, "产品 plist keys 与 runtime 配置必须先写入 app bundle");
+  assert.ok(sign > configWrite, "完成 bundle 修改后必须重新签名");
+  assert.ok(verify > sign && replace > verify, "必须在替换用户安装前验证签名");
+});
+
+test("installer preserves osacompile metadata while adding the gameops URL scheme", () => {
+  assert.match(installerSource, /\/usr\/libexec\/PlistBuddy/);
+  assert.match(installerSource, /CFBundleURLTypes/);
+  assert.match(installerSource, /CFBundleURLSchemes/);
+  assert.doesNotMatch(
+    installerSource,
+    /fs\.writeFileSync\(path\.join\(contentsPath, "Info\.plist"\)/,
+    "不得用精简 plist 覆盖 osacompile 生成的 AppleScript applet 元数据"
+  );
+});
+
 test("runtime manifest covers every local require of runtime entrypoints", () => {
   const visited = new Set();
 

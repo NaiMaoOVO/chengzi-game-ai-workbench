@@ -342,7 +342,7 @@ test("archive restore requires a stopped-service acknowledgement and preserves t
   const db = new DatabaseSync(databasePath);
   db.exec("CREATE TABLE check_rows (value TEXT NOT NULL); INSERT INTO check_rows VALUES ('before backup');");
   db.close();
-  const env = { ...process.env, ARCHIVE_DB_PATH: databasePath, ARCHIVE_BACKUP_DIR: backupDir };
+  const env = { ...process.env, ARCHIVE_DB_PATH: databasePath, ARCHIVE_BACKUP_DIR: backupDir, ARCHIVE_PORT: "19724" };
   const backup = spawnSync(process.execPath, [path.join(root, "scripts", "backup-archive.js")], { cwd: root, env, encoding: "utf8" });
   assert.equal(backup.status, 0, backup.stderr || backup.stdout);
   const backupFile = path.join(backupDir, fs.readdirSync(backupDir).find((name) => /^archive-.*\.db$/.test(name)));

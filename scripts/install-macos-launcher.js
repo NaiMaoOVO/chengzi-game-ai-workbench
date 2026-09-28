@@ -24,15 +24,6 @@ function escapeAppleScript(value) {
   return value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
 }
 
-function xmlEscape(value) {
-  return value
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&apos;");
-}
-
 if (process.platform !== "darwin") fail("此安装器仅支持 macOS");
 
 const projectPath = readProjectArgument(process.argv.slice(2));
@@ -79,38 +70,38 @@ try {
     throw new Error("macOS 未生成有效的 .app 应用包");
   }
 
-  const infoPlist = `<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-  <key>CFBundleDevelopmentRegion</key><string>zh_CN</string>
-  <key>CFBundleDisplayName</key><string>GameOps Launcher</string>
-  <key>CFBundleExecutable</key><string>applet</string>
-  <key>CFBundleIdentifier</key><string>${BUNDLE_ID}</string>
-  <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
-  <key>CFBundleName</key><string>GameOpsLauncher</string>
-  <key>CFBundlePackageType</key><string>APPL</string>
-  <key>CFBundleShortVersionString</key><string>1.0</string>
-  <key>CFBundleVersion</key><string>1</string>
-  <key>LSBackgroundOnly</key><true/>
-  <key>NSAppleScriptEnabled</key><true/>
-  <key>CFBundleURLTypes</key>
-  <array><dict>
-    <key>CFBundleURLName</key><string>${BUNDLE_ID}</string>
-    <key>CFBundleURLSchemes</key><array><string>gameops</string></array>
-  </dict></array>
-</dict>
-</plist>
-`;
   const contentsPath = path.join(stagingPath, "Contents");
   const resourcesPath = path.join(contentsPath, "Resources");
-  fs.writeFileSync(path.join(contentsPath, "Info.plist"), infoPlist);
+  const infoPlistPath = path.join(contentsPath, "Info.plist");
+  const plistCommands = [
+    "Set :CFBundleDevelopmentRegion zh_CN",
+    "Set :CFBundleName GameOpsLauncher",
+    "Add :CFBundleDisplayName string GameOpsLauncher",
+    `Add :CFBundleIdentifier string ${BUNDLE_ID}`,
+    "Add :CFBundleShortVersionString string 1.0",
+    "Add :CFBundleVersion string 1",
+    "Add :NSAppleScriptEnabled bool true",
+    "Add :CFBundleURLTypes array",
+    "Add :CFBundleURLTypes:0 dict",
+    `Add :CFBundleURLTypes:0:CFBundleURLName string ${BUNDLE_ID}`,
+    "Add :CFBundleURLTypes:0:CFBundleURLSchemes array",
+    "Add :CFBundleURLTypes:0:CFBundleURLSchemes:0 string gameops"
+  ];
+  plistCommands.forEach((command) => {
+    execFileSync("/usr/libexec/PlistBuddy", ["-c", command, infoPlistPath], { stdio: "pipe" });
+  });
   fs.writeFileSync(
     path.join(resourcesPath, "config.json"),
     `${JSON.stringify({ projectPath, runtimePath, nodePath: process.execPath }, null, 2)}\n`
   );
 
   execFileSync("/usr/bin/plutil", ["-lint", path.join(contentsPath, "Info.plist")], {
+    stdio: "pipe"
+  });
+  execFileSync("/usr/bin/codesign", ["--force", "--deep", "--sign", "-", stagingPath], {
+    stdio: "pipe"
+  });
+  execFileSync("/usr/bin/codesign", ["--verify", "--deep", "--strict", stagingPath], {
     stdio: "pipe"
   });
   replaceDirectoriesWithRollback([

@@ -986,7 +986,7 @@
     const priorities = Array.isArray(payload.priority_actions) ? payload.priority_actions : [];
     const watchouts = Array.isArray(payload.watchouts) ? payload.watchouts : [];
     const priorityActions = priorities.filter((item) => typeof item === "string" && item.trim()).slice(0, 3).map((item) => item.trim().slice(0, 240));
-    const watchoutItems = watchouts.filter((item) => typeof item === "string" && item.trim()).slice(0, 3).map((item) => item.trim().slice(0, 240));
+    const watchoutItems = watchouts.filter((item) => typeof item === "string" && item.trim()).slice(0, 2).map((item) => item.trim().slice(0, 240));
     const inputLabel = dailyAiInsightInputLabel(context);
     dailyAiInsightSnapshot = {
       summary: summary || "AI 未返回可用摘要，请以规则归纳结果为准。",
