@@ -115,8 +115,13 @@ function resolveFeedbackDataSource(source, hasComments) {
 const FEEDBACK_XHS_SOURCE = "小红书笔记";
 let feedbackImportTarget = "bili";
 let currentCreatorRows = [];
+let creatorInputSource = "unverified";
 const CREATOR_LIBRARY_STORAGE_KEY = "gameops-creator-library-v1";
 const CREATOR_LIBRARY_STATUSES = ["未合作", "已联系", "已确认", "已发布", "已复盘", "暂停合作"];
+
+function resolveCreatorInputSource(source) {
+  return ["sample", "imported", "unverified"].includes(source) ? source : "unverified";
+}
 
 function buildDemoStreamers() {
   return [
@@ -2146,6 +2151,7 @@ function collectProfileFromPage() {
     },
     creator: {
       input: document.querySelector("#creator-input")?.value || "",
+      source: creatorInputSource,
       ...getCreatorBriefInput(),
       goal: document.querySelector("#creator-goal")?.value || "",
       activity: document.querySelector("#creator-activity")?.value || "",
@@ -2242,6 +2248,7 @@ function loadSelectedProfile() {
     setFieldValue("#version-points", profile.version?.points);
     setFieldValue("#version-audience", profile.version?.audience);
     setFieldValue("#version-style", profile.version?.style);
+    creatorInputSource = resolveCreatorInputSource(profile.creator?.source);
     setFieldValue("#creator-input", profile.creator?.input);
     setFieldValue("#creator-category", profile.creator?.category ?? profile.creatorBrief?.category ?? "");
     setFieldValue("#creator-audience", profile.creator?.audience ?? profile.creatorBrief?.audience ?? "");
@@ -7348,6 +7355,7 @@ async function handleCreatorFileUpload(event) {
     const creatorText = creatorRowsToText(rows);
     if (!creatorText) throw new Error("表格中没有识别到达人数据");
     const importTruncated = creatorText.split(/\n+/).filter(Boolean).length > MAX_CREATOR_IMPORT_ROWS + 1;
+    creatorInputSource = "imported";
     document.querySelector("#creator-input").value = creatorText;
     analyzeCreators();
     if (status) {
@@ -7409,13 +7417,21 @@ function analyzeCreators(rowsOverride = null) {
     status.textContent = parseResult.error
       ? `达人来源：${parseResult.error}`
       : currentCreatorRows.length
-        ? `达人来源：已识别 ${currentCreatorRows.length} 位达人${parseResult.truncated ? `（仅分析前 ${MAX_CREATOR_IMPORT_ROWS} 位）` : ""}，已按活动场景和合作目标完成排序。`
+        ? creatorInputSource === "sample"
+          ? `示例名单：已识别 ${currentCreatorRows.length} 位达人${parseResult.truncated ? `（仅分析前 ${MAX_CREATOR_IMPORT_ROWS} 位）` : ""}；仅供功能演示，不代表真实合作数据。`
+          : creatorInputSource === "unverified"
+            ? `达人来源：已识别 ${currentCreatorRows.length} 位达人${parseResult.truncated ? `（仅分析前 ${MAX_CREATOR_IMPORT_ROWS} 位）` : ""}；名单来源未核验，请确认后再用于决策。`
+            : `达人来源：已导入 ${currentCreatorRows.length} 位达人${parseResult.truncated ? `（仅分析前 ${MAX_CREATOR_IMPORT_ROWS} 位）` : ""}，已按活动场景和合作目标完成排序。`
         : "达人来源：等待导入";
-    status.className = `source-status ${currentCreatorRows.length && !parseResult.error ? "source-real" : "source-mock"}`;
+    status.className = `source-status ${currentCreatorRows.length && !parseResult.error && creatorInputSource === "imported" ? "source-real" : "source-mock"}`;
   }
 }
 
 function loadCreatorDemo() {
+  creatorInputSource = "sample";
+  setFieldValue("#creator-game", "巅峰极速");
+  setFieldValue("#creator-category", "赛车/竞速");
+  setFieldValue("#creator-audience", "竞速玩家");
   document.querySelector("#creator-input").value = creatorDemoRows;
   analyzeCreators();
 }
@@ -7719,6 +7735,7 @@ async function loadOperationCase(caseId) {
   setFieldValue("#creator-category", item.creator.category || "");
   setFieldValue("#creator-audience", item.creator.audience || "");
   setFieldValue("#creator-budget", item.creator.budget);
+  creatorInputSource = "sample";
   setFieldValue("#creator-input", item.creator.input);
 
   analyzeContent();
@@ -7757,6 +7774,7 @@ function collectProjectState() {
   return {
     savedAt: new Date().toISOString(),
     controls,
+    creatorInputSource,
     feedbackDataSource: (document.querySelector("#feedback-input")?.value || "") === currentFeedbackSourceInput
       ? currentFeedbackDataSource
       : "unverified",
@@ -7797,6 +7815,7 @@ function restoreProjectState(state) {
       element.value = value;
     }
   });
+  creatorInputSource = resolveCreatorInputSource(state.creatorInputSource);
   handleTrendingSelectionChange();
 
   setReviewMode(state.reviewMode || "campaign");
@@ -8558,6 +8577,15 @@ document.querySelector("#export-segment-plan")?.addEventListener("click", export
 document.querySelector("#creator-form")?.addEventListener("submit", (event) => {
   event.preventDefault();
   analyzeCreators();
+});
+
+document.querySelector("#creator-input")?.addEventListener("input", () => {
+  creatorInputSource = "unverified";
+  const status = document.querySelector("#creator-status");
+  if (status) {
+    status.textContent = "达人来源：名单已修改，请点击“生成筛选表”重新计算。";
+    status.className = "source-status source-mock";
+  }
 });
 
 document.querySelector("#creator-goal")?.addEventListener("change", analyzeCreators);
@@ -9369,7 +9397,10 @@ analyzeReview();
 analyzeTrending();
 generateVersionPackage();
 generateSegmentPlan();
-loadCreatorDemo();
+const initialCreatorGame = document.querySelector("#trending-game")?.value.trim()
+  || document.querySelector("#game-name")?.value.trim();
+if (initialCreatorGame) setFieldValue("#creator-game", initialCreatorGame);
+analyzeCreators();
 archiveSessionReady.finally(() => {
   refreshProfileList();
   window.initDailyWorkbench?.();

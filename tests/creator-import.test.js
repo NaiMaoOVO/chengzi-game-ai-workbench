@@ -65,6 +65,140 @@ function loadDelimitedRowParser() {
   return context.parseDelimitedRows;
 }
 
+test("creator workspace starts empty until the user requests the demo list", () => {
+  const initializeStart = appSource.indexOf("/* ---- 初始化 ---- */");
+  const initializeEnd = appSource.indexOf("if (views.daily)", initializeStart);
+  assert.ok(initializeStart >= 0 && initializeEnd > initializeStart);
+  const initialization = appSource.slice(initializeStart, initializeEnd);
+
+  assert.match(initialization, /analyzeCreators\(\);/);
+  assert.doesNotMatch(initialization, /loadCreatorDemo\(\);/);
+  const syncStart = initialization.indexOf("const initialCreatorGame =");
+  const syncEnd = initialization.indexOf("\nanalyzeCreators();", syncStart);
+  assert.ok(syncStart >= 0 && syncEnd > syncStart);
+  const creatorGame = { value: "" };
+  const elements = {
+    "#trending-game": { value: " 鸣潮 " },
+    "#game-name": { value: "备用项目" },
+    "#creator-game": creatorGame
+  };
+  vm.runInNewContext(initialization.slice(syncStart, syncEnd), {
+    document: { querySelector: (selector) => elements[selector] || null },
+    setFieldValue: (selector, value) => { if (elements[selector]) elements[selector].value = value; }
+  });
+  assert.equal(creatorGame.value, "鸣潮");
+});
+
+test("creator demo fields are only populated by the explicit sample action", () => {
+  const html = fs.readFileSync(require.resolve("../index.html"), "utf8");
+  for (const id of ["creator-game", "creator-category", "creator-audience"]) {
+    const field = html.match(new RegExp(`<input id="${id}"[^>]*>`))?.[0];
+    assert.ok(field, `${id} should exist`);
+    assert.doesNotMatch(field, /\bvalue=/, `${id} must not start with stale demo values`);
+  }
+
+  const start = appSource.indexOf("function loadCreatorDemo() {");
+  const end = appSource.indexOf("function exportCreatorCsv()", start);
+  assert.ok(start >= 0 && end > start);
+  const elements = {
+    "#creator-game": { value: "鸣潮" },
+    "#creator-category": { value: "" },
+    "#creator-audience": { value: "" },
+    "#creator-input": { value: "" }
+  };
+  const context = {
+    creatorInputSource: "unverified",
+    creatorDemoRows: "demo rows",
+    document: { querySelector: (selector) => elements[selector] || null },
+    setFieldValue: (selector, value) => { if (elements[selector]) elements[selector].value = value; },
+    analyzeCreators() {}
+  };
+  vm.runInNewContext(`${appSource.slice(start, end)}\nthis.run = loadCreatorDemo;`, context);
+  context.run();
+
+  assert.equal(elements["#creator-game"].value, "巅峰极速");
+  assert.equal(elements["#creator-category"].value, "赛车/竞速");
+  assert.equal(elements["#creator-audience"].value, "竞速玩家");
+  assert.equal(elements["#creator-input"].value, "demo rows");
+  assert.equal(context.creatorInputSource, "sample");
+});
+
+test("demo creator rankings stay visibly marked as sample data after recalculation", () => {
+  const start = appSource.indexOf("function analyzeCreators(rowsOverride = null) {");
+  const end = appSource.indexOf("function loadCreatorDemo()", start);
+  assert.ok(start >= 0 && end > start);
+  const status = { textContent: "", className: "" };
+  const elements = {
+    "#creator-input": { value: "sample" },
+    "#creator-goal": { value: "launch" },
+    "#creator-activity": { value: "newLaunch" },
+    "#creator-budget": { value: "80000" },
+    "#creator-status": status,
+    "#creator-summary": { textContent: "" },
+    "#creator-score-explain": { textContent: "" }
+  };
+  const noop = () => {};
+  const context = {
+    currentCreatorRows: [],
+    creatorInputSource: "sample",
+    document: { querySelector: (selector) => elements[selector] || null },
+    numberValue: Number,
+    parseCreators: () => ({ rows: [{ name: "演示达人" }], truncated: false }),
+    getCreatorBriefInput: () => ({}),
+    readCreatorLibrary: () => ({}),
+    findCreatorProfile: () => ({ profile: null }),
+    scoreCreator: (row) => ({ ...row, tier: "A" }),
+    getCreatorHistoryScore: () => null,
+    CREATOR_TIER: { A: "A", PENDING: "PENDING" },
+    isEligibleCreator: () => true,
+    compareCreatorPriority: () => 0,
+    renderCreatorLibrary: noop,
+    renderMetrics: noop,
+    renderCreatorTable: noop,
+    renderCreatorTiers: noop,
+    renderCreatorScenarios: noop,
+    renderCreatorBudgetPlans: noop,
+    renderCreatorBriefs: noop,
+    renderCreatorAnomalies: noop,
+    renderCreatorRisks: noop,
+    summarizeCreators: () => "summary",
+    explainCreatorScore: () => "explanation"
+  };
+  vm.runInNewContext(`${appSource.slice(start, end)}\nthis.run = analyzeCreators;`, context);
+  context.run();
+
+  assert.match(status.textContent, /示例名单.*仅供功能演示.*不代表真实合作数据/);
+  assert.match(status.className, /source-mock/);
+
+  context.creatorInputSource = "unverified";
+  context.run();
+  assert.match(status.textContent, /名单来源未核验/);
+  assert.match(status.className, /source-mock/);
+});
+
+test("creator profiles preserve provenance and legacy profiles remain unverified", () => {
+  assert.match(appSource, /creator: \{[\s\S]{0,180}source: creatorInputSource/);
+  assert.match(appSource, /creatorInputSource = resolveCreatorInputSource\(profile\.creator\?\.source\)/);
+  const start = appSource.indexOf("function resolveCreatorInputSource(");
+  const end = appSource.indexOf("\n}", start) + 2;
+  const resolve = vm.runInNewContext(`(${appSource.slice(start, end).replace("function resolveCreatorInputSource", "function")})`);
+  assert.equal(resolve("sample"), "sample");
+  assert.equal(resolve("imported"), "imported");
+  assert.equal(resolve(undefined), "unverified");
+  assert.equal(resolve("unknown"), "unverified");
+});
+
+test("project snapshots preserve creator provenance and clear stale state for legacy snapshots", () => {
+  const collectStart = appSource.indexOf("function collectProjectState() {");
+  const restoreStart = appSource.indexOf("function restoreProjectState(", collectStart);
+  const restoreEnd = appSource.indexOf("function isProjectStateRestorable(", restoreStart);
+  const collect = appSource.slice(collectStart, restoreStart);
+  const restore = appSource.slice(restoreStart, restoreEnd);
+  assert.ok(collectStart >= 0 && restoreStart > collectStart && restoreEnd > restoreStart);
+  assert.match(collect, /creatorInputSource,/);
+  assert.match(restore, /creatorInputSource = resolveCreatorInputSource\(state\.creatorInputSource\)/);
+});
+
 test("creator import accepts exactly 1000 rows without reporting truncation", () => {
   const helpers = loadCreatorImportHelpers();
   const parsed = helpers.parseCreators(helpers.creatorRowsToText(sampleRows(1000)));
