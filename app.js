@@ -2794,6 +2794,7 @@ async function runDemoReadinessCheck() {
   const hasFeedback = currentFeedbackRows.length > 0 || splitFeedbackInput(document.querySelector("#feedback-input")?.value || "").length > 0;
   const creatorInputFresh = creatorAnalysisMatchesInput();
   const hasCreators = creatorInputFresh && currentCreatorRows.length > 0;
+  const hasStaleCreatorInput = analyzedCreatorInput !== null && !creatorInputFresh;
   const hasReviewData = streamers.length > 0 || numberValue(document.querySelector("#impressions")?.value) > 0;
   const hasVersionInput = (document.querySelector("#version-theme")?.value || "").trim().length > 0;
   const hasSegmentInput = (document.querySelector("#segment-game")?.value || "").trim().length > 0;
@@ -2835,7 +2836,7 @@ async function runDemoReadinessCheck() {
       label: "KOL/KOC 筛选有数据",
       detail: hasCreators
         ? "达人列表已有数据，可展示目标分和性价比逻辑。"
-        : !creatorInputFresh
+        : hasStaleCreatorInput
           ? "名单已修改，先重新生成筛选表，避免使用旧评分。"
           : "建议导入表格或载入示例达人数据。"
     },

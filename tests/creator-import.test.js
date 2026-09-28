@@ -331,13 +331,14 @@ test("demo readiness ignores creator rows whose source input is stale", () => {
   const creatorStateStart = readinessSetup.indexOf("const creatorInputFresh =");
   assert.ok(creatorStateStart >= 0);
   const creatorState = readinessSetup.slice(creatorStateStart);
-  assert.match(readiness, /名单已修改.*重新生成筛选表/);
-  const evaluate = (fresh, rows) => JSON.parse(JSON.stringify(vm.runInNewContext(
-    `${creatorState}\nthis.result = { creatorInputFresh, hasCreators };`,
-    { creatorAnalysisMatchesInput: () => fresh, currentCreatorRows: rows }
+  assert.match(readiness, /hasStaleCreatorInput[\s\S]*名单已修改.*重新生成筛选表/);
+  const evaluate = (fresh, rows, analyzedInput) => JSON.parse(JSON.stringify(vm.runInNewContext(
+    `${creatorState}\nthis.result = { creatorInputFresh, hasCreators, hasStaleCreatorInput };`,
+    { creatorAnalysisMatchesInput: () => fresh, currentCreatorRows: rows, analyzedCreatorInput: analyzedInput }
   )));
-  assert.deepEqual(evaluate(false, [{ name: "旧达人" }]), { creatorInputFresh: false, hasCreators: false });
-  assert.deepEqual(evaluate(true, [{ name: "当前达人" }]), { creatorInputFresh: true, hasCreators: true });
+  assert.deepEqual(evaluate(false, [{ name: "旧达人" }], "旧名单"), { creatorInputFresh: false, hasCreators: false, hasStaleCreatorInput: true });
+  assert.deepEqual(evaluate(true, [{ name: "当前达人" }], "当前名单"), { creatorInputFresh: true, hasCreators: true, hasStaleCreatorInput: false });
+  assert.deepEqual(evaluate(false, [], null), { creatorInputFresh: false, hasCreators: false, hasStaleCreatorInput: false });
 });
 
 test("creator import accepts exactly 1000 rows without reporting truncation", () => {

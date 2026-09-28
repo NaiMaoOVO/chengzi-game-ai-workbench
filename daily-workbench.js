@@ -766,6 +766,7 @@
     const publicationTruncated = publicationScanTruncated || publicationTotal > publications.length;
     const hotspots = dailyInsightSignalItems(snapshot.topics, ["title", "tag", "risk", "views", "danmaku", "source"]);
     const hotspotGame = String(snapshot.game || state.platformGame || currentGame()).trim();
+    const hotspotPlatform = String(snapshot.platform || "").trim().slice(0, 60);
     const hotspotTotal = Math.max(hotspots.length, Number(snapshot.topicCount) || 0);
     const hotspotUpdatedAtTime = typeof snapshot.updatedAt === "string" ? Date.parse(snapshot.updatedAt) : NaN;
     return {
@@ -787,6 +788,7 @@
       publicationUnavailable: Boolean(state.publicationUnavailable || state.error || state.authRequired),
       loading: Boolean(state.loading),
       hotspots,
+      hotspotPlatform,
       hotspotTotal,
       hotspotTruncated: hotspotTotal > hotspots.length,
       hotspotSource: ["real", "sample", "mixed", "unverified"].includes(snapshot.topicSource) ? snapshot.topicSource : "",
@@ -914,7 +916,7 @@
       button.disabled = !available;
       button.setAttribute("aria-disabled", String(!available));
       button.title = available
-        ? "手动触发；每类最多发送 5 条信号及项目、数量、热点来源/范围和快照时间到已配置的 AI 服务"
+        ? "手动触发；每类最多发送 5 条信号及项目、数量、热点平台/来源/范围和快照时间到已配置的 AI 服务"
         : "当前没有可供 AI 判断的工作信号或样例信号";
     }
     const statusText = resultMatches ? "AI 洞察已保留"
@@ -959,6 +961,7 @@
     }
     if (context.asOfDate) parts.push(`业务日期：${context.asOfDate}`);
     if (context.hotspots.length) {
+      parts.push(`热点平台 ${context.hotspotPlatform || "未提供"}`);
       const hotspotLabel = context.hotspotSource === "real" ? "真实热点"
         : context.hotspotSource === "sample" ? "样例兜底热点"
           : context.hotspotSource === "mixed" ? "真实与样例混合热点"
@@ -1117,6 +1120,7 @@
     if (hasCurrentUserSnapshot && (state.error || state.archiveOffline || state.archiveStorageUnavailable)) {
       const previousState = lastDailyQueueSnapshot.state;
       const unavailable = (key) => Boolean(state.error || state[key]);
+      const canReusePlatformHistory = previousState.platformGame === state.platformGame;
       const staleState = {
         ...previousState,
         ...state,
@@ -1133,7 +1137,9 @@
         publicationTotal: unavailable("publicationUnavailable") ? previousState.publicationTotal : state.publicationTotal,
         publicationItems: unavailable("publicationUnavailable") ? previousState.publicationItems : state.publicationItems,
         morningRuns: unavailable("morningUnavailable") ? previousState.morningRuns : state.morningRuns,
-        platformSnapshots: unavailable("platformHistoryUnavailable") ? previousState.platformSnapshots : state.platformSnapshots
+        platformSnapshots: unavailable("platformHistoryUnavailable") && canReusePlatformHistory
+          ? previousState.platformSnapshots
+          : state.platformSnapshots
       };
       setStats(staleState);
       renderDailyInsight(lastDailyQueueSnapshot.manualItems, staleState);
