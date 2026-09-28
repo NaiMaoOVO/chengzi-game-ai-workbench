@@ -660,7 +660,16 @@ loadTrendStats();
 
 function renderTrendBarChart(containerId, series, valueExtractor, labelBuilder) {
   const container = document.querySelector(containerId);
-  if (!container || !series.length) { if (container) container.innerHTML = '<p class="muted-copy">暂无数据</p>'; return; }
+  if (!container) return;
+  const chartLabel = container.dataset.chartLabel || container.getAttribute("aria-label") || "";
+  if (chartLabel) container.dataset.chartLabel = chartLabel;
+  if (!series.length) { container.innerHTML = '<p class="muted-copy trend-chart-empty">暂无数据</p>'; return; }
+  if (series.length === 1) {
+    container.innerHTML = '<p class="muted-copy trend-chart-empty">仅有 1 天数据，积累更多存档后再看趋势。</p>';
+    if (chartLabel) container.setAttribute("aria-label", chartLabel + "：仅有 1 天数据，无法判断趋势");
+    return;
+  }
+  if (chartLabel) container.setAttribute("aria-label", chartLabel);
   const max = Math.max(1, ...series.map((entry) => valueExtractor(entry)));
   container.innerHTML = series.map((entry) => {
     const value = valueExtractor(entry);

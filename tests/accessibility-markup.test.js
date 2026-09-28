@@ -393,6 +393,29 @@ test("briefing trend charts expose their text alternatives as graphics", () => {
   assert.match(html, /id="trend-conclusion"/);
 });
 
+test("one archived date is not rendered as a full-width trend bar", () => {
+  const start = app.indexOf("function renderTrendBarChart(");
+  const end = app.indexOf("\nasync function loadTrendStats", start);
+  assert.ok(start >= 0 && end > start);
+  const chart = {
+    innerHTML: "",
+    dataset: {},
+    label: "每日热点快照条数",
+    getAttribute(name) { return name === "aria-label" ? this.label : null; },
+    setAttribute(name, value) { if (name === "aria-label") this.label = value; }
+  };
+  const render = vm.runInNewContext(`${app.slice(start, end)}; renderTrendBarChart`, {
+    document: { querySelector: () => chart },
+    escapeHtml: (value) => String(value)
+  });
+
+  render("#chart", [{ date: "2026-09-29", extra: { topics: 1 } }], (entry) => entry.extra.topics, (entry) => ({ text: entry.date + "：" + entry.extra.topics + " 条热点" }));
+
+  assert.match(chart.innerHTML, /仅有 1 天数据/);
+  assert.doesNotMatch(chart.innerHTML, /trend-bar/);
+  assert.equal(chart.label, "每日热点快照条数：仅有 1 天数据，无法判断趋势");
+});
+
 test("daily todo mutations explain how to recover from a disconnected local service", () => {
   const daily = fs.readFileSync(path.join(root, "daily-workbench.js"), "utf8");
   const addStart = daily.indexOf("async function addTodo");

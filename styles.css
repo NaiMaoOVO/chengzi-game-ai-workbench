@@ -3281,6 +3281,11 @@ body[data-service-mode="online"] .launcher-panel {
   margin: 6px 0 2px;
 }
 
+.trend-chart-empty {
+  align-self: center;
+  margin: 0;
+}
+
 .trend-bar {
   flex: 1;
   min-height: 3px;
