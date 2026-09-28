@@ -5073,6 +5073,8 @@ function renderTrendingList(gameName, platform, options = {}) {
     source: topicSource === "real" ? "real" : "sample",
     topicSource,
     platform,
+    range: document.querySelector("#trending-range")?.value || "24h",
+    topicCount: topics.length,
     topics: topics.slice(0, 10).map((topic) => ({
       rank: topic.rank,
       title: topic.title,

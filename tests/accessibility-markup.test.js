@@ -1019,6 +1019,8 @@ test("restored hotspot snapshots keep their saved scope and are not re-archived 
 
   render.renderTrendingList("鸣潮", "B站", { source: "real", range: "24h", items: [topic] });
   assert.equal(archived.length, 1);
+  assert.equal(archived[0][2].range, "24h");
+  assert.equal(archived[0][2].topicCount, 1);
   assert.equal(diagnostics[1][2], "真实热点已返回");
 
   render.renderTrendingList("鸣潮", "B站", {
@@ -1179,8 +1181,17 @@ test("daily AI prompt uses labeled hotspot metrics and omits zero or missing val
     hotspotUpdatedAt: "2026-09-01T08:00:00.000Z",
     hotspots: [{ title: "历史版本热点", source: "real" }]
   });
-  assert.match(restoredHotspotPrompt.user, /历史本地恢复快照，原快照时间 "2026-09-01T08:00:00\.000Z"/);
-  assert.match(restoredHotspotPrompt.system, /不得称为今日新热点；若快照时间早于业务日期，必须按历史热点表述并提示时效性/);
+  assert.match(restoredHotspotPrompt.user, /历史缓存快照，原快照时间 "2026-09-01T08:00:00\.000Z"/);
+  assert.match(restoredHotspotPrompt.system, /不得称为今日新热点或本次实时抓取结果；若快照时间早于业务日期，必须按历史热点表述并提示时效性/);
+  const archivedHotspotPrompt = task.build({
+    asOfDate: "2026-09-29",
+    hotspotSource: "real",
+    hotspotArchived: true,
+    hotspotUpdatedAt: "2026-09-29T03:55:00.000Z",
+    hotspots: [{ title: "服务端存档热点", source: "real" }]
+  });
+  assert.match(archivedHotspotPrompt.user, /服务端历史热点存档，存档时间 "2026-09-29T03:55:00\.000Z"；不是本次抓取结果/);
+  assert.match(archivedHotspotPrompt.system, /必须明确是历史数据、标注存档时间并提醒核对原始来源，不得称为今日新热点或本次实时抓取结果/);
   const staleHotspotPrompt = task.build({
     asOfDate: "2026-09-27",
     hotspotSource: "real",
@@ -1201,7 +1212,7 @@ test("daily AI prompt uses labeled hotspot metrics and omits zero or missing val
     hotspotSource: "unverified",
     hotspots: [{ title: "时间未知热点", source: "unverified" }]
   });
-  assert.match(unknownHotspotTimePrompt.user, /历史本地恢复快照，原快照时间未知/);
+  assert.match(unknownHotspotTimePrompt.user, /历史缓存快照，原快照时间未知/);
   const partialRiskPrompt = task.build({
     riskTruncated: true,
     riskTotal: 12,
@@ -1254,7 +1265,8 @@ test("daily AI prompt uses labeled hotspot metrics and omits zero or missing val
   assert.match(unverifiedHotspots.user, /单条来源 未核验/);
   assert.match(unverifiedHotspots.system, /必须保留未核验限定/);
   assert.doesNotMatch(withoutMetrics.user, /播放 0|弹幕 0/);
-  assert.match(dailyWorkbench, /dailyInsightSignalItems\(snapshot\.topics, \["title", "tag", "risk", "views", "danmaku", "source"\]\)/);
+  assert.match(dailyWorkbench, /dailyInsightSignalItems\(snapshot\.topics/);
+  assert.match(dailyWorkbench, /latestDailyHotspotArchive\(state\.platformSnapshots/);
   const partialArchivePrompt = task.build({
     publications: [{ title: "已发布内容", channel: "B站" }],
     publicationTruncated: true
@@ -1381,6 +1393,106 @@ test("daily AI samples prioritize overdue and high-risk work without mutating so
   assert.equal(hasSignals(unavailableContext), true);
 });
 
+test("daily AI insight uses recent valid archived hotspots only as an explicit fallback", () => {
+  const priorityStart = dailyWorkbench.indexOf("function priorityValue(");
+  const riskSortEnd = dailyWorkbench.indexOf("function matchesActiveFilter", priorityStart);
+  const signalStart = dailyWorkbench.indexOf("function dailyInsightSignalItems(", riskSortEnd);
+  const contextStart = dailyWorkbench.indexOf("function latestDailyHotspotArchive(", signalStart);
+  const contextEnd = dailyWorkbench.indexOf("function hasDailyAiSignals(", contextStart);
+  assert.ok(priorityStart >= 0 && riskSortEnd > priorityStart && signalStart > riskSortEnd && contextStart > signalStart && contextEnd > contextStart);
+  const source = [
+    dailyWorkbench.slice(priorityStart, riskSortEnd),
+    dailyWorkbench.slice(signalStart, contextEnd)
+  ].join("\n");
+  const buildContext = vm.runInNewContext(`(() => { ${source}; return buildDailyAiInsightContext; })()`, {
+    window: {},
+    latestDailyInsightContext: {
+      manualItems: [],
+      state: {
+        platformGame: "鸣潮",
+        platformSnapshot: { platform: "", topics: [] },
+        platformSnapshots: [
+          {
+            game: "鸣潮", source: "sample", created_at: "2026-09-29T03:55:00.000Z",
+            payload: { platform: "小红书", range: "7d", topicSource: "mixed", topics: [{ title: "最近混合热点", source: "real" }] }
+          },
+          {
+            game: "鸣潮", source: "real", created_at: "2026-09-29T03:45:00.000Z",
+            payload: { platform: "B站", topicSource: "real", range: "24h", topics: [{ title: "较早热点", source: "real" }] }
+          },
+          {
+            game: "鸣潮", source: "real", created_at: "2026-09-27T03:55:00.000Z",
+            payload: { platform: "B站", topicSource: "real", topics: [{ title: "过期热点", source: "real" }] }
+          },
+          { game: "鸣潮", source: "real", created_at: "2026-09-29T03:59:00.000Z", invalid: true, payload: { platform: "B站", topicSource: "real", topics: [{ title: "损坏热点" }] } },
+          { game: "原神", source: "real", created_at: "2026-09-29T03:59:00.000Z", payload: { platform: "B站", topicSource: "real", topics: [{ title: "其他项目热点" }] } }
+        ]
+      }
+    },
+    currentGame: () => "鸣潮",
+    today: () => "2026-09-29",
+    dueState: () => "future",
+    Date: class extends Date { static now() { return Date.parse("2026-09-29T04:00:00.000Z"); } }
+  });
+  const context = buildContext();
+  assert.deepEqual(Array.from(context.hotspots, (item) => item.title), ["最近混合热点"]);
+  assert.equal(context.hotspotPlatform, "小红书");
+  assert.equal(context.hotspotGame, "鸣潮");
+  assert.equal(context.hotspotSource, "mixed");
+  assert.equal(context.hotspotRange, "7d");
+  assert.equal(context.hotspotUpdatedAt, "2026-09-29T03:55:00.000Z");
+  assert.equal(context.hotspotArchived, true);
+  assert.equal(context.hotspotRestored, false);
+
+  const signalEnd = dailyWorkbench.indexOf("function setDailyAiInsightStatus(", contextEnd);
+  const hasSignals = vm.runInNewContext(`(${dailyWorkbench.slice(contextEnd, signalEnd).trim()})`);
+  assert.equal(hasSignals(context), true);
+  const staleContext = vm.runInNewContext(`(() => { ${source}; return buildDailyAiInsightContext(); })()`, {
+    window: {},
+    latestDailyInsightContext: {
+      manualItems: [],
+      state: {
+        platformGame: "鸣潮",
+        platformSnapshot: { topics: [] },
+        platformSnapshots: [{
+          game: "鸣潮", source: "real", created_at: "2026-09-27T03:55:00.000Z",
+          payload: { platform: "B站", topicSource: "real", topics: [{ title: "过期热点", source: "real" }] }
+        }]
+      }
+    },
+    currentGame: () => "鸣潮",
+    today: () => "2026-09-29",
+    dueState: () => "future",
+    Date: class extends Date { static now() { return Date.parse("2026-09-29T04:00:00.000Z"); } }
+  });
+  assert.equal(staleContext.hotspots.length, 0);
+  assert.equal(hasSignals(staleContext), false);
+  const labelStart = dailyWorkbench.indexOf("function dailyAiInsightInputLabel(");
+  const labelEnd = dailyWorkbench.indexOf("function renderDailyAiInsightResult", labelStart);
+  const inputLabel = vm.runInNewContext(`(${dailyWorkbench.slice(labelStart, labelEnd).trim()})`, {
+    buildDailyAiInsightContext: () => context
+  });
+  assert.match(inputLabel(), /服务端历史热点存档，存档时间 2026-09-29T03:55:00\.000Z；不是本次抓取结果/);
+
+  const activeContext = vm.runInNewContext(`(() => { ${source}; return buildDailyAiInsightContext(); })()`, {
+    window: {},
+    latestDailyInsightContext: {
+      manualItems: [],
+      state: {
+        platformGame: "鸣潮",
+        platformSnapshot: { platform: "B站", topicCount: 1, topicSource: "real", range: "24h", updatedAt: "2026-09-29T03:59:00.000Z", topics: [{ title: "当前热点", source: "real" }] },
+        platformSnapshots: [{ game: "鸣潮", source: "real", created_at: "2026-09-29T03:55:00.000Z", payload: { platform: "小红书", topicSource: "real", topics: [{ title: "归档热点" }] } }]
+      }
+    },
+    currentGame: () => "鸣潮",
+    today: () => "2026-09-29",
+    dueState: () => "future",
+    Date: class extends Date { static now() { return Date.parse("2026-09-29T04:00:00.000Z"); } }
+  });
+  assert.deepEqual(Array.from(activeContext.hotspots, (item) => item.title), ["当前热点"]);
+  assert.equal(activeContext.hotspotArchived, false);
+});
+
 test("comment-analysis prompt treats player comments and project names as untrusted text", () => {
   const taskStart = llmServer.indexOf('"feedback-insight": {');
   const taskEnd = llmServer.indexOf('\n  },\n  "version-copy"', taskStart) + 4;
@@ -1474,7 +1586,8 @@ test("daily AI insight submits the current action queue and labelled hotspot sig
   assert.match(dailyWorkbench, /requestLlmTask\("daily-insight"/);
   assert.match(dailyWorkbench, /riskItems/);
   assert.match(dailyWorkbench, /publicationItems/);
-  assert.match(dailyWorkbench, /const hotspots = dailyInsightSignalItems\(snapshot\.topics/);
+  assert.match(dailyWorkbench, /const activeHotspots = dailyInsightSignalItems\(snapshot\.topics/);
+  assert.match(dailyWorkbench, /hotspotArchived: Boolean\(archivedHotspot\)/);
   assert.match(dailyWorkbench, /hotspotSource/);
   assert.match(dailyWorkbench, /hotspotRestored/);
   assert.match(dailyWorkbench, /hotspotRange/);

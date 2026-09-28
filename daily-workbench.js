@@ -753,6 +753,27 @@
     }).filter((item) => Object.keys(item).length);
   }
 
+  function latestDailyHotspotArchive(items, game) {
+    const now = Date.now();
+    const expectedGame = String(game || "").trim();
+    return (Array.isArray(items) ? items : []).map((item) => {
+      const payload = item && item.payload && typeof item.payload === "object" ? item.payload : {};
+      const createdAt = typeof item?.created_at === "string" ? item.created_at : "";
+      const createdAtTime = Date.parse(createdAt);
+      const itemGame = String(item?.game || payload.game || "").trim();
+      if (item?.invalid || typeof payload.platform !== "string" || !payload.platform.trim() || !Array.isArray(payload.topics)
+        || !Number.isFinite(createdAtTime) || createdAtTime > now || now - createdAtTime > 24 * 60 * 60 * 1000
+        || expectedGame && expectedGame !== itemGame) return null;
+      const topics = dailyInsightSignalItems(payload.topics, ["title", "tag", "risk", "views", "danmaku", "source"]);
+      if (!topics.length) return null;
+      const source = ["real", "sample", "mixed", "unverified"].includes(payload.topicSource)
+        ? payload.topicSource
+        : item.source === "real" || payload.source === "real" ? "real"
+          : item.source === "sample" || payload.source === "sample" ? "sample" : "unverified";
+      return { item, payload, createdAt, createdAtTime, itemGame, topics, source };
+    }).filter(Boolean).sort((left, right) => right.createdAtTime - left.createdAtTime)[0] || null;
+  }
+
   function buildDailyAiInsightContext() {
     const { manualItems, state } = latestDailyInsightContext;
     const snapshot = state.platformSnapshot && typeof state.platformSnapshot === "object" ? state.platformSnapshot : {};
@@ -766,11 +787,17 @@
     const publicationTotal = Math.max(publications.length, Number(state.publicationCount ?? state.publicationTotal) || 0);
     const publicationScanTruncated = Boolean(state.publicationTruncated);
     const publicationTruncated = publicationScanTruncated || publicationTotal > publications.length;
-    const hotspots = dailyInsightSignalItems(snapshot.topics, ["title", "tag", "risk", "views", "danmaku", "source"]);
-    const hotspotGame = String(snapshot.game || state.platformGame || currentGame()).trim();
-    const hotspotPlatform = String(snapshot.platform || "").trim().slice(0, 60);
-    const hotspotTotal = Math.max(hotspots.length, Number(snapshot.topicCount) || 0);
-    const hotspotUpdatedAtTime = typeof snapshot.updatedAt === "string" ? Date.parse(snapshot.updatedAt) : NaN;
+    const activeHotspots = dailyInsightSignalItems(snapshot.topics, ["title", "tag", "risk", "views", "danmaku", "source"]);
+    const archivedHotspot = activeHotspots.length ? null
+      : latestDailyHotspotArchive(state.platformSnapshots, state.platformGame || snapshot.game || currentGame());
+    const hotspots = activeHotspots.length ? activeHotspots : archivedHotspot?.topics || [];
+    const hotspotGame = String(archivedHotspot?.itemGame || snapshot.game || state.platformGame || currentGame()).trim();
+    const hotspotPlatform = String(archivedHotspot?.payload.platform || snapshot.platform || "").trim().slice(0, 60);
+    const hotspotTotal = archivedHotspot
+      ? Math.max(hotspots.length, Number(archivedHotspot.payload.topicCount) || archivedHotspot.payload.topics.length)
+      : Math.max(hotspots.length, Number(snapshot.topicCount) || 0);
+    const hotspotUpdatedAt = archivedHotspot ? archivedHotspot.createdAt : snapshot.updatedAt;
+    const hotspotUpdatedAtTime = typeof hotspotUpdatedAt === "string" ? Date.parse(hotspotUpdatedAt) : NaN;
     return {
       game: currentGame(),
       asOfDate: today(),
@@ -793,10 +820,13 @@
       hotspotPlatform,
       hotspotTotal,
       hotspotTruncated: hotspotTotal > hotspots.length,
-      hotspotSource: ["real", "sample", "mixed", "unverified"].includes(snapshot.topicSource) ? snapshot.topicSource : "",
-      hotspotRange: ["today", "24h", "3d", "7d"].includes(snapshot.range) ? snapshot.range : "",
+      hotspotSource: archivedHotspot ? archivedHotspot.source
+        : ["real", "sample", "mixed", "unverified"].includes(snapshot.topicSource) ? snapshot.topicSource : "",
+      hotspotRange: ["today", "24h", "3d", "7d"].includes(archivedHotspot?.payload.range || snapshot.range)
+        ? archivedHotspot?.payload.range || snapshot.range : "",
       hotspotUpdatedAt: Number.isFinite(hotspotUpdatedAtTime) ? new Date(hotspotUpdatedAtTime).toISOString() : "",
-      hotspotRestored: Boolean(snapshot.restored || snapshot.updatedAtKind === "restored")
+      hotspotRestored: !archivedHotspot && Boolean(snapshot.restored || snapshot.updatedAtKind === "restored"),
+      hotspotArchived: Boolean(archivedHotspot)
     };
   }
 
@@ -973,7 +1003,9 @@
         : `${context.hotspots.length} 条${hotspotLabel}`);
       const hotspotRangeLabel = { today: "今日", "24h": "近 24 小时", "3d": "近 3 天", "7d": "近 7 天" }[context.hotspotRange];
       parts.push(`热点筛选范围 ${hotspotRangeLabel || "未提供"}`);
-      parts.push(context.hotspotRestored
+      parts.push(context.hotspotArchived
+        ? context.hotspotUpdatedAt ? `服务端历史热点存档，存档时间 ${context.hotspotUpdatedAt}；不是本次抓取结果` : "服务端历史热点存档，存档时间未知；不是本次抓取结果"
+        : context.hotspotRestored
         ? context.hotspotUpdatedAt ? `历史缓存热点，原快照时间 ${context.hotspotUpdatedAt}` : "历史缓存热点，原快照时间未知"
         : context.hotspotUpdatedAt ? `热点快照时间 ${context.hotspotUpdatedAt}` : "热点快照时间未知");
     }
