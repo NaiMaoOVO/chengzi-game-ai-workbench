@@ -301,6 +301,45 @@ test("full operation reports do not reuse backfilled rows after the input list c
   assert.deepEqual(calls, [null]);
 });
 
+test("full operation reports surface unverified creator source data", () => {
+  const reportStart = appSource.indexOf("function buildFullOperationReportText() {");
+  const sourceStart = appSource.indexOf("const sourceTexts =", reportStart);
+  const end = appSource.indexOf("const date = businessDate();", sourceStart);
+  assert.ok(reportStart >= 0 && sourceStart > reportStart && end > sourceStart);
+  const context = {
+    currentHotspots: [],
+    currentTrendingTopics: [],
+    document: {
+      querySelector: (selector) => selector === "#creator-status"
+        ? { textContent: "达人来源：已识别 1 位达人；名单来源未核验，请确认后再用于决策。" }
+        : null
+    }
+  };
+  vm.runInNewContext(`${appSource.slice(sourceStart, end)}\nthis.result = dataQuality;`, context);
+  assert.match(context.result, /KOL\/KOC.*名单来源未核验/);
+  assert.doesNotMatch(context.result, /未检测到样例兜底标记/);
+});
+
+test("demo readiness ignores creator rows whose source input is stale", () => {
+  const start = appSource.indexOf("async function runDemoReadinessCheck() {");
+  const end = appSource.indexOf("\nasync function tryRecognizeScreenshot", start);
+  assert.ok(start >= 0 && end > start);
+  const readiness = appSource.slice(start, end);
+  const setupEnd = readiness.indexOf("const hasReviewData =");
+  assert.ok(setupEnd > 0);
+  const readinessSetup = readiness.slice(0, setupEnd);
+  const creatorStateStart = readinessSetup.indexOf("const creatorInputFresh =");
+  assert.ok(creatorStateStart >= 0);
+  const creatorState = readinessSetup.slice(creatorStateStart);
+  assert.match(readiness, /名单已修改.*重新生成筛选表/);
+  const evaluate = (fresh, rows) => JSON.parse(JSON.stringify(vm.runInNewContext(
+    `${creatorState}\nthis.result = { creatorInputFresh, hasCreators };`,
+    { creatorAnalysisMatchesInput: () => fresh, currentCreatorRows: rows }
+  )));
+  assert.deepEqual(evaluate(false, [{ name: "旧达人" }]), { creatorInputFresh: false, hasCreators: false });
+  assert.deepEqual(evaluate(true, [{ name: "当前达人" }]), { creatorInputFresh: true, hasCreators: true });
+});
+
 test("creator import accepts exactly 1000 rows without reporting truncation", () => {
   const helpers = loadCreatorImportHelpers();
   const parsed = helpers.parseCreators(helpers.creatorRowsToText(sampleRows(1000)));

@@ -2792,7 +2792,8 @@ async function runDemoReadinessCheck() {
   const demoMode = isDemoMode();
   const hasHotspots = currentTrendingTopics.length > 0;
   const hasFeedback = currentFeedbackRows.length > 0 || splitFeedbackInput(document.querySelector("#feedback-input")?.value || "").length > 0;
-  const hasCreators = currentCreatorRows.length > 0 || splitLines(document.querySelector("#creator-input")?.value || "").length > 1;
+  const creatorInputFresh = creatorAnalysisMatchesInput();
+  const hasCreators = creatorInputFresh && currentCreatorRows.length > 0;
   const hasReviewData = streamers.length > 0 || numberValue(document.querySelector("#impressions")?.value) > 0;
   const hasVersionInput = (document.querySelector("#version-theme")?.value || "").trim().length > 0;
   const hasSegmentInput = (document.querySelector("#segment-game")?.value || "").trim().length > 0;
@@ -2832,7 +2833,11 @@ async function runDemoReadinessCheck() {
       ok: hasCreators,
       required: false,
       label: "KOL/KOC 筛选有数据",
-      detail: hasCreators ? "达人列表已有数据，可展示目标分和性价比逻辑。" : "建议导入表格或载入示例达人数据。"
+      detail: hasCreators
+        ? "达人列表已有数据，可展示目标分和性价比逻辑。"
+        : !creatorInputFresh
+          ? "名单已修改，先重新生成筛选表，避免使用旧评分。"
+          : "建议导入表格或载入示例达人数据。"
     },
     {
       ok: hasVersionInput,
@@ -8204,9 +8209,17 @@ function buildFullOperationReportText() {
     .map((selector) => document.querySelector(selector)?.textContent || "")
     .filter(Boolean);
   const sampleSources = sourceTexts.filter((text) => /样例|兜底|演示/.test(text));
+  const unverifiedCreatorSource = sourceTexts.some((text) => /名单来源未核验/.test(text));
   if (currentHotspots.some((topic) => topic.source !== "real")) sampleSources.unshift("热点榜单：当前结果含样例兜底");
-  const dataQuality = sampleSources.length
-    ? `⚠️ 数据状态：本报告包含样例/兜底数据：${sampleSources.join("；")}，不代表真实平台表现。`
+  const dataQualityWarnings = [];
+  if (sampleSources.length) {
+    dataQualityWarnings.push(`⚠️ 数据状态：本报告包含样例/兜底数据：${sampleSources.join("；")}，不代表真实平台表现。`);
+  }
+  if (unverifiedCreatorSource) {
+    dataQualityWarnings.push("⚠️ KOL/KOC 名单来源未核验：达人评分与合作建议仅供参考，请核对账号、报价与数据后再用于决策。");
+  }
+  const dataQuality = dataQualityWarnings.length
+    ? dataQualityWarnings.join("\n")
     : "数据状态：当前已生成模块未检测到样例兜底标记，请结合原始来源复核。";
   const date = businessDate();
   const topTopics = currentHotspots.slice(0, 5).map((topic) => `- TOP${topic.rank} ${topic.title}（${topic.tag} / ${topic.risk?.level || "正常"}）`).join("\n");
