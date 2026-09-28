@@ -153,8 +153,42 @@ test("risk event retries with one idempotency key create only one work order", a
   const secondPayload = JSON.parse(second.text);
   assert.equal(secondPayload.idempotent, true);
   assert.equal(secondPayload.risk_event.id, firstRisk.id);
+  assert.equal(Object.hasOwn(secondPayload.risk_event, "request_fingerprint"), false);
   const listed = JSON.parse((await httpRequest("/risk-events?game=" + encodeURIComponent("鸣潮"))).text);
   assert.equal(listed.items.filter((item) => item.title === "重复提交的风险工单").length, 1);
+});
+
+test("risk event idempotency rejects a reused key with different content", async () => {
+  const headers = { "Content-Type": "application/json", "Idempotency-Key": "risk-conflict-20260929" };
+  const first = await httpRequest("/risk-events", { method: "POST", headers, body: JSON.stringify({ game: "鸣潮", title: "原始风险", detail: "初始详情" }) });
+  const conflict = await httpRequest("/risk-events", { method: "POST", headers, body: JSON.stringify({ game: "鸣潮", title: "另一条风险", detail: "不同详情" }) });
+  assert.equal(first.status, 201);
+  assert.equal(conflict.status, 409);
+  assert.equal(JSON.parse(conflict.text).error, "idempotency_key_reused");
+  const listed = JSON.parse((await httpRequest("/risk-events?game=" + encodeURIComponent("鸣潮"))).text);
+  assert.equal(listed.items.some((item) => item.title === "原始风险"), true);
+  assert.equal(listed.items.some((item) => item.title === "另一条风险"), false);
+});
+
+test("snapshot idempotency rejects a reused key with different content", async () => {
+  const headers = { "Content-Type": "application/json", "Idempotency-Key": "snapshot-conflict-20260929" };
+  const first = await httpRequest("/snapshots", { method: "POST", headers, body: JSON.stringify({ kind: "feedback", game: "鸣潮", payload: { title: "原始快照" } }) });
+  const conflict = await httpRequest("/snapshots", { method: "POST", headers, body: JSON.stringify({ kind: "feedback", game: "鸣潮", payload: { title: "另一份快照" } }) });
+  assert.equal(first.status, 201);
+  assert.equal(conflict.status, 409);
+  assert.equal(JSON.parse(conflict.text).error, "idempotency_key_reused");
+  const listed = JSON.parse((await httpRequest("/snapshots?kind=feedback&game=" + encodeURIComponent("鸣潮"))).text);
+  assert.equal(listed.items.length, 1);
+  assert.deepEqual(listed.items[0].payload, { title: "原始快照" });
+});
+
+test("snapshot retries treat nested object key order as the same request", async () => {
+  const headers = { "Content-Type": "application/json", "Idempotency-Key": "snapshot-canonical-20260929" };
+  const first = await httpRequest("/snapshots", { method: "POST", headers, body: JSON.stringify({ kind: "feedback", game: "鸣潮", payload: { nested: { b: 2, a: 1 } } }) });
+  const retry = await httpRequest("/snapshots", { method: "POST", headers, body: JSON.stringify({ kind: "feedback", game: "鸣潮", payload: { nested: { a: 1, b: 2 } } }) });
+  assert.equal(first.status, 201);
+  assert.equal(retry.status, 200);
+  assert.equal(JSON.parse(retry.text).idempotent, true);
 });
 
 test("partial update drives open -> processing -> resolved without touching other fields", async () => {

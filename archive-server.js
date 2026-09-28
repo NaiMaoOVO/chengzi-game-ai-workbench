@@ -1,4 +1,5 @@
 const http = require("node:http");
+const crypto = require("node:crypto");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
@@ -170,6 +171,7 @@ CREATE TABLE IF NOT EXISTS snapshots (
   source TEXT NOT NULL DEFAULT 'sample',
   payload TEXT NOT NULL,
   request_id TEXT,
+  request_fingerprint TEXT,
   created_at TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS project_profiles (
@@ -190,6 +192,7 @@ CREATE TABLE IF NOT EXISTS publications (
   published_at TEXT,
   metrics_json TEXT NOT NULL DEFAULT '{}',
   request_id TEXT,
+  request_fingerprint TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
@@ -205,6 +208,7 @@ CREATE TABLE IF NOT EXISTS risk_events (
   status TEXT NOT NULL DEFAULT 'open',
   notes TEXT NOT NULL DEFAULT '',
   request_id TEXT,
+  request_fingerprint TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
@@ -221,6 +225,7 @@ CREATE TABLE IF NOT EXISTS daily_todos (
   source TEXT NOT NULL DEFAULT 'manual',
   link_view TEXT NOT NULL DEFAULT '',
   request_id TEXT,
+  request_fingerprint TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
@@ -290,6 +295,7 @@ function migrateOwnerColumns() {
   for (const table of ["snapshots", "publications", "risk_events", "daily_todos"]) {
     if (!hasColumn(table, "owner_key")) db.exec("ALTER TABLE " + table + " ADD COLUMN owner_key TEXT NOT NULL DEFAULT 'default'");
     if (!hasColumn(table, "request_id")) db.exec("ALTER TABLE " + table + " ADD COLUMN request_id TEXT");
+    if (!hasColumn(table, "request_fingerprint")) db.exec("ALTER TABLE " + table + " ADD COLUMN request_fingerprint TEXT");
   }
   if (!hasColumn("morning_runs", "owner_key")) db.exec("ALTER TABLE morning_runs ADD COLUMN owner_key TEXT NOT NULL DEFAULT 'default'");
   migrateMorningRunPrimaryKey();
@@ -335,6 +341,8 @@ function migrateOwnerColumns() {
     .run("2026-09-owner-isolation-and-idempotency", new Date().toISOString());
   db.prepare("INSERT OR IGNORE INTO schema_migrations (id, applied_at) VALUES (?, ?)")
     .run("2026-09-morning-run-owner-primary-key", new Date().toISOString());
+  db.prepare("INSERT OR IGNORE INTO schema_migrations (id, applied_at) VALUES (?, ?)")
+    .run("2026-09-idempotency-request-fingerprint", new Date().toISOString());
 }
 
 migrateOwnerColumns();
@@ -374,15 +382,15 @@ if (archiveAuth.enabled && archiveAuth.adminUserId) {
   }
 }
 
-const insertStatement = db.prepare("INSERT INTO snapshots (owner_key, kind, game, source, payload, request_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)");
+const insertStatement = db.prepare("INSERT INTO snapshots (owner_key, kind, game, source, payload, request_id, request_fingerprint, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
 const insertMorningSnapshotStatement = db.prepare("INSERT OR IGNORE INTO snapshots (owner_key, kind, game, source, payload, request_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)");
-const findSnapshotByRequestStatement = db.prepare("SELECT id FROM snapshots WHERE owner_key = ? AND request_id = ?");
+const findSnapshotByRequestStatement = db.prepare("SELECT id, kind, game, source, payload, request_fingerprint FROM snapshots WHERE owner_key = ? AND request_id = ?");
 
-const insertPublicationStatement = db.prepare("INSERT INTO publications (owner_key, game, title, channel, url, related_topic, published_at, metrics_json, request_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+const insertPublicationStatement = db.prepare("INSERT INTO publications (owner_key, game, title, channel, url, related_topic, published_at, metrics_json, request_id, request_fingerprint, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
 const updatePublicationStatement = db.prepare("UPDATE publications SET game = ?, title = ?, channel = ?, url = ?, related_topic = ?, published_at = ?, metrics_json = ?, updated_at = ? WHERE id = ? AND owner_key = ?");
 const getPublicationStatement = db.prepare("SELECT id, game, title, channel, url, related_topic, published_at, metrics_json, created_at, updated_at FROM publications WHERE id = ? AND owner_key = ?");
 const deletePublicationStatement = db.prepare("DELETE FROM publications WHERE id = ? AND owner_key = ?");
-const findPublicationByRequestStatement = db.prepare("SELECT id, game, title, channel, url, related_topic, published_at, metrics_json, created_at, updated_at FROM publications WHERE owner_key = ? AND request_id = ?");
+const findPublicationByRequestStatement = db.prepare("SELECT id, game, title, channel, url, related_topic, published_at, metrics_json, request_fingerprint, created_at, updated_at FROM publications WHERE owner_key = ? AND request_id = ?");
 const getCreatorLibraryStatement = db.prepare("SELECT payload, updated_at FROM creator_libraries WHERE owner_key = ?");
 const upsertCreatorLibraryStatement = db.prepare("INSERT INTO creator_libraries (owner_key, payload, updated_at) VALUES (?, ?, ?) ON CONFLICT(owner_key) DO UPDATE SET payload = excluded.payload, updated_at = excluded.updated_at");
 
@@ -483,7 +491,12 @@ function formatPublication(row) {
   } catch (_error) {
     metrics = {};
   }
-  return { ...row, metrics_json: metrics };
+  return { ...omitRequestFingerprint(row), metrics_json: metrics };
+}
+
+function omitRequestFingerprint(row) {
+  const { request_fingerprint: _requestFingerprint, ...publicRow } = row;
+  return publicRow;
 }
 
 function listPublications(url, ownerKey) {
@@ -507,24 +520,76 @@ function listPublications(url, ownerKey) {
 const RISK_EVENT_LEVELS = new Set(["低", "中", "高"]);
 const RISK_EVENT_STATUSES = new Set(["open", "processing", "resolved", "dropped"]);
 
-const insertRiskEventStatement = db.prepare("INSERT INTO risk_events (owner_key, game, title, source, url, detail, level, status, request_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+const insertRiskEventStatement = db.prepare("INSERT INTO risk_events (owner_key, game, title, source, url, detail, level, status, request_id, request_fingerprint, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
 const updateRiskEventStatement = db.prepare("UPDATE risk_events SET title = ?, url = ?, detail = ?, level = ?, status = ?, notes = ?, updated_at = ? WHERE id = ? AND owner_key = ?");
 const getRiskEventStatement = db.prepare("SELECT id, game, title, source, url, detail, level, status, notes, created_at, updated_at FROM risk_events WHERE id = ? AND owner_key = ?");
 const deleteRiskEventStatement = db.prepare("DELETE FROM risk_events WHERE id = ? AND owner_key = ?");
-const findRiskEventByRequestStatement = db.prepare("SELECT id, game, title, source, url, detail, level, status, notes, created_at, updated_at FROM risk_events WHERE owner_key = ? AND request_id = ?");
+const findRiskEventByRequestStatement = db.prepare("SELECT id, game, title, source, url, detail, level, status, notes, request_fingerprint, created_at, updated_at FROM risk_events WHERE owner_key = ? AND request_id = ?");
 
 /* ---- 每日工作台待办：手动任务与跨模块自动待办共用一条时间线 ---- */
 
 const DAILY_TODO_PRIORITIES = new Set(["low", "medium", "high"]);
 const DAILY_TODO_STATUSES = new Set(["open", "done", "dropped"]);
 
-const insertDailyTodoStatement = db.prepare("INSERT INTO daily_todos (owner_key, game, title, priority, status, due_date, notes, source, link_view, request_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+const insertDailyTodoStatement = db.prepare("INSERT INTO daily_todos (owner_key, game, title, priority, status, due_date, notes, source, link_view, request_id, request_fingerprint, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
 const updateDailyTodoStatement = db.prepare("UPDATE daily_todos SET title = ?, priority = ?, status = ?, due_date = ?, completed_at = ?, notes = ?, updated_at = ? WHERE id = ? AND owner_key = ?");
 const getDailyTodoStatement = db.prepare("SELECT id, game, title, priority, status, due_date, completed_at, notes, source, link_view, created_at, updated_at FROM daily_todos WHERE id = ? AND owner_key = ?");
 const deleteDailyTodoStatement = db.prepare("DELETE FROM daily_todos WHERE id = ? AND owner_key = ?");
-const findDailyTodoByRequestStatement = db.prepare("SELECT id, game, title, priority, status, due_date, completed_at, notes, source, link_view, created_at, updated_at FROM daily_todos WHERE owner_key = ? AND request_id = ?");
+const findDailyTodoByRequestStatement = db.prepare("SELECT id, game, title, priority, status, due_date, completed_at, notes, source, link_view, request_fingerprint, created_at, updated_at FROM daily_todos WHERE owner_key = ? AND request_id = ?");
 
 const REQUEST_ID_PATTERN = /^[A-Za-z0-9._:-]{8,100}$/;
+
+function stableJsonValue(value) {
+  if (Array.isArray(value)) return value.map(stableJsonValue);
+  if (value && typeof value === "object") {
+    return Object.fromEntries(Object.keys(value).sort().map((key) => [key, stableJsonValue(value[key])]));
+  }
+  return value;
+}
+
+function requestFingerprint(value) {
+  return crypto.createHash("sha256").update(JSON.stringify(stableJsonValue(value))).digest("hex");
+}
+
+function storedRequestMatches(existing, fingerprint) {
+  return !existing.request_fingerprint || existing.request_fingerprint === fingerprint;
+}
+
+function sendIdempotencyConflict(request, response) {
+  sendJson(request, response, 409, {
+    ok: false,
+    error: "idempotency_key_reused",
+    message: "该幂等键已用于不同内容，请更换请求编号后重试。"
+  });
+}
+
+function backfillRequestFingerprints() {
+  const backfill = (table, query, valueOf) => {
+    const rows = db.prepare(query).all();
+    const update = db.prepare(`UPDATE ${table} SET request_fingerprint = ? WHERE id = ? AND request_fingerprint IS NULL`);
+    for (const row of rows) {
+      const value = valueOf(row);
+      if (!value) continue;
+      update.run(requestFingerprint(value), row.id);
+    }
+  };
+  backfill("snapshots", "SELECT id, kind, game, source, payload FROM snapshots WHERE request_id IS NOT NULL AND request_fingerprint IS NULL", (row) => {
+    const payload = parseStoredObject(row.payload);
+    return payload.valid ? { kind: row.kind, game: row.game, source: row.source, payload: payload.value } : null;
+  });
+  backfill("publications", "SELECT id, game, title, channel, url, related_topic, published_at, metrics_json FROM publications WHERE request_id IS NOT NULL AND request_fingerprint IS NULL AND created_at = updated_at", (row) => {
+    const metrics = parseStoredObject(row.metrics_json);
+    return metrics.valid ? { game: row.game, title: row.title, channel: row.channel, url: row.url, relatedTopic: row.related_topic, publishedAt: row.published_at, metrics: metrics.value } : null;
+  });
+  backfill("risk_events", "SELECT id, game, title, source, url, detail, level, status FROM risk_events WHERE request_id IS NOT NULL AND request_fingerprint IS NULL AND created_at = updated_at", (row) => ({
+    game: row.game, title: row.title, source: row.source, url: row.url, detail: row.detail, level: row.level, status: row.status
+  }));
+  backfill("daily_todos", "SELECT id, game, title, priority, status, due_date, notes, source, link_view FROM daily_todos WHERE request_id IS NOT NULL AND request_fingerprint IS NULL AND created_at = updated_at", (row) => ({
+    game: row.game, title: row.title, priority: row.priority, status: row.status, dueDate: row.due_date, notes: row.notes, source: row.source, linkView: row.link_view
+  }));
+}
+
+backfillRequestFingerprints();
 
 function requestIdOf(request, body) {
   const header = String(request.headers["idempotency-key"] || "").trim();
@@ -1086,6 +1151,9 @@ const server = http.createServer((request, response) => {
         sendJson(request, response, 400, { ok: false, error: error.message });
         return;
       }
+      const fingerprint = requestId ? requestFingerprint({
+        game, title, channel, url: publicationUrl, relatedTopic, publishedAt, metrics: JSON.parse(metricsJson)
+      }) : null;
       if (requestId) {
         let existing;
         try {
@@ -1095,6 +1163,10 @@ const server = http.createServer((request, response) => {
           return;
         }
         if (existing) {
+          if (!storedRequestMatches(existing, fingerprint)) {
+            sendIdempotencyConflict(request, response);
+            return;
+          }
           sendJson(request, response, 200, { ok: true, publication: formatPublication(existing), idempotent: true });
           return;
         }
@@ -1112,6 +1184,7 @@ const server = http.createServer((request, response) => {
           publishedAt,
           metricsJson,
           requestId,
+          fingerprint,
           now,
           now
         );
@@ -1121,6 +1194,10 @@ const server = http.createServer((request, response) => {
           if (requestId) existing = findPublicationByRequestStatement.get(ownerKey, requestId);
         } catch (_lookupError) {
           // The write outcome cannot be confirmed; report storage failure rather than crashing or guessing.
+        }
+        if (existing && !storedRequestMatches(existing, fingerprint)) {
+          sendIdempotencyConflict(request, response);
+          return;
         }
         if (!existing) {
           sendJson(request, response, 500, { ok: false, error: "发布记录暂时无法保存，请稍后重试" });
@@ -1254,6 +1331,10 @@ const server = http.createServer((request, response) => {
         const next = validateDailyTodo(body, null);
         const source = textValue(body.source, "source", 60, "manual") || "manual";
         const requestId = requestIdOf(request, body);
+        const fingerprint = requestId ? requestFingerprint({
+          game, title: next.title, priority: next.priority, status: next.status, dueDate: next.dueDate,
+          notes: next.notes, source, linkView
+        }) : null;
         if (requestId) {
           let existing;
           try {
@@ -1263,14 +1344,18 @@ const server = http.createServer((request, response) => {
             return;
           }
           if (existing) {
-            sendJson(request, response, 200, { ok: true, daily_todo: existing, idempotent: true });
+            if (!storedRequestMatches(existing, fingerprint)) {
+              sendIdempotencyConflict(request, response);
+              return;
+            }
+            sendJson(request, response, 200, { ok: true, daily_todo: omitRequestFingerprint(existing), idempotent: true });
             return;
           }
         }
         const now = new Date().toISOString();
         let info;
         try {
-          info = insertDailyTodoStatement.run(ownerKey, game, next.title, next.priority, next.status, next.dueDate, next.notes, source, linkView, requestId, now, now);
+          info = insertDailyTodoStatement.run(ownerKey, game, next.title, next.priority, next.status, next.dueDate, next.notes, source, linkView, requestId, fingerprint, now, now);
         } catch (_error) {
           let existing = null;
           try {
@@ -1278,11 +1363,15 @@ const server = http.createServer((request, response) => {
           } catch (_lookupError) {
             // The write outcome cannot be confirmed; report storage failure rather than crashing or guessing.
           }
+          if (existing && !storedRequestMatches(existing, fingerprint)) {
+            sendIdempotencyConflict(request, response);
+            return;
+          }
           if (!existing) {
             sendJson(request, response, 500, { ok: false, error: "待办暂时无法保存，请稍后重试" });
             return;
           }
-          sendJson(request, response, 200, { ok: true, daily_todo: existing, idempotent: true });
+          sendJson(request, response, 200, { ok: true, daily_todo: omitRequestFingerprint(existing), idempotent: true });
           return;
         }
         try {
@@ -1471,6 +1560,9 @@ const server = http.createServer((request, response) => {
         sendJson(request, response, 400, { ok: false, error: error.message });
         return;
       }
+      const fingerprint = requestId ? requestFingerprint({
+        game, title, source, url: link, detail, level: level || "中", status: status || "open"
+      }) : null;
       if (requestId) {
         let existing;
         try {
@@ -1480,7 +1572,11 @@ const server = http.createServer((request, response) => {
           return;
         }
         if (existing) {
-          sendJson(request, response, 200, { ok: true, risk_event: existing, idempotent: true });
+          if (!storedRequestMatches(existing, fingerprint)) {
+            sendIdempotencyConflict(request, response);
+            return;
+          }
+          sendJson(request, response, 200, { ok: true, risk_event: omitRequestFingerprint(existing), idempotent: true });
           return;
         }
       }
@@ -1497,6 +1593,7 @@ const server = http.createServer((request, response) => {
           level || "中",
           status || "open",
           requestId,
+          fingerprint,
           now,
           now
         );
@@ -1507,11 +1604,15 @@ const server = http.createServer((request, response) => {
         } catch (_lookupError) {
           // The write outcome cannot be confirmed; report storage failure rather than crashing or guessing.
         }
+        if (existing && !storedRequestMatches(existing, fingerprint)) {
+          sendIdempotencyConflict(request, response);
+          return;
+        }
         if (!existing) {
           sendJson(request, response, 500, { ok: false, error: "风险工单暂时无法保存，请稍后重试" });
           return;
         }
-        sendJson(request, response, 200, { ok: true, risk_event: existing, idempotent: true });
+        sendJson(request, response, 200, { ok: true, risk_event: omitRequestFingerprint(existing), idempotent: true });
         return;
       }
       sendJson(request, response, 201, { ok: true, risk_event: getRiskEventStatement.get(Number(info.lastInsertRowid), ownerKey) });
@@ -1587,6 +1688,7 @@ const server = http.createServer((request, response) => {
       sendJson(request, response, 400, { error: error.message });
       return;
     }
+    const fingerprint = requestId ? requestFingerprint({ kind, game, source, payload: body.payload }) : null;
     if (requestId) {
       let existing;
       try {
@@ -1596,12 +1698,16 @@ const server = http.createServer((request, response) => {
         return;
       }
       if (existing) {
+        if (!storedRequestMatches(existing, fingerprint)) {
+          sendIdempotencyConflict(request, response);
+          return;
+        }
         sendJson(request, response, 200, { ok: true, id: Number(existing.id), idempotent: true });
         return;
       }
     }
     try {
-      const info = insertStatement.run(ownerKey, kind, game, source, serialized, requestId, new Date().toISOString());
+      const info = insertStatement.run(ownerKey, kind, game, source, serialized, requestId, fingerprint, new Date().toISOString());
       sendJson(request, response, 201, { ok: true, id: Number(info.lastInsertRowid) });
     } catch (_error) {
       let existing = null;
@@ -1609,6 +1715,10 @@ const server = http.createServer((request, response) => {
         if (requestId) existing = findSnapshotByRequestStatement.get(ownerKey, requestId);
       } catch (_lookupError) {
         // The write outcome cannot be confirmed; report storage failure rather than crashing or guessing.
+      }
+      if (existing && !storedRequestMatches(existing, fingerprint)) {
+        sendIdempotencyConflict(request, response);
+        return;
       }
       if (!existing) {
         sendJson(request, response, 500, { ok: false, error: "快照暂时无法保存，请稍后重试" });
@@ -1677,8 +1787,8 @@ async function runMorningFetch(runDate = businessDate()) {
   morningRunning = true;
   try {
     for (const game of MORNING_GAMES) {
-      if (!claimMorningRun(runDate, game, MORNING_PLATFORM)) continue;
       try {
+        if (!claimMorningRun(runDate, game, MORNING_PLATFORM)) continue;
         const params = new URLSearchParams({ game, platform: MORNING_PLATFORM, range: "today", limit: "10" });
         const response = await fetch(HOTSPOT_SOURCE_URL + "/hotspots?" + params.toString(), { signal: AbortSignal.timeout(20000) });
         if (!response.ok) throw new Error("hotspot HTTP " + response.status);
@@ -1708,12 +1818,24 @@ async function runMorningFetch(runDate = businessDate()) {
         finishMorningRun(runDate, game, MORNING_PLATFORM, "success");
         console.log("晨报抓取完成：" + game + "（" + source + "，" + items.length + " 条）");
       } catch (error) {
-        finishMorningRun(runDate, game, MORNING_PLATFORM, "failed", error.message);
+        try {
+          finishMorningRun(runDate, game, MORNING_PLATFORM, "failed", error.message);
+        } catch (statusError) {
+          console.error("晨报运行状态暂时无法保存：" + statusError.message);
+        }
         console.error("晨报抓取失败（下一分钟自动重试）:" + game + " · " + error.message);
       }
     }
   } finally {
     morningRunning = false;
+  }
+}
+
+async function launchMorningFetch(runDate) {
+  try {
+    await runMorningFetch(runDate);
+  } catch (error) {
+    console.error("晨报任务意外失败（服务继续运行）:" + error.message);
   }
 }
 
@@ -1723,5 +1845,5 @@ setInterval(() => {
   const today = businessDate(now);
   if (hhmm < MORNING_SCHEDULE || morningRunning) return;
   if (!MORNING_GAMES.length) return;
-  runMorningFetch(today);
+  launchMorningFetch(today);
 }, 60000).unref?.();

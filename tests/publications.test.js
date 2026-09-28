@@ -141,8 +141,36 @@ test("publication retries with one idempotency key create only one ledger row", 
   const secondPayload = JSON.parse(second.text);
   assert.equal(secondPayload.idempotent, true);
   assert.equal(secondPayload.publication.id, firstPublication.id);
+  assert.equal(Object.hasOwn(secondPayload.publication, "request_fingerprint"), false);
   const listed = JSON.parse((await httpRequest("/publications?game=" + encodeURIComponent("鸣潮"))).text);
   assert.equal(listed.items.filter((item) => item.title === "版本内容回流").length, 1);
+});
+
+test("publication idempotency rejects a reused key with different content", async () => {
+  const headers = { "Content-Type": "application/json", "Idempotency-Key": "publication-conflict-20260929" };
+  const first = await httpRequest("/publications", { method: "POST", headers, body: JSON.stringify({ game: "鸣潮", title: "原始发布", channel: "B站" }) });
+  const conflict = await httpRequest("/publications", { method: "POST", headers, body: JSON.stringify({ game: "鸣潮", title: "另一条发布", channel: "B站" }) });
+  assert.equal(first.status, 201);
+  assert.equal(conflict.status, 409);
+  assert.equal(JSON.parse(conflict.text).error, "idempotency_key_reused");
+  const listed = JSON.parse((await httpRequest("/publications?game=" + encodeURIComponent("鸣潮"))).text);
+  assert.equal(listed.items.some((item) => item.title === "原始发布"), true);
+  assert.equal(listed.items.some((item) => item.title === "另一条发布"), false);
+});
+
+test("publication retry still matches its original request after the record is edited", async () => {
+  const headers = { "Content-Type": "application/json", "Idempotency-Key": "publication-edit-retry-20260929" };
+  const body = JSON.stringify({ game: "鸣潮", title: "发布后更新", channel: "B站" });
+  const first = await httpRequest("/publications", { method: "POST", headers, body });
+  const publication = JSON.parse(first.text).publication;
+  await httpRequest("/publications/" + publication.id, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ title: "已回流更新" })
+  });
+  const retry = await httpRequest("/publications", { method: "POST", headers, body });
+  assert.equal(retry.status, 200);
+  assert.equal(JSON.parse(retry.text).publication.title, "已回流更新");
 });
 
 test("update accepts metrics object, persists string storage, returns parsed object", async () => {

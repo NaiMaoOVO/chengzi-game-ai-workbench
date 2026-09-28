@@ -207,8 +207,21 @@ test("daily todo retries with one idempotency key create only one row", async ()
   const secondPayload = JSON.parse(second.text);
   assert.equal(secondPayload.idempotent, true);
   assert.equal(secondPayload.daily_todo.id, firstTodo.id);
+  assert.equal(Object.hasOwn(secondPayload.daily_todo, "request_fingerprint"), false);
   const listed = JSON.parse((await httpRequest("/daily-todos?game=" + encodeURIComponent("鸣潮"))).text);
   assert.equal(listed.items.filter((item) => item.title === "网络重试不能重复创建").length, 1);
+});
+
+test("daily todo idempotency rejects a reused key with different content", async () => {
+  const headers = { "Content-Type": "application/json", "Idempotency-Key": "daily-conflict-20260929" };
+  const first = await httpRequest("/daily-todos", { method: "POST", headers, body: JSON.stringify({ game: "鸣潮", title: "原始待办" }) });
+  const conflict = await httpRequest("/daily-todos", { method: "POST", headers, body: JSON.stringify({ game: "鸣潮", title: "另一条待办" }) });
+  assert.equal(first.status, 201);
+  assert.equal(conflict.status, 409);
+  assert.equal(JSON.parse(conflict.text).error, "idempotency_key_reused");
+  const listed = JSON.parse((await httpRequest("/daily-todos?game=" + encodeURIComponent("鸣潮"))).text);
+  assert.equal(listed.items.some((item) => item.title === "原始待办"), true);
+  assert.equal(listed.items.some((item) => item.title === "另一条待办"), false);
 });
 
 test("daily todo create storage errors return 500 without leaking database details", async () => {

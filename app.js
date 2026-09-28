@@ -6319,20 +6319,35 @@ function creatorSnapshot(row) {
 
 function creatorProfileKeys(row) {
   const primary = creatorKey(row);
+  const homepage = row.accountUrl ? creatorKey({ ...row, accountId: "" }) : "";
   const legacy = creatorKey({ ...row, accountId: "", accountUrl: "" });
-  return [...new Set([primary, legacy])];
+  return [...new Set([primary, homepage, legacy])];
 }
 
 function findCreatorProfile(library, row, migrate = false) {
-  const [primary, legacy] = creatorProfileKeys(row);
-  if (library[primary]) return { key: primary, profile: library[primary] };
-  if (!library[legacy]) return { key: primary, profile: null };
-  if (migrate && primary !== legacy) {
-    library[primary] = { ...library[legacy], key: primary, accountId: row.accountId || library[legacy].accountId || "", accountUrl: row.accountUrl || library[legacy].accountUrl || "", updatedAt: new Date().toISOString() };
-    delete library[legacy];
+  const [primary, homepage, legacy] = creatorProfileKeys(row);
+  const homepageAlias = homepage && homepage !== primary && library[homepage] ? homepage : "";
+  const legacyAlias = legacy !== primary && legacy !== homepage && library[legacy] ? legacy : "";
+  if (library[primary]) {
+    if (migrate && homepageAlias) {
+      library[primary] = {
+        ...mergeCreatorProfiles(library[primary], library[homepageAlias]),
+        key: primary,
+        accountId: row.accountId || library[primary].accountId || library[homepageAlias].accountId || "",
+        accountUrl: row.accountUrl || library[primary].accountUrl || library[homepageAlias].accountUrl || ""
+      };
+      delete library[homepageAlias];
+    }
     return { key: primary, profile: library[primary] };
   }
-  return { key: legacy, profile: library[legacy] };
+  const alias = homepageAlias || legacyAlias;
+  if (!alias) return { key: primary, profile: null };
+  if (migrate) {
+    library[primary] = { ...library[alias], key: primary, accountId: row.accountId || library[alias].accountId || "", accountUrl: row.accountUrl || library[alias].accountUrl || "", updatedAt: new Date().toISOString() };
+    delete library[alias];
+    return { key: primary, profile: library[primary] };
+  }
+  return { key: alias, profile: library[alias] };
 }
 
 function saveCreatorToLibrary(row) {
@@ -6541,7 +6556,8 @@ function saveCreatorLibraryCard(card) {
   const recommendation = card.querySelector("[data-library-recommendation]")?.value || "observe";
   const now = new Date().toISOString();
   const collaborations = Array.isArray(profile.collaborations) ? [...profile.collaborations] : [];
-  if (occurredOn || project || url || result || actualViews !== null || actualEngagementRate !== null || actualClicks !== null || actualConversions !== null || quotedCost !== null || actualCost !== null || onTime !== "unknown" || quality) {
+  const hasCollaborationDetails = Boolean(occurredOn || project || url || result || actualViews !== null || actualEngagementRate !== null || actualClicks !== null || actualConversions !== null || quotedCost !== null || actualCost !== null || onTime !== "unknown" || quality || recommendation !== "observe");
+  if (hasCollaborationDetails) {
     collaborations.push({
       id: `${now}-${collaborations.length + 1}`,
       occurredOn,
@@ -6577,7 +6593,7 @@ function saveCreatorLibraryCard(card) {
   const status = document.querySelector("#creator-status");
   if (status) {
     status.textContent = persisted
-      ? `个人库：已保存 ${profile.name} 的档案${project || result ? "，并记录本次合作" : ""}。`
+      ? `个人库：已保存 ${profile.name} 的档案${hasCollaborationDetails ? "，并记录本次合作" : ""}。`
       : `个人库：${creatorLibraryStorageIssue || "浏览器存储空间不足，未能保存本次修改。"}`;
     status.className = `source-status ${persisted ? "source-real" : "source-mock"}`;
   }
@@ -6908,8 +6924,12 @@ function getCreatorBrief(row) {
   return "适合用小预算做多点测试，优先观察评论质量、完播和互动成本，再决定是否加码。";
 }
 
-function getCreatorBriefDetail(row) {
+function getCreatorBriefDetail(row, brief = {}) {
   const fit = getCreatorFit(row);
+  const targeting = [
+    brief.game ? `目标游戏：${brief.game}` : "",
+    brief.audience ? `目标受众：${brief.audience}` : ""
+  ].filter(Boolean);
   const platformAdvice = {
     B站: "交付以 3-8 分钟视频为主，要求标题包含游戏名和核心结论，保留数据截图或实机片段。",
     抖音: "交付以 30-60 秒短视频或直播切片为主，前三秒突出卖点和福利信息。",
@@ -6925,6 +6945,7 @@ function getCreatorBriefDetail(row) {
     : "结构：真实体验 - 单点卖点 - 评论反馈观察 - 小预算测试结论。";
 
   return [
+    ...targeting,
     `推荐方向：${fit}。`,
     structure,
     platformAdvice[row.platform] || "交付形式按达人强项确定，brief 需明确核心卖点、发布时间和素材授权范围。",
@@ -6984,6 +7005,7 @@ function renderCreatorBudgetPlans(rows, budget) {
 }
 
 function renderCreatorBriefs(rows, goal, activity) {
+  const brief = getCreatorBriefInput();
   const selected = [...rows]
     .filter(isEligibleCreator)
     .sort((a, b) => scoreByGoal(b, goal, activity) - scoreByGoal(a, goal, activity))
@@ -6991,7 +7013,7 @@ function renderCreatorBriefs(rows, goal, activity) {
   renderCopyCards(
     document.querySelector("#creator-brief-list"),
     selected.length
-      ? selected.map((row) => ({ title: `${row.name} · ${getCreatorFit(row)}`, body: getCreatorBriefDetail(row) }))
+      ? selected.map((row) => ({ title: `${row.name} · ${getCreatorFit(row)}`, body: getCreatorBriefDetail(row, brief) }))
       : [{ title: "暂无 Brief", body: "导入可推进达人后，会自动生成达人合作 brief。" }]
   );
 }

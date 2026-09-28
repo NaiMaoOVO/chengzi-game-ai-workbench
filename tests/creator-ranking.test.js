@@ -1,6 +1,11 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const path = require("node:path");
+const vm = require("node:vm");
 const { CREATOR_TIER, chooseCreatorsByBudget, compareCreatorPriority, creatorKey, getCreatorHistoryScore, getCreatorLibraryDisplayProfiles, parseMetricValue, parseRateValue, sortCreatorCollaborationsByDate, scoreByGoal, scoreCreator } = require("../creator-ranking");
+
+const appSource = fs.readFileSync(path.join(__dirname, "..", "app.js"), "utf8");
 
 test("creator numeric imports treat negative and non-finite values as missing", () => {
   assert.equal(parseMetricValue("-1200"), 0);
@@ -51,6 +56,106 @@ test("creator homepage identity normalizes URL host but preserves case-sensitive
     creatorKey({ platform: "抖音", name: "账号甲", accountUrl: "https://www.douyin.com/user/MS4wLjABAAA" }),
     creatorKey({ platform: "抖音", name: "账号乙", accountUrl: "https://www.douyin.com/user/ms4wljabaaa" })
   );
+});
+
+test("creator library identity upgrades preserve and consolidate homepage-linked collaboration history", () => {
+  const profileStart = appSource.indexOf("function creatorProfileKeys(row)");
+  const profileEnd = appSource.indexOf("function saveCreatorToLibrary", profileStart);
+  const mergeStart = appSource.indexOf("function mergeCreatorProfiles(primary, incoming)");
+  const mergeEnd = appSource.indexOf("function canonicalizeCreatorLibrary", mergeStart);
+  assert.ok(profileStart >= 0 && profileEnd > profileStart);
+  assert.ok(mergeStart >= 0 && mergeEnd > mergeStart);
+  const resolve = vm.runInNewContext(`(() => {
+    ${appSource.slice(profileStart, profileEnd)}
+    ${appSource.slice(mergeStart, mergeEnd)}
+    return findCreatorProfile;
+  })()`, { creatorKey });
+  const url = "https://www.douyin.com/user/creator-x";
+  const oldRow = { platform: "抖音", name: "旧昵称", accountUrl: url };
+  const upgradedRow = { platform: "抖音", name: "新昵称", accountId: "open-id-123", accountUrl: url };
+  const history = { id: "collab-1", project: "鸣潮 2.8", actualViews: 82000 };
+  const oldKey = creatorKey(oldRow);
+  const newKey = creatorKey(upgradedRow);
+  const legacyLibrary = {
+    [oldKey]: { key: oldKey, name: oldRow.name, platform: oldRow.platform, accountUrl: url, collaborations: [history], updatedAt: "2026-09-20T00:00:00.000Z" }
+  };
+
+  const migrated = resolve(legacyLibrary, upgradedRow, true);
+  assert.equal(migrated.key, newKey);
+  assert.equal(migrated.profile.collaborations[0].id, "collab-1");
+  assert.equal(migrated.profile.accountId, upgradedRow.accountId);
+  assert.equal(Object.hasOwn(legacyLibrary, oldKey), false);
+  assert.equal(Object.hasOwn(legacyLibrary, newKey), true);
+
+  const secondHistory = { id: "collab-2", project: "鸣潮 2.9", actualViews: 94000 };
+  const duplicateLibrary = {
+    [newKey]: { key: newKey, name: upgradedRow.name, platform: upgradedRow.platform, accountId: upgradedRow.accountId, collaborations: [secondHistory], updatedAt: "2026-09-28T00:00:00.000Z" },
+    [oldKey]: { key: oldKey, name: oldRow.name, platform: oldRow.platform, accountUrl: url, collaborations: [history], updatedAt: "2026-09-20T00:00:00.000Z" }
+  };
+  const consolidated = resolve(duplicateLibrary, upgradedRow, true);
+  assert.deepEqual(Array.from(consolidated.profile.collaborations, (item) => item.id).sort(), ["collab-1", "collab-2"]);
+  assert.equal(Object.hasOwn(duplicateLibrary, oldKey), false);
+  assert.equal(Object.keys(duplicateLibrary).length, 1);
+});
+
+test("creator library saves a collaboration when only the renewal recommendation changes", () => {
+  const saveStart = appSource.indexOf("function saveCreatorLibraryCard(card)");
+  const saveEnd = appSource.indexOf("function removeCreatorFromLibrary", saveStart);
+  assert.ok(saveStart >= 0 && saveEnd > saveStart);
+  const saveWithRecommendation = (recommendation) => {
+    let library = { key: { key: "key", name: "达人", platform: "抖音", collaborations: [] } };
+    const save = vm.runInNewContext(`(() => {
+      ${appSource.slice(saveStart, saveEnd)}
+      return saveCreatorLibraryCard;
+    })()`, {
+      document: { querySelector: () => ({}) },
+      readCreatorLibrary: () => library,
+      writeCreatorLibrary: (next) => { library = next; return true; },
+      renderCreatorLibrary: () => {}
+    });
+    const values = {
+      "[data-library-project]": "",
+      "[data-library-occurred-on]": "",
+      "[data-library-url]": "",
+      "[data-library-result]": "",
+      "[data-library-views]": "",
+      "[data-library-engagement]": "",
+      "[data-library-clicks]": "",
+      "[data-library-conversions]": "",
+      "[data-library-quoted-cost]": "",
+      "[data-library-cost]": "",
+      "[data-library-ontime]": "unknown",
+      "[data-library-quality]": "",
+      "[data-library-recommendation]": recommendation,
+      "[data-library-status]": "未合作",
+      "[data-library-notes]": ""
+    };
+    save({ dataset: { creatorLibraryKey: "key" }, querySelector: (selector) => ({ value: values[selector] }) });
+    return library.key;
+  };
+  const avoided = saveWithRecommendation("avoid");
+  assert.equal(avoided.collaborations.length, 1);
+  assert.equal(avoided.collaborations[0].recommendation, "avoid");
+  assert.equal(saveWithRecommendation("observe").collaborations.length, 0);
+});
+
+test("creator briefs include the selected game and target audience without changing score inputs", () => {
+  const fitStart = appSource.indexOf("function getCreatorFit(row)");
+  const anomaliesStart = appSource.indexOf("function getCreatorAnomalies", fitStart);
+  assert.ok(fitStart >= 0 && anomaliesStart > fitStart);
+  const getBriefDetail = vm.runInNewContext(`(() => {
+    ${appSource.slice(fitStart, anomaliesStart)}
+    return getCreatorBriefDetail;
+  })()`, { formatWan: (value) => String(value) });
+  const detail = getBriefDetail({
+    scores: { launch: 80, review: 60, guide: 50, value: 40 },
+    platform: "B站",
+    avgViews: 10000
+  }, { game: "鸣潮", audience: "回流玩家" });
+  assert.match(detail, /目标游戏：鸣潮/);
+  assert.match(detail, /目标受众：回流玩家/);
+  assert.equal(scoreCreator({ contentType: "攻略", gameHistory: "开放世界", followers: 1000, avgViews: 100, engagementRate: 3, quote: 100 }, { game: "鸣潮", audience: "回流玩家" }).scores.overall,
+    scoreCreator({ contentType: "攻略", gameHistory: "开放世界", followers: 1000, avgViews: 100, engagementRate: 3, quote: 100 }, {}).scores.overall);
 });
 
 test("creator history turns structured delivery reviews into a bounded confidence signal", () => {
