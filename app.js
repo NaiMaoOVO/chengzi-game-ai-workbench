@@ -492,21 +492,43 @@ function renderArchiveAuthPanel(detail = {}) {
   status.textContent = user ? `已登录：${user.username}（${user.role === "admin" ? "管理员" : "成员"}）` : "请登录后协作读写";
 }
 
-let archivePanelSessionKey = "anonymous";
+let archivePanelSessionKey = `${typeof getServiceMode === "function" ? getServiceMode() : "local"}|anonymous`;
 
 function getArchivePanelSessionKey(detail = {}) {
+  const serviceMode = typeof getServiceMode === "function" ? getServiceMode() : "local";
   const user = detail.user || null;
-  if (detail.required && !user) return "unauthenticated";
-  if (!user) return "anonymous";
-  return String(user.id || user.user_id || user.username || user.email || "authenticated");
+  const sessionKey = detail.required && !user
+    ? "unauthenticated"
+    : !user
+      ? "anonymous"
+      : String(user.id || user.user_id || user.username || user.email || "authenticated");
+  return `${serviceMode}|${sessionKey}`;
 }
 
 document.addEventListener("gameops:archive-session", (event) => {
   const detail = event.detail || {};
+  const previousServiceMode = archivePanelSessionKey.split("|", 1)[0];
+  const serviceMode = typeof getServiceMode === "function" ? getServiceMode() : "local";
+  const serviceModeChanged = previousServiceMode !== serviceMode;
   const sessionKey = getArchivePanelSessionKey(detail);
   const accountChanged = sessionKey !== archivePanelSessionKey;
   archivePanelSessionKey = sessionKey;
   renderArchiveAuthPanel(detail);
+  renderServiceModeControls();
+  if (serviceModeChanged) {
+    serviceModeGuard.next();
+    checkLauncherStatus();
+    checkOcrHealth();
+    refreshOverviewServiceStatus();
+    loadTrendStats();
+    const status = document.querySelector("#overview-status");
+    if (status) {
+      status.textContent = serviceMode === "online"
+        ? "总览状态：已切换线上模式，将请求 /api/ocr、/api/hotspot、/api/comment。"
+        : "总览状态：已切换本地模式，将请求 127.0.0.1 本机服务。";
+      status.className = "source-status source-real";
+    }
+  }
   if (accountChanged) {
     lastArchiveSnapshot = null;
     archiveSnapshotRetries = [];
@@ -8712,7 +8734,12 @@ document.querySelector("#export-trending")?.addEventListener("click", exportTren
 document.querySelector("#refresh-service-status")?.addEventListener("click", refreshOverviewServiceStatus);
 document.querySelectorAll("[data-service-mode]")?.forEach((button) => {
   button.addEventListener("click", () => {
+    const previousMode = getServiceMode();
     const mode = setServiceMode(button.dataset.serviceMode);
+    if (previousMode !== mode) {
+      refreshArchiveSession();
+      return;
+    }
     serviceModeGuard.next();
     renderServiceModeControls();
     checkLauncherStatus();

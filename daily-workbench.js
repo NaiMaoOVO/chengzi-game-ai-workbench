@@ -118,13 +118,15 @@
   }
 
   function dailyQueueSessionKey() {
+    const serviceMode = typeof getServiceMode === "function" ? getServiceMode() : "local";
+    const prefix = `${serviceMode}|`;
     const user = typeof archiveSessionUser === "undefined" ? null : archiveSessionUser;
-    if (typeof archiveAuthRequired !== "undefined" && archiveAuthRequired && !user) return "unauthenticated";
-    if (!user) return "anonymous";
-    if (typeof user !== "object") return String(user);
+    if (typeof archiveAuthRequired !== "undefined" && archiveAuthRequired && !user) return `${prefix}unauthenticated`;
+    if (!user) return `${prefix}anonymous`;
+    if (typeof user !== "object") return `${prefix}${String(user)}`;
     const userId = user.id || user.user_id || "";
     const username = user.username || user.email || "";
-    return `${userId}|${username}`;
+    return `${prefix}${userId}|${username}`;
   }
 
   function captureDailyQueueSnapshot(manualItems, state) {

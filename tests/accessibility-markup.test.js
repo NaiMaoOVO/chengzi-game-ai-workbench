@@ -3240,10 +3240,11 @@ test("daily queue offers local service recovery without saving an empty outage a
   assert.equal(vm.runInNewContext("lastDailyQueueSnapshot", sandbox), null);
 });
 
-test("daily queue stale snapshots are isolated by archive user", () => {
+test("daily queue stale snapshots are isolated by archive user and service mode", () => {
   const start = dailyWorkbench.indexOf("function dailyQueueSessionKey()");
   const end = dailyWorkbench.indexOf("function captureDailyQueueSnapshot", start);
   const sessionKey = vm.runInNewContext(`(${dailyWorkbench.slice(start, end).trim()})`, {
+    getServiceMode: () => "local",
     archiveAuthRequired: false,
     archiveSessionUser: { id: 1, username: "first" }
   });
@@ -3254,11 +3255,23 @@ test("daily queue stale snapshots are isolated by archive user", () => {
     archiveSessionUser: { id: 2, username: "second" }
   })();
   assert.notEqual(firstUser, otherUser);
+  const localAnonymous = vm.runInNewContext(`(${dailyWorkbench.slice(start, end).trim()})`, {
+    getServiceMode: () => "local",
+    archiveAuthRequired: false,
+    archiveSessionUser: null
+  })();
+  const onlineAnonymous = vm.runInNewContext(`(${dailyWorkbench.slice(start, end).trim()})`, {
+    getServiceMode: () => "online",
+    archiveAuthRequired: false,
+    archiveSessionUser: null
+  })();
+  assert.notEqual(localAnonymous, onlineAnonymous);
   const loggedOut = vm.runInNewContext(`(${dailyWorkbench.slice(start, end).trim()})`, {
+    getServiceMode: () => "local",
     archiveAuthRequired: true,
     archiveSessionUser: null
   })();
-  assert.equal(loggedOut, "unauthenticated");
+  assert.equal(loggedOut, "local|unauthenticated");
 });
 
 test("archive account changes cancel old queue requests and clear old account views", () => {
@@ -3636,6 +3649,7 @@ test("archive account changes clear old publication and risk lists and invalidat
       })[selector] || null
     },
     renderArchiveAuthPanel: () => {},
+    renderServiceModeControls: () => {},
     isLocalFileRuntime: () => false,
     syncCreatorLibrary: () => {},
     cancelCreatorLibrarySync: () => { calls.creatorSyncCancel += 1; },
@@ -3655,7 +3669,7 @@ test("archive account changes clear old publication and risk lists and invalidat
     renderCreatorLibrary: () => { calls.libraryRenders += 1; }
   };
   vm.runInNewContext(`
-    let archivePanelSessionKey = "user-a";
+    let archivePanelSessionKey = "local|user-a";
     let lastArchiveSnapshot = { kind: "feedback", game: "上一账号", payload: { private: true }, sessionKey: "user-a" };
     let lastBriefing = { game: "上一账号" };
     let currentPublications = [{ title: "上一账号发布记录" }];
@@ -3714,6 +3728,83 @@ test("archive account changes clear old publication and risk lists and invalidat
   const briefingLoaderEnd = app.indexOf('document.querySelector("#generate-briefing")', briefingLoaderStart);
   assert.match(app.slice(profileLoaderStart, profileLoaderEnd), /profileListRequestGuard\.isCurrent\(requestGeneration\)/);
   assert.match(app.slice(briefingLoaderStart, briefingLoaderEnd), /briefingArchiveRequestGuard\.isCurrent\(requestGeneration\)/);
+});
+
+test("service-mode changes in another tab clear archive rows and refresh service state", () => {
+  const start = app.indexOf("function getArchivePanelSessionKey(detail = {})");
+  const end = app.indexOf('document.addEventListener("gameops:local-archive-ready"', start);
+  assert.ok(start >= 0 && end > start);
+  let mode = "local";
+  const publications = { innerHTML: "<p>本地发布行</p>" };
+  const risks = { innerHTML: "<p>本地风险行</p>" };
+  const overview = { textContent: "本地模式" };
+  const calls = { mode: 0, launcher: 0, ocr: 0, overview: 0, trends: 0, publications: 0, risks: 0 };
+  const context = {
+    getServiceMode: () => mode,
+    document: {
+      addEventListener: (_name, handler) => { context.archiveSessionHandler = handler; },
+      querySelector: (selector) => ({
+        "#publication-list": publications,
+        "#risk-ticket-list": risks,
+        "#overview-status": overview
+      })[selector] || null
+    },
+    renderArchiveAuthPanel() {},
+    renderServiceModeControls: () => { calls.mode += 1; },
+    serviceModeGuard: { next() { calls.mode += 1; } },
+    checkLauncherStatus: () => { calls.launcher += 1; },
+    checkOcrHealth: () => { calls.ocr += 1; },
+    refreshOverviewServiceStatus: () => { calls.overview += 1; },
+    loadTrendStats: () => { calls.trends += 1; },
+    isLocalFileRuntime: () => false,
+    lastArchiveSnapshot: { game: "本地项目" },
+    archiveSnapshotRetries: [],
+    setArchiveSyncStatus() {},
+    dailyBriefingGuard: { next() {} },
+    dailyBriefingGenerating: false,
+    cancelCreatorLibrarySync() {},
+    publicationListRequestGuard: { next() {} },
+    riskTicketListRequestGuard: { next() {} },
+    profileListRequestGuard: { next() {} },
+    briefingArchiveRequestGuard: { next() {} },
+    currentPublications: [{ title: "本地发布行" }],
+    currentRiskTickets: [{ id: 7, title: "本地风险行" }],
+    loadPublications: () => { calls.publications += 1; },
+    loadRiskTickets: () => { calls.risks += 1; },
+    renderCreatorLibrary() {},
+    setManagementCount() {},
+    setPublicationStatus() {},
+    setRiskTicketStatus() {},
+    setBriefingActionsAvailable() {}
+  };
+  vm.runInNewContext(`
+    let archivePanelSessionKey = "local|anonymous";
+    let lastArchiveSnapshot = { game: "本地项目" };
+    let currentPublications = [{ title: "本地发布行" }];
+    let currentRiskTickets = [{ id: 7, title: "本地风险行" }];
+    let lastBriefing = null;
+    let archiveSnapshotRetries = [];
+    let dailyBriefingGenerating = false;
+    ${app.slice(start, end)}
+    this.inspect = () => ({ archivePanelSessionKey, currentPublications, currentRiskTickets, lastArchiveSnapshot });
+  `, context);
+
+  mode = "online";
+  context.archiveSessionHandler({ detail: { required: false, user: null } });
+
+  assert.equal(context.inspect().archivePanelSessionKey, "online|anonymous");
+  assert.deepEqual(JSON.parse(JSON.stringify(context.inspect().currentPublications)), []);
+  assert.deepEqual(JSON.parse(JSON.stringify(context.inspect().currentRiskTickets)), []);
+  assert.equal(publications.innerHTML, "");
+  assert.equal(risks.innerHTML, "");
+  assert.equal(context.inspect().lastArchiveSnapshot, null);
+  assert.equal(calls.launcher, 1);
+  assert.equal(calls.ocr, 1);
+  assert.equal(calls.overview, 1);
+  assert.equal(calls.trends, 1);
+  assert.equal(calls.publications, 1);
+  assert.equal(calls.risks, 1);
+  assert.match(overview.textContent, /线上模式/);
 });
 
 test("local service recovery waits for archive readiness and reloads the daily queue", () => {
