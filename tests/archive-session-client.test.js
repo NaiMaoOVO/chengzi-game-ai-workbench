@@ -47,6 +47,7 @@ function createArchiveSessionClient() {
     let archiveCsrfToken = "";
     let archiveSessionUser = null;
     let archiveAuthRequired = false;
+    let serviceModeOverride = null;
     let archiveSessionRefreshGeneration = 0;
     let archiveSessionContextGeneration = 0;
     ${archiveSessionFunctions}
@@ -57,7 +58,7 @@ function createArchiveSessionClient() {
       loginArchiveUser,
       logoutArchiveUser,
       setServiceMode,
-      current: () => ({ required: archiveAuthRequired, user: archiveSessionUser, csrfToken: archiveCsrfToken, serviceUrl: ARCHIVE_SERVICE_URL })
+      current: () => ({ required: archiveAuthRequired, user: archiveSessionUser, csrfToken: archiveCsrfToken, serviceUrl: ARCHIVE_SERVICE_URL, mode: getServiceMode() })
     };
   `, context);
   context.archiveSessionListeners = registeredListeners;
@@ -264,6 +265,17 @@ test("changing service mode clears the prior account and ignores a late session 
   assert.equal(current.csrfToken, "");
 });
 
+test("service mode stays consistent for the current page when local storage writes fail", () => {
+  const context = createArchiveSessionClient();
+  context.window.localStorage.setItem = () => { throw new Error("storage unavailable"); };
+
+  context.archiveSessionClient.setServiceMode("online");
+
+  const current = context.archiveSessionClient.current();
+  assert.equal(current.mode, "online");
+  assert.equal(current.serviceUrl, "/api/archive");
+});
+
 test("a login response from the previous service mode cannot restore its account", async () => {
   const context = createArchiveSessionClient();
   let resolveLogin;
@@ -403,6 +415,7 @@ test("a service mode change in another tab applies the new endpoint before reval
   const current = context.archiveSessionClient.current();
   assert.equal(requestedUrl, "/api/archive/auth/session");
   assert.equal(current.serviceUrl, "/api/archive");
+  assert.equal(current.mode, "online");
   assert.equal(current.required, true);
   assert.equal(current.user, null);
   assert.equal(current.csrfToken, "");

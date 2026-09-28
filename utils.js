@@ -37,6 +37,7 @@ let LAUNCHER_SERVICE_URL = SERVICE_URL_PRESETS.local.launcher;
 let LLM_SERVICE_URL = SERVICE_URL_PRESETS.local.llm;
 let ARCHIVE_SERVICE_URL = SERVICE_URL_PRESETS.local.archive;
 let XHS_SERVICE_URL = SERVICE_URL_PRESETS.local.xiaohongshu;
+let serviceModeOverride = null;
 let archiveCsrfToken = "";
 let archiveSessionUser = null;
 let archiveAuthRequired = false;
@@ -160,6 +161,7 @@ function decodeURIComponentSafe(value, fallbackValue = "") {
 }
 
 function getServiceMode() {
+  if (serviceModeOverride === "online" || serviceModeOverride === "local") return serviceModeOverride;
   try {
     const stored = window.localStorage?.getItem(SERVICE_MODE_STORAGE_KEY);
     return stored === "online" || stored === "local" ? stored : inferDefaultServiceMode();
@@ -171,6 +173,7 @@ function getServiceMode() {
 function setServiceMode(mode) {
   const nextMode = mode === "online" ? "online" : "local";
   const modeChanged = getServiceMode() !== nextMode;
+  serviceModeOverride = nextMode;
   try {
     window.localStorage?.setItem(SERVICE_MODE_STORAGE_KEY, nextMode);
   } catch (_error) {
@@ -210,6 +213,7 @@ function handleArchiveStorageChange(event) {
   const nextMode = event.newValue === "online" || event.newValue === "local"
     ? event.newValue
     : inferDefaultServiceMode();
+  serviceModeOverride = nextMode;
   if (ARCHIVE_SERVICE_URL === SERVICE_URL_PRESETS[nextMode]?.archive) return;
   applyServiceMode(nextMode);
   archiveSessionContextGeneration += 1;
