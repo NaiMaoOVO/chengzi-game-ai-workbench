@@ -276,6 +276,17 @@ test("service mode stays consistent for the current page when local storage writ
   assert.equal(current.serviceUrl, "/api/archive");
 });
 
+test("clearing storage in another tab resets the in-memory mode override", async () => {
+  const context = createArchiveSessionClient();
+  context.archiveSessionClient.setServiceMode("online");
+
+  await context.archiveSessionListeners.storage({ key: null, oldValue: null, newValue: null });
+
+  const current = context.archiveSessionClient.current();
+  assert.equal(current.mode, "local");
+  assert.equal(current.serviceUrl, "http://127.0.0.1:8796");
+});
+
 test("a login response from the previous service mode cannot restore its account", async () => {
   const context = createArchiveSessionClient();
   let resolveLogin;

@@ -209,8 +209,8 @@ function applyServiceMode(mode = getServiceMode()) {
 
 function handleArchiveStorageChange(event) {
   if (event?.key === ARCHIVE_SESSION_CHANGE_KEY) return refreshArchiveSession();
-  if (event?.key !== SERVICE_MODE_STORAGE_KEY) return;
-  const nextMode = event.newValue === "online" || event.newValue === "local"
+  if (event?.key !== SERVICE_MODE_STORAGE_KEY && event?.key !== null) return;
+  const nextMode = event?.key === SERVICE_MODE_STORAGE_KEY && (event.newValue === "online" || event.newValue === "local")
     ? event.newValue
     : inferDefaultServiceMode();
   serviceModeOverride = nextMode;
