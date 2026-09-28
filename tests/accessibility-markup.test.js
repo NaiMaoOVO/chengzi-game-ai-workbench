@@ -2703,6 +2703,7 @@ test("a late creator follow-up cannot save its profile into a different account 
   const button = { disabled: false };
   const status = { textContent: "账号 B 状态", className: "" };
   const context = {
+    requireCurrentCreatorAnalysis: () => true,
     document: { querySelector: (selector) => ({
       "#creator-status": status,
       "#creator-game": { value: "鸣潮" },

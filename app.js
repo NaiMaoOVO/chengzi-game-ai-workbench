@@ -116,11 +116,34 @@ const FEEDBACK_XHS_SOURCE = "小红书笔记";
 let feedbackImportTarget = "bili";
 let currentCreatorRows = [];
 let creatorInputSource = "unverified";
+let analyzedCreatorInput = null;
 const CREATOR_LIBRARY_STORAGE_KEY = "gameops-creator-library-v1";
 const CREATOR_LIBRARY_STATUSES = ["未合作", "已联系", "已确认", "已发布", "已复盘", "暂停合作"];
 
 function resolveCreatorInputSource(source) {
   return ["sample", "imported", "unverified"].includes(source) ? source : "unverified";
+}
+
+function creatorAnalysisMatchesInput() {
+  return analyzedCreatorInput !== null
+    && analyzedCreatorInput === (document.querySelector("#creator-input")?.value || "");
+}
+
+function requireCurrentCreatorAnalysis(action) {
+  if (creatorAnalysisMatchesInput()) return true;
+  const status = document.querySelector("#creator-status");
+  if (status) {
+    status.textContent = `${action}：名单已修改，请先点击“生成筛选表”；旧评分不可用于写入。`;
+    status.className = "source-status source-mock";
+  }
+  return false;
+}
+
+function updateCreatorResultActions() {
+  const disabled = !creatorAnalysisMatchesInput();
+  document.querySelectorAll("#creator-table button").forEach((button) => { button.disabled = disabled; });
+  const saveEligibleButton = document.querySelector("#save-eligible-creators");
+  if (saveEligibleButton) saveEligibleButton.disabled = disabled;
 }
 
 function buildDemoStreamers() {
@@ -6956,6 +6979,7 @@ function renderCreatorAnomalies(rows) {
 function renderCreatorTable(rows, goal, activity) {
   const container = document.querySelector("#creator-table");
   if (!container) return;
+  const resultsCurrent = creatorAnalysisMatchesInput();
   const library = readCreatorLibrary();
   const decisionClass = (row) => row.tier === CREATOR_TIER.A ? "creator-decision-priority"
     : row.tier === CREATOR_TIER.B ? "creator-decision-standard"
@@ -6969,7 +6993,7 @@ function renderCreatorTable(rows, goal, activity) {
       </div>
       ${rows.map((row) => `
         <div class="creator-table-row ${decisionClass(row)}">
-          <strong>${escapeHtml(row.name)}${row.dataSource === "backfill" ? '<em class="creator-data-badge">实测</em>' : ""}<small>${escapeHtml(row.platform)} · ${formatWan(row.followers)}粉 · 均播${formatWan(row.avgViews)}</small><small class="creator-decision ${decisionClass(row)}">${escapeHtml(row.tier)} · ${escapeHtml(row.tier === CREATOR_TIER.PENDING ? `待补：${row.dataGaps.join("、")}` : row.reasons.slice(0, 2).join(" · ") || row.risks.slice(0, 1).join("、") || "等待进一步核验")}</small><span class="creator-row-actions"><button type="button" data-library-row-key="${escapeHtml(creatorKey(row))}">${findCreatorProfile(library, row).profile ? "已在个人库" : "加入个人库"}</button>${isEligibleCreator(row) ? `<button type="button" data-creator-task-key="${escapeHtml(creatorKey(row))}">加入今日待办</button>` : ""}</span></strong>
+          <strong>${escapeHtml(row.name)}${row.dataSource === "backfill" ? '<em class="creator-data-badge">实测</em>' : ""}<small>${escapeHtml(row.platform)} · ${formatWan(row.followers)}粉 · 均播${formatWan(row.avgViews)}</small><small class="creator-decision ${decisionClass(row)}">${escapeHtml(row.tier)} · ${escapeHtml(row.tier === CREATOR_TIER.PENDING ? `待补：${row.dataGaps.join("、")}` : row.reasons.slice(0, 2).join(" · ") || row.risks.slice(0, 1).join("、") || "等待进一步核验")}</small><span class="creator-row-actions"><button type="button" ${resultsCurrent ? "" : "disabled"} data-library-row-key="${escapeHtml(creatorKey(row))}">${findCreatorProfile(library, row).profile ? "已在个人库" : "加入个人库"}</button>${isEligibleCreator(row) ? `<button type="button" ${resultsCurrent ? "" : "disabled"} data-creator-task-key="${escapeHtml(creatorKey(row))}">加入今日待办</button>` : ""}</span></strong>
           <span>${escapeHtml(row.type)}</span>
           <span>${escapeHtml(getCreatorFit(row))}</span>
           <span class="score-pill">${scoreByGoal(row, goal, activity)}</span>
@@ -6990,6 +7014,7 @@ function creatorFollowUpRequestId(row) {
 }
 
 async function addCreatorFollowUp(row, button) {
+  if (!requireCurrentCreatorAnalysis("达人待办")) return;
   const sessionKeyAtStart = archivePanelSessionKey;
   const status = document.querySelector("#creator-status");
   if (!row || !isEligibleCreator(row)) {
@@ -7374,6 +7399,7 @@ async function handleCreatorFileUpload(event) {
 
 function analyzeCreators(rowsOverride = null) {
   const input = document.querySelector("#creator-input")?.value || "";
+  analyzedCreatorInput = input;
   const goal = document.querySelector("#creator-goal")?.value || "launch";
   const activity = document.querySelector("#creator-activity")?.value || "newLaunch";
   const budget = numberValue(document.querySelector("#creator-budget")?.value);
@@ -7410,6 +7436,7 @@ function analyzeCreators(rowsOverride = null) {
   renderCreatorBriefs(currentCreatorRows, goal, activity);
   renderCreatorAnomalies(currentCreatorRows);
   renderCreatorRisks(currentCreatorRows);
+  updateCreatorResultActions();
   document.querySelector("#creator-summary").textContent = summarizeCreators(currentCreatorRows, goal, budget, activity);
   document.querySelector("#creator-score-explain").textContent = explainCreatorScore(goal, activity);
   const status = document.querySelector("#creator-status");
@@ -8167,7 +8194,7 @@ function buildFullOperationReportText() {
   analyzeReview();
   generateVersionPackage();
   generateSegmentPlan();
-  const hasBackfillRows = currentCreatorRows.some((row) => row.dataSource === "backfill");
+  const hasBackfillRows = creatorAnalysisMatchesInput() && currentCreatorRows.some((row) => row.dataSource === "backfill");
   analyzeCreators(hasBackfillRows ? currentCreatorRows : null);
 
   const game = document.querySelector("#version-game")?.value.trim() || document.querySelector("#trending-game")?.value.trim() || "目标游戏";
@@ -8581,9 +8608,10 @@ document.querySelector("#creator-form")?.addEventListener("submit", (event) => {
 
 document.querySelector("#creator-input")?.addEventListener("input", () => {
   creatorInputSource = "unverified";
+  updateCreatorResultActions();
   const status = document.querySelector("#creator-status");
   if (status) {
-    status.textContent = "达人来源：名单已修改，请点击“生成筛选表”重新计算。";
+    status.textContent = "达人来源：名单已修改，请点击“生成筛选表”重新计算；旧结果的入库、待办和回填操作已停用。";
     status.className = "source-status source-mock";
   }
 });
@@ -8609,6 +8637,7 @@ document.querySelector("#creator-library-list")?.addEventListener("click", (even
   if (event.target.closest("[data-library-remove]")) removeCreatorFromLibrary(card);
 });
 document.querySelector("#creator-table")?.addEventListener("click", (event) => {
+  if (!requireCurrentCreatorAnalysis("个人库操作")) return;
   const taskButton = event.target.closest("[data-creator-task-key]");
   if (taskButton) {
     const row = currentCreatorRows.find((item) => creatorKey(item) === taskButton.dataset.creatorTaskKey);
@@ -8631,6 +8660,7 @@ document.querySelector("#creator-table")?.addEventListener("click", (event) => {
   }
 });
 document.querySelector("#save-eligible-creators")?.addEventListener("click", () => {
+  if (!requireCurrentCreatorAnalysis("批量保存")) return;
   const eligible = currentCreatorRows.filter(isEligibleCreator);
   const persistedCount = eligible.reduce((count, row) => count + (saveCreatorToLibrary(row) ? 1 : 0), 0);
   renderCreatorLibrary();
@@ -9243,6 +9273,7 @@ function creatorNameKey(name) {
 }
 
 function recalcWithBackfill() {
+  if (!requireCurrentCreatorAnalysis("效果回填")) return;
   const backfillText = document.querySelector("#creator-backfill")?.value?.trim();
   const status = document.querySelector("#creator-status");
   if (!backfillText) {

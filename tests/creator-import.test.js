@@ -141,7 +141,11 @@ test("demo creator rankings stay visibly marked as sample data after recalculati
   const context = {
     currentCreatorRows: [],
     creatorInputSource: "sample",
-    document: { querySelector: (selector) => elements[selector] || null },
+    updateCreatorResultActions() {},
+    document: {
+      querySelector: (selector) => elements[selector] || null,
+      querySelectorAll: () => []
+    },
     numberValue: Number,
     parseCreators: () => ({ rows: [{ name: "演示达人" }], truncated: false }),
     getCreatorBriefInput: () => ({}),
@@ -197,6 +201,104 @@ test("project snapshots preserve creator provenance and clear stale state for le
   assert.ok(collectStart >= 0 && restoreStart > collectStart && restoreEnd > restoreStart);
   assert.match(collect, /creatorInputSource,/);
   assert.match(restore, /creatorInputSource = resolveCreatorInputSource\(state\.creatorInputSource\)/);
+});
+
+test("edited creator inputs disable stale actions until the list is reanalyzed", () => {
+  const start = appSource.indexOf("function creatorAnalysisMatchesInput()");
+  const end = appSource.indexOf("function buildDemoStreamers()", start);
+  assert.ok(start >= 0 && end > start);
+  const saveButton = { disabled: false };
+  const elements = {
+    "#creator-input": { value: "new list" },
+    "#creator-status": { textContent: "", className: "" },
+    "#save-eligible-creators": saveButton
+  };
+  const buttons = [{ disabled: false }, { disabled: false }];
+  const context = {
+    analyzedCreatorInput: "old list",
+    document: {
+      querySelector: (selector) => elements[selector] || null,
+      querySelectorAll: () => buttons
+    }
+  };
+  vm.runInNewContext(`${appSource.slice(start, end)}\nthis.matches = creatorAnalysisMatchesInput; this.require = requireCurrentCreatorAnalysis; this.update = updateCreatorResultActions;`, context);
+
+  assert.equal(context.matches(), false);
+  context.update();
+  assert.deepEqual(buttons.map((button) => button.disabled), [true, true]);
+  assert.equal(saveButton.disabled, true);
+  assert.equal(context.require("效果回填"), false);
+  assert.match(elements["#creator-status"].textContent, /名单已修改.*点击“生成筛选表”/);
+
+  context.analyzedCreatorInput = "new list";
+  assert.equal(context.matches(), true);
+  context.update();
+  assert.deepEqual(buttons.map((button) => button.disabled), [false, false]);
+  assert.equal(saveButton.disabled, false);
+  const inputHandlerStart = appSource.indexOf('document.querySelector("#creator-input")?.addEventListener("input"');
+  const inputHandlerEnd = appSource.indexOf('document.querySelector("#creator-goal")', inputHandlerStart);
+  assert.match(appSource.slice(inputHandlerStart, inputHandlerEnd), /updateCreatorResultActions\(\)/);
+});
+
+test("stale creator results cannot create follow-ups or update backfill", async () => {
+  const followUpStart = appSource.indexOf("async function addCreatorFollowUp(");
+  const followUpEnd = appSource.indexOf("\n}", followUpStart) + 2;
+  assert.ok(followUpStart >= 0 && followUpEnd > followUpStart);
+  const status = { textContent: "", className: "" };
+  let requests = 0;
+  const guardedActions = [];
+  const followUpContext = {
+    requireCurrentCreatorAnalysis: (action) => { guardedActions.push(action); return false; },
+    archivePanelSessionKey: "session",
+    document: { querySelector: (selector) => selector === "#creator-status" ? status : { value: "鸣潮" } },
+    isEligibleCreator: () => true,
+    getActivityConfig: () => ({ label: "活动" }),
+    ARCHIVE_SERVICE_URL: "http://localhost",
+    archiveJsonRequestWithTimeout: async () => { requests += 1; throw new Error("blocked test request"); },
+    archiveMutationFailure: () => "request failed"
+  };
+  vm.runInNewContext(`${appSource.slice(followUpStart, followUpEnd)}\nthis.run = addCreatorFollowUp;`, followUpContext);
+  await followUpContext.run({ name: "旧名单达人" }, { disabled: false });
+  assert.equal(requests, 0);
+  assert.deepEqual(guardedActions, ["达人待办"]);
+
+  const backfillStart = appSource.indexOf("function recalcWithBackfill() {");
+  const backfillEnd = appSource.indexOf("\n}", backfillStart) + 2;
+  const backfillSource = appSource.slice(backfillStart, backfillEnd);
+  assert.match(backfillSource, /requireCurrentCreatorAnalysis\("效果回填"\)/);
+  let parsedBackfills = 0;
+  const backfillContext = {
+    requireCurrentCreatorAnalysis: (action) => { guardedActions.push(action); return false; },
+    document: { querySelector: (selector) => selector === "#creator-backfill" ? { value: "旧达人：100/3/中/1/500" } : status },
+    parseCreatorBackfill: () => { parsedBackfills += 1; return []; }
+  };
+  vm.runInNewContext(`${backfillSource}\nthis.run = recalcWithBackfill;`, backfillContext);
+  backfillContext.run();
+  assert.equal(parsedBackfills, 0);
+  assert.deepEqual(guardedActions, ["达人待办", "效果回填"]);
+
+  const tableActions = appSource.slice(appSource.indexOf('document.querySelector("#creator-table")?.addEventListener("click"'), appSource.indexOf('document.querySelector("#export-creator-library")'));
+  const batchSave = appSource.slice(appSource.indexOf('document.querySelector("#save-eligible-creators")?.addEventListener("click"'), appSource.indexOf('document.querySelector("#export-creator-library")'));
+  assert.match(tableActions, /requireCurrentCreatorAnalysis\("个人库操作"\)/);
+  assert.match(batchSave, /requireCurrentCreatorAnalysis\("批量保存"\)/);
+});
+
+test("full operation reports do not reuse backfilled rows after the input list changes", () => {
+  const start = appSource.indexOf("function buildFullOperationReportText() {");
+  const end = appSource.indexOf("\n  const game =", start);
+  assert.ok(start >= 0 && end > start);
+  const reportSetup = appSource.slice(start, end);
+  assert.match(reportSetup, /const hasBackfillRows = creatorAnalysisMatchesInput\(\) && currentCreatorRows\.some/);
+  const analyzeStart = reportSetup.indexOf("const hasBackfillRows =");
+  const calls = [];
+  const context = {
+    currentCreatorRows: [{ name: "旧达人", dataSource: "backfill" }],
+    creatorAnalysisMatchesInput: () => false,
+    analyzeCreators: (rows) => calls.push(rows)
+  };
+  vm.runInNewContext(`${reportSetup.slice(analyzeStart)}\nthis.result = hasBackfillRows;`, context);
+  assert.equal(context.result, false);
+  assert.deepEqual(calls, [null]);
 });
 
 test("creator import accepts exactly 1000 rows without reporting truncation", () => {
