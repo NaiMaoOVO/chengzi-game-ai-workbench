@@ -7970,6 +7970,8 @@ function restoreProjectState(state) {
   generateVersionPackage();
   generateSegmentPlan();
   analyzeCreators();
+  window.refreshDailyProjectContext?.();
+  refreshDailyQueueIfActive();
 }
 
 function isProjectStateRestorable(state) {

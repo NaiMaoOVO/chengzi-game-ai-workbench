@@ -10,10 +10,14 @@ const storageEnd = app.indexOf("function renderOverviewConclusion", storageStart
 const saveStart = app.indexOf("function saveProjectToSlot", storageEnd);
 const saveEnd = app.indexOf("function loadProjectFromSlot", saveStart);
 const loadEnd = app.indexOf("function updateSlotName", saveEnd);
+const restoreStart = app.indexOf("function restoreProjectState(state) {");
+const restoreEnd = app.indexOf("\nfunction isProjectStateRestorable", restoreStart);
 assert.ok(storageStart >= 0 && storageEnd > storageStart && saveStart > storageEnd && saveEnd > saveStart && loadEnd > saveEnd);
+assert.ok(restoreStart >= 0 && restoreEnd > restoreStart);
 const storageSource = app.slice(storageStart, storageEnd);
 const saveSource = app.slice(saveStart, saveEnd);
 const loadSource = app.slice(saveEnd, loadEnd);
+const restoreSource = app.slice(restoreStart, restoreEnd);
 
 function createHarness(initial, confirmResult, changedDuringConfirm = null, changedDuringCollect = null) {
   let raw = initial;
@@ -119,6 +123,60 @@ test("loading a malformed project slot rejects it before restoring any data", ()
   assert.equal(harness.restored.length, 0);
   assert.equal(harness.raw(), original);
   assert.match(harness.status.textContent, /结构异常/);
+});
+
+test("restoring project controls refreshes the daily project context and queue", () => {
+  const elements = {
+    "trending-game": { value: "鸣潮" },
+    "version-game": { value: "鸣潮" },
+    "version-theme": { value: "2.8" },
+    "feedback-input": { value: "" },
+    "feedback-source-status": { textContent: "", className: "" }
+  };
+  const refreshes = [];
+  const context = {
+    sanitizeProjectState: (state) => state,
+    resolveCreatorInputSource: (source) => source || "unverified",
+    handleTrendingSelectionChange() {},
+    setReviewMode() {},
+    releaseStreamerImageUrls() {},
+    renderStreamerList() {},
+    renderTrendingEmptyState() {},
+    splitFeedbackInput: () => [],
+    resolveFeedbackDataSource: () => "unverified",
+    analyzeContent() {},
+    analyzeFeedback() {},
+    analyzeReview() {},
+    generateVersionPackage() {},
+    generateSegmentPlan() {},
+    analyzeCreators() {},
+    document: {
+      getElementById: (id) => elements[id] || null,
+      querySelector: (selector) => elements[selector.slice(1)] || null
+    },
+    window: {
+      refreshDailyProjectContext: () => refreshes.push(["context", elements["trending-game"].value, elements["version-theme"].value])
+    },
+    refreshDailyQueueIfActive: () => refreshes.push(["queue", elements["trending-game"].value]),
+    streamers: [],
+    currentTrendingTopics: [],
+    selectedTrendingIndex: 0,
+    streamerIdCounter: 0,
+    creatorInputSource: "unverified",
+    currentFeedbackDataSource: "unverified",
+    currentFeedbackSourceInput: ""
+  };
+  const restore = vm.runInNewContext(`(() => {
+    ${restoreSource}
+    return restoreProjectState;
+  })()`, context);
+
+  restore({ controls: { "trending-game": "绝区零", "version-game": "绝区零", "version-theme": "新版本主题" } });
+
+  assert.deepEqual(refreshes, [
+    ["context", "绝区零", "新版本主题"],
+    ["queue", "绝区零"]
+  ]);
 });
 
 test("project slot names refresh after cross-tab storage updates and clears", () => {
