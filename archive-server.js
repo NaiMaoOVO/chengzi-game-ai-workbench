@@ -558,8 +558,8 @@ function storedRequestMatches(existing, fingerprint) {
 function sendIdempotencyConflict(request, response) {
   sendJson(request, response, 409, {
     ok: false,
-    error: "idempotency_key_reused",
-    message: "该幂等键已用于不同内容，请更换请求编号后重试。"
+    error: "同一幂等键已用于不同内容，请为新写入更换请求编号后重试。",
+    code: "idempotency_key_reused"
   });
 }
 

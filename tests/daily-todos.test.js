@@ -218,7 +218,9 @@ test("daily todo idempotency rejects a reused key with different content", async
   const conflict = await httpRequest("/daily-todos", { method: "POST", headers, body: JSON.stringify({ game: "鸣潮", title: "另一条待办" }) });
   assert.equal(first.status, 201);
   assert.equal(conflict.status, 409);
-  assert.equal(JSON.parse(conflict.text).error, "idempotency_key_reused");
+  const conflictPayload = JSON.parse(conflict.text);
+  assert.match(conflictPayload.error, /幂等键.*不同内容.*更换请求编号/);
+  assert.equal(conflictPayload.code, "idempotency_key_reused");
   const listed = JSON.parse((await httpRequest("/daily-todos?game=" + encodeURIComponent("鸣潮"))).text);
   assert.equal(listed.items.some((item) => item.title === "原始待办"), true);
   assert.equal(listed.items.some((item) => item.title === "另一条待办"), false);

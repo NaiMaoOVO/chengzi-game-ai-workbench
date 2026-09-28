@@ -164,7 +164,9 @@ test("risk event idempotency rejects a reused key with different content", async
   const conflict = await httpRequest("/risk-events", { method: "POST", headers, body: JSON.stringify({ game: "鸣潮", title: "另一条风险", detail: "不同详情" }) });
   assert.equal(first.status, 201);
   assert.equal(conflict.status, 409);
-  assert.equal(JSON.parse(conflict.text).error, "idempotency_key_reused");
+  const conflictPayload = JSON.parse(conflict.text);
+  assert.match(conflictPayload.error, /幂等键.*不同内容.*更换请求编号/);
+  assert.equal(conflictPayload.code, "idempotency_key_reused");
   const listed = JSON.parse((await httpRequest("/risk-events?game=" + encodeURIComponent("鸣潮"))).text);
   assert.equal(listed.items.some((item) => item.title === "原始风险"), true);
   assert.equal(listed.items.some((item) => item.title === "另一条风险"), false);
@@ -176,7 +178,9 @@ test("snapshot idempotency rejects a reused key with different content", async (
   const conflict = await httpRequest("/snapshots", { method: "POST", headers, body: JSON.stringify({ kind: "feedback", game: "鸣潮", payload: { title: "另一份快照" } }) });
   assert.equal(first.status, 201);
   assert.equal(conflict.status, 409);
-  assert.equal(JSON.parse(conflict.text).error, "idempotency_key_reused");
+  const conflictPayload = JSON.parse(conflict.text);
+  assert.match(conflictPayload.error, /幂等键.*不同内容.*更换请求编号/);
+  assert.equal(conflictPayload.code, "idempotency_key_reused");
   const listed = JSON.parse((await httpRequest("/snapshots?kind=feedback&game=" + encodeURIComponent("鸣潮"))).text);
   assert.equal(listed.items.length, 1);
   assert.deepEqual(listed.items[0].payload, { title: "原始快照" });

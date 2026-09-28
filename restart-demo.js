@@ -134,6 +134,8 @@ async function main() {
     process.kill(pid, "SIGTERM");
     const stopped = await waitForExit(pid);
     if (!stopped) throw new Error("旧控制进程未能在 5 秒内退出，请稍后重试");
+  } else if (await checkControllerIdentity()) {
+    throw new Error("控制器已在线，但无法验证进程归属；为避免重复启动，未重启。请检查 /status 后再试");
   }
   removeOwnedState(STATE_FILE, false, pid || undefined);
   removeOwnedState(STATE_PATHS.legacy, true, pid || undefined);
