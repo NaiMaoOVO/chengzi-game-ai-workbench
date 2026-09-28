@@ -3870,7 +3870,11 @@ test("service-mode changes in another tab clear archive rows and refresh service
   const start = app.indexOf("function getArchivePanelSessionKey(detail = {})");
   const end = app.indexOf('document.addEventListener("gameops:local-archive-ready"', start);
   assert.ok(start >= 0 && end > start);
+  const dailyStart = dailyWorkbench.indexOf('document.addEventListener("gameops:archive-session"');
+  const dailyEnd = dailyWorkbench.indexOf("window.initDailyWorkbench =", dailyStart);
+  assert.ok(dailyStart >= 0 && dailyEnd > dailyStart);
   let mode = "local";
+  const archiveSessionHandlers = [];
   const publications = { innerHTML: "<p>本地发布行</p>" };
   const risks = { innerHTML: "<p>本地风险行</p>" };
   const overview = { textContent: "本地模式" };
@@ -3878,7 +3882,9 @@ test("service-mode changes in another tab clear archive rows and refresh service
   const context = {
     getServiceMode: () => mode,
     document: {
-      addEventListener: (_name, handler) => { context.archiveSessionHandler = handler; },
+      addEventListener: (name, handler) => {
+        if (name === "gameops:archive-session") archiveSessionHandlers.push(handler);
+      },
       querySelector: (selector) => ({
         "#publication-list": publications,
         "#risk-ticket-list": risks,
@@ -3911,7 +3917,19 @@ test("service-mode changes in another tab clear archive rows and refresh service
     setManagementCount() {},
     setPublicationStatus() {},
     setRiskTicketStatus() {},
-    setBriefingActionsAvailable() {}
+    setBriefingActionsAvailable() {},
+    dailyQueueSessionKey: () => `${mode}|anonymous`,
+    window: {
+      cancelTodayTodosLoad: () => { calls.dailyQueueCancel = (calls.dailyQueueCancel || 0) + 1; },
+      loadTodayTodos: () => { calls.dailyQueueLoad = (calls.dailyQueueLoad || 0) + 1; }
+    },
+    lastDailyQueueSnapshot: { userKey: "local|anonymous", manualItems: [{ title: "本地待办" }] },
+    observedDailyQueueSessionKey: "local|anonymous",
+    dailyAiInsightUserKey: "local|anonymous",
+    dailyAiInsightGeneration: 4,
+    latestDailyInsightContext: { manualItems: [{ title: "本地待办" }], state: {} },
+    clearDailyAiInsightResult: () => { calls.dailyInsightClear = (calls.dailyInsightClear || 0) + 1; },
+    setDailyAiInsightStatus() {}
   };
   vm.runInNewContext(`
     let archivePanelSessionKey = "local|anonymous";
@@ -3924,9 +3942,10 @@ test("service-mode changes in another tab clear archive rows and refresh service
     ${app.slice(start, end)}
     this.inspect = () => ({ archivePanelSessionKey, currentPublications, currentRiskTickets, lastArchiveSnapshot });
   `, context);
+  vm.runInNewContext(dailyWorkbench.slice(dailyStart, dailyEnd), context);
 
   mode = "online";
-  context.archiveSessionHandler({ detail: { required: false, user: null } });
+  archiveSessionHandlers.forEach((handler) => handler({ detail: { required: false, user: null } }));
 
   assert.equal(context.inspect().archivePanelSessionKey, "online|anonymous");
   assert.deepEqual(JSON.parse(JSON.stringify(context.inspect().currentPublications)), []);
@@ -3941,6 +3960,12 @@ test("service-mode changes in another tab clear archive rows and refresh service
   assert.equal(calls.publications, 1);
   assert.equal(calls.risks, 1);
   assert.match(overview.textContent, /线上模式/);
+  assert.equal(context.lastDailyQueueSnapshot, null);
+  assert.equal(context.latestDailyInsightContext.manualItems.length, 0);
+  assert.equal(context.dailyAiInsightGeneration, 5);
+  assert.equal(calls.dailyQueueCancel, 1);
+  assert.equal(calls.dailyInsightClear, 1);
+  assert.equal(calls.dailyQueueLoad, 1);
 });
 
 test("local service recovery waits for archive readiness and reloads the daily queue", () => {
