@@ -584,7 +584,7 @@ function requestFingerprint(value) {
 }
 
 function storedRequestMatches(existing, fingerprint) {
-  return !existing.request_fingerprint || existing.request_fingerprint === fingerprint;
+  return existing.request_fingerprint === fingerprint;
 }
 
 function sendIdempotencyConflict(request, response) {

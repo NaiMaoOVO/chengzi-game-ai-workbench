@@ -175,6 +175,36 @@ test("publication retry still matches its original request after the record is e
   assert.equal(JSON.parse(retry.text).publication.title, "已回流更新");
 });
 
+test("publication with an edited legacy row and unknown fingerprint rejects a reused key", async () => {
+  const headers = { "Content-Type": "application/json", "Idempotency-Key": "publication-legacy-unknown-20260929" };
+  const first = await httpRequest("/publications", {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ game: "鸣潮", title: "旧版发布", channel: "B站" })
+  });
+  assert.equal(first.status, 201);
+  const original = JSON.parse(first.text).publication;
+  const database = new DatabaseSync(databasePath);
+  database.prepare("UPDATE publications SET title = ?, updated_at = ?, request_fingerprint = NULL WHERE id = ?")
+    .run("人工编辑后的旧记录", new Date(Date.parse(original.created_at) + 1000).toISOString(), original.id);
+  database.close();
+
+  const conflict = await httpRequest("/publications", {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ game: "鸣潮", title: "新发布内容", channel: "抖音" })
+  });
+  assert.equal(conflict.status, 409);
+  assert.equal(JSON.parse(conflict.text).code, "idempotency_key_reused");
+  const listed = JSON.parse((await httpRequest("/publications?game=" + encodeURIComponent("鸣潮"))).text);
+  assert.equal(listed.items.some((item) => item.id === original.id && item.title === "人工编辑后的旧记录"), true);
+  assert.equal(listed.items.some((item) => item.title === "新发布内容"), false);
+  const verifyDb = new DatabaseSync(databasePath);
+  const row = verifyDb.prepare("SELECT COUNT(*) AS total FROM publications WHERE request_id = ?").get(headers["Idempotency-Key"]);
+  verifyDb.close();
+  assert.equal(row.total, 1);
+});
+
 test("update accepts metrics object, persists string storage, returns parsed object", async () => {
   const created = JSON.parse((await postPublication({
     game: "巅峰极速",
