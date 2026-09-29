@@ -137,8 +137,11 @@ npm run start:xhs-bridge
 另开终端，设置 GameOps 使用本机 bridge：
 
 ```bash
+# 仅适用于由当前项目目录启动的控制进程
 XIAOHONGSHU_PROVIDER_URL=http://127.0.0.1:8805/search npm run restart
 ```
+
+若使用网页 Launcher，请改为编辑运行目录中的 `.env` 并点击页面“重启本地服务”，不要从源码目录启动第二个控制器。
 
 如果已经把 `XIAOHONGSHU_PROVIDER_URL=http://127.0.0.1:8805/search` 写入 `.env`，主启动器会自动拉起 bridge；重新执行 `npm run launcher:install` 后，点击网页“重启本地服务”即可。bridge 只监听 `127.0.0.1`，只调用 `search_feeds`，不会把 MCP 工具暴露到公网。搜索结果会由 GameOps 再次按时间范围过滤；没有 `publishedAt` 的结果会被过滤掉，避免旧内容混入今日榜单。
 

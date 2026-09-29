@@ -46,6 +46,8 @@ test("README explains how to restart a controller running from the Launcher snap
   assert.match(readme, /Application Support\/GameOpsLauncher\/runtime/);
   assert.match(readme, /gameops:\/\/restart/);
   assert.match(readme, /拒绝操作.*第二个控制器/);
+  assert.match(readme, /仅适用于由当前项目目录启动的控制进程/);
+  assert.match(readme, /若使用网页 Launcher.*不要从源码目录启动第二个控制器/);
 });
 
 test("runtime manifest covers every local require of runtime entrypoints", () => {
