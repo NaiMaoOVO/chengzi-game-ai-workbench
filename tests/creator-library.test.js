@@ -49,6 +49,8 @@ const child = spawn(process.execPath, [path.join(projectRoot, "archive-server.js
     ARCHIVE_ADMIN_USERNAME: "creator-admin",
     ARCHIVE_ADMIN_PASSWORD: "creator-password-2026",
     ARCHIVE_COOKIE_SECURE: "0",
+    GAMEOPS_TEST_FIXED_TIME: String(Date.now()),
+    NODE_OPTIONS: [process.env.NODE_OPTIONS, `--require=${path.join(__dirname, "helpers/fixed-clock.js")}`].filter(Boolean).join(" "),
     MORNING_GAMES: ""
   },
   stdio: ["ignore", "pipe", "pipe"]
@@ -94,6 +96,48 @@ test("creator library sync is authenticated and rejects stale writes", async () 
   });
   assert.equal(stale.status, 409);
   assert.equal(stale.payload.error, "creator_library_conflict");
+});
+
+test("creator library concurrency token advances for writes in the same millisecond", async () => {
+  const login = await request("/auth/login", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ username: "creator-admin", password: "creator-password-2026" })
+  });
+  const cookie = cookieOf(login);
+  const headers = {
+    "Content-Type": "application/json",
+    Cookie: cookie,
+    "X-CSRF-Token": login.payload.csrf_token
+  };
+  const before = await request("/creator-library", { headers: { Cookie: cookie } });
+  const base = before.payload.updated_at;
+  const firstLibrary = { ...before.payload.library, first: { name: "第一标签页", platform: "B站" } };
+  const first = await request("/creator-library", {
+    method: "PUT",
+    headers,
+    body: JSON.stringify({ base_updated_at: base, library: firstLibrary })
+  });
+  assert.equal(first.status, 200);
+
+  const secondLibrary = { ...firstLibrary, second: { name: "第二标签页", platform: "小红书" } };
+  const second = await request("/creator-library", {
+    method: "PUT",
+    headers,
+    body: JSON.stringify({ base_updated_at: first.payload.updated_at, library: secondLibrary })
+  });
+  assert.equal(second.status, 200);
+  assert.notEqual(second.payload.updated_at, first.payload.updated_at);
+
+  const stale = await request("/creator-library", {
+    method: "PUT",
+    headers,
+    body: JSON.stringify({ base_updated_at: first.payload.updated_at, library: { stale: { name: "过期写入", platform: "B站" } } })
+  });
+  assert.equal(stale.status, 409);
+  assert.equal(stale.payload.error, "creator_library_conflict");
+  const after = await request("/creator-library", { headers: { Cookie: cookie } });
+  assert.deepEqual(after.payload.library, secondLibrary);
 });
 
 test("creator library rejects malformed profile and collaboration records without overwriting saved data", async () => {

@@ -918,7 +918,8 @@ const server = http.createServer((request, response) => {
           sendJson(request, response, 409, { ok: false, error: "creator_library_conflict", library: current.library, updated_at: current.updated_at });
           return;
         }
-        const updatedAt = new Date().toISOString();
+        const previousTime = Date.parse(current.updated_at || "");
+        const updatedAt = new Date(Number.isFinite(previousTime) ? Math.max(Date.now(), previousTime + 1) : Date.now()).toISOString();
         try {
           upsertCreatorLibraryStatement.run(ownerKey, serialized, updatedAt);
         } catch (_error) {
