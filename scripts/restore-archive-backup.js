@@ -20,8 +20,12 @@ if (!backupArgument || args.length !== 2 || !serviceStopped) {
 }
 
 let archivePort;
+if (!String(process.env.ARCHIVE_PORT || "").trim()) {
+  console.error("存档恢复失败：必须显式设置与服务运行端口一致的 ARCHIVE_PORT（默认部署端口为 8796）");
+  process.exit(2);
+}
 try {
-  archivePort = parseIntegerConfig(process.env.ARCHIVE_PORT, { name: "ARCHIVE_PORT", min: 1, max: 65535, defaultValue: 8796 });
+  archivePort = parseIntegerConfig(process.env.ARCHIVE_PORT, { name: "ARCHIVE_PORT", min: 1, max: 65535 });
 } catch (error) {
   console.error("存档恢复失败：" + error.message);
   process.exit(2);

@@ -525,6 +525,33 @@ test("archive restore refuses to replace the database while the archive service 
   }
   assert.equal(ready, true, "archive 测试服务应在 10 秒内启动");
 
+  const restoreEnvWithoutPort = { ...env };
+  delete restoreEnvWithoutPort.ARCHIVE_PORT;
+  const refuseDefaultProbe = path.join(dir, "refuse-default-archive-port.cjs");
+  fs.writeFileSync(refuseDefaultProbe, [
+    'const http = require("node:http");',
+    'const { EventEmitter } = require("node:events");',
+    'const originalGet = http.get;',
+    'http.get = function (options, ...args) {',
+    '  if (Number(options?.port) !== 8796) return originalGet.call(this, options, ...args);',
+    '  const request = new EventEmitter();',
+    '  request.setTimeout = () => request;',
+    '  request.destroy = () => request;',
+    '  process.nextTick(() => request.emit("error", Object.assign(new Error("fixture: default port unavailable"), { code: "ECONNREFUSED" })));',
+    '  return request;',
+    '};'
+  ].join("\n"));
+  const uncheckedPortRestore = spawnSync(process.execPath, ["--require", refuseDefaultProbe, path.join(root, "scripts", "restore-archive-backup.js"), backupFile, "--service-stopped"], {
+    cwd: root,
+    env: restoreEnvWithoutPort,
+    encoding: "utf8"
+  });
+  assert.equal(uncheckedPortRestore.status, 2, "恢复进程未拿到运行端口时应拒绝猜默认端口");
+  assert.match(uncheckedPortRestore.stderr, /必须显式设置与服务运行端口一致的 ARCHIVE_PORT/);
+  const unchangedAfterUnknownPort = new DatabaseSync(databasePath, { readOnly: true });
+  assert.deepEqual(unchangedAfterUnknownPort.prepare("SELECT value FROM check_rows ORDER BY rowid").all().map((row) => row.value), ["before backup", "after backup"]);
+  unchangedAfterUnknownPort.close();
+
   const restore = spawnSync(process.execPath, [path.join(root, "scripts", "restore-archive-backup.js"), backupFile, "--service-stopped"], {
     cwd: root,
     env,
@@ -682,7 +709,7 @@ test("archive restore rejects a checksum-valid non-SQLite backup without touchin
 
   const result = spawnSync(process.execPath, [path.join(root, "scripts", "restore-archive-backup.js"), invalidBackup, "--service-stopped"], {
     cwd: root,
-    env: { ...process.env, ARCHIVE_DB_PATH: databasePath },
+    env: { ...process.env, ARCHIVE_DB_PATH: databasePath, ARCHIVE_PORT: "19726" },
     encoding: "utf8"
   });
   assert.equal(result.status, 1);
