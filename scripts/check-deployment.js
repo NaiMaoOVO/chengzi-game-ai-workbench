@@ -1,6 +1,17 @@
+const os = require("node:os");
+const path = require("node:path");
+const { assertSafeArchiveBackupDirectory, parseArchiveBackupKeep } = require("../lib/archive-backup");
+
 try {
   require("../ecosystem.config.js");
-  require("../lib/archive-backup").parseArchiveBackupKeep(process.env.ARCHIVE_BACKUP_KEEP);
+  parseArchiveBackupKeep(process.env.ARCHIVE_BACKUP_KEEP);
+  const databasePath = process.env.ARCHIVE_DB_PATH
+    ? path.resolve(process.env.ARCHIVE_DB_PATH)
+    : path.join(os.homedir(), ".gameops", "archive.db");
+  const backupDirectory = process.env.ARCHIVE_BACKUP_DIR
+    ? path.resolve(process.env.ARCHIVE_BACKUP_DIR)
+    : path.join(path.dirname(databasePath), "backups");
+  assertSafeArchiveBackupDirectory(backupDirectory);
   console.log("deployment environment ok");
 } catch (error) {
   const message = String(error && error.message ? error.message : "未知错误").split(/\r?\n/, 1)[0];

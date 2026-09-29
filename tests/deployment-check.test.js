@@ -1,6 +1,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const { spawnSync } = require("node:child_process");
+const os = require("node:os");
 const path = require("node:path");
 
 const projectRoot = path.resolve(__dirname, "..");
@@ -83,6 +84,19 @@ test("deployment check validates archive backup retention boundaries", () => {
     const result = runCheck("https://gameops.test", { ARCHIVE_BACKUP_KEEP: value });
     assert.equal(result.status, 0, `ARCHIVE_BACKUP_KEEP=${value} should be accepted: ${result.stderr}`);
   }
+});
+
+test("deployment check rejects unsafe backup directories before the service starts", () => {
+  for (const value of [path.parse(path.resolve("/")).root, os.homedir(), path.dirname(os.homedir())]) {
+    const result = runCheck("https://gameops.test", { ARCHIVE_BACKUP_DIR: value });
+    assert.equal(result.status, 1, `unsafe ARCHIVE_BACKUP_DIR=${value} unexpectedly passed`);
+    assert.match(result.stderr, /备份目录.*不能指向/);
+  }
+
+  const safeDirectory = path.join(os.tmpdir(), "gameops-deployment-backups", String(process.pid));
+  const result = runCheck("https://gameops.test", { ARCHIVE_BACKUP_DIR: safeDirectory });
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /deployment environment ok/);
 });
 
 test("deployment check rejects unsupported OCR providers and normalizes remote provider names", () => {
