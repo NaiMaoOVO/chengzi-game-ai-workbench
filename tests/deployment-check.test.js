@@ -45,6 +45,21 @@ test("deployment check accepts a real configured HTTPS origin", () => {
   assert.match(result.stdout, /deployment environment ok/);
 });
 
+test("deployment check validates the LLM base URL without rejecting query-based provider versions", () => {
+  const queryUrl = runCheck("https://gameops.test", { LLM_BASE_URL: "https://provider.example/v1?api-version=2026-01" });
+  assert.equal(queryUrl.status, 0, queryUrl.stderr);
+
+  for (const value of [
+    "https://user:secret@provider.example/v1",
+    "https://provider.example/v1#completion"
+  ]) {
+    const result = runCheck("https://gameops.test", { LLM_BASE_URL: value });
+    assert.equal(result.status, 1, `unsafe LLM_BASE_URL=${value} unexpectedly passed`);
+    assert.match(result.stderr, /LLM_BASE_URL/);
+    assert.doesNotMatch(result.stdout + result.stderr, /secret/);
+  }
+});
+
 test("deployment check rejects a custom video-info host that would receive the Bilibili cookie", () => {
   const result = runCheck("https://gameops.test", {
     BILIBILI_COOKIE: "deployment-cookie-canary",

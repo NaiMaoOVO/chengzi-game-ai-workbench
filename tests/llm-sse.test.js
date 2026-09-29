@@ -93,7 +93,7 @@ function parseSseEvents(text) {
 }
 
 function createFakeOpenAiUpstream(port, behavior = {}) {
-  const state = { requests: [], authorizationHeaders: [] };
+  const state = { requests: [], requestUrls: [], authorizationHeaders: [] };
   let jsonModeFailuresRemaining = behavior.rejectJsonModeOnce ? 1 : 0;
   const server = http.createServer((req, res) => {
     const chunks = [];
@@ -104,6 +104,7 @@ function createFakeOpenAiUpstream(port, behavior = {}) {
         body = JSON.parse(Buffer.concat(chunks).toString("utf8"));
       } catch (_error) { /* keep empty */ }
       state.requests.push(body);
+      state.requestUrls.push(req.url);
       state.authorizationHeaders.push(req.headers.authorization || "");
       if (behavior.echoAuthorization) {
         res.writeHead(502, { "Content-Type": "application/json" });
@@ -168,6 +169,7 @@ function createFakeOpenAiUpstream(port, behavior = {}) {
     server.listen(port, "127.0.0.1", () => {
       resolve({
         requests: state.requests,
+        requestUrls: state.requestUrls,
         authorizationHeaders: state.authorizationHeaders,
         close: () => new Promise((done) => server.close(done))
       });
@@ -520,6 +522,26 @@ test("llm rejects a remote HTTP upstream before it can receive an API key", asyn
     assert.equal(payload.llm, "not_ready");
     assert.match(payload.detail, /HTTPS/);
   });
+});
+
+test("llm appends the completion path before preserving a base URL query", async () => {
+  const llmPort = 19537;
+  const upstreamPort = 19637;
+  const upstream = await createFakeOpenAiUpstream(upstreamPort);
+  try {
+    await withLlmService({
+      LLM_PORT: String(llmPort),
+      LLM_API_KEY: "sse-test-key",
+      LLM_BASE_URL: "http://127.0.0.1:" + upstreamPort + "/v1?tenant=studio",
+      LLM_RATE_LIMIT_MAX: "100"
+    }, async () => {
+      const response = await postStream(llmPort, { ...VERSION_COPY_BODY, stream: true });
+      assert.equal(response.status, 200);
+      assert.deepEqual(upstream.requestUrls, ["/v1/chat/completions?tenant=studio"]);
+    });
+  } finally {
+    await upstream.close();
+  }
 });
 
 test("llm stream requests share the configured concurrency limit", async () => {

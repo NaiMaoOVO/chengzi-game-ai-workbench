@@ -3,7 +3,7 @@ const https = require("node:https");
 const crypto = require("node:crypto");
 const { parseIntegerConfig, createRateLimiter, stableSerialize, createSingleFlightCache } = require("./lib/http-guards");
 const { createCors } = require("./lib/cors");
-const { assertSafeProviderUrl } = require("./lib/platform-provider");
+const { buildLlmCompletionUrl } = require("./lib/platform-provider");
 require("./lib/env-file").loadProjectEnv(__dirname);
 
 const PORT = parseIntegerConfig(process.env.LLM_PORT, { name: "LLM_PORT", min: 1, max: 65535, defaultValue: 8794 });
@@ -33,9 +33,9 @@ let activeJobs = 0;
 function providerStatus() {
   if (!LLM_API_KEY) return { ready: false, llm: "no_key", detail: "LLM_API_KEY 未配置，运行在规则模式" };
   try {
-    assertSafeProviderUrl(LLM_BASE_URL);
+    buildLlmCompletionUrl(LLM_BASE_URL);
   } catch (error) {
-    return { ready: false, llm: "not_ready", detail: "LLM_BASE_URL 无效：" + error.message };
+    return { ready: false, llm: "not_ready", detail: error.message };
   }
   return { ready: true, llm: "ready", detail: `已接入 ${LLM_MODEL}` };
 }
@@ -265,7 +265,7 @@ function callUpstream(prompt, task = {}, options = {}) {
       payload.response_format = { type: "json_object" };
     }
 
-    const upstreamUrl = new URL(`${LLM_BASE_URL}/chat/completions`);
+    const upstreamUrl = buildLlmCompletionUrl(LLM_BASE_URL);
     const transport = upstreamUrl.protocol === "https:" ? https : http;
     let abortHandler = null;
     const removeAbortListener = () => {
@@ -376,7 +376,7 @@ function streamUpstreamText(prompt, task, onDelta, options = {}) {
       payload.response_format = { type: "json_object" };
     }
 
-    const upstreamUrl = new URL(LLM_BASE_URL + "/chat/completions");
+    const upstreamUrl = buildLlmCompletionUrl(LLM_BASE_URL);
     const transport = upstreamUrl.protocol === "https:" ? https : http;
 
     const upstreamRequest = transport.request(upstreamUrl, {

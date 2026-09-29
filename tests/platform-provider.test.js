@@ -5,6 +5,7 @@ const { spawnSync } = require("node:child_process");
 
 const {
   assertSafeProviderUrl,
+  buildLlmCompletionUrl,
   SUPPORTED_PLATFORMS,
   isSupportedPlatform,
   normalizeProviderItems,
@@ -35,6 +36,15 @@ test("provider URL permits HTTPS and loopback HTTP only", () => {
   assert.doesNotThrow(() => assertSafeProviderUrl("http://127.0.0.1:18060/search"));
   assert.throws(() => assertSafeProviderUrl("http://public.example/search"), /HTTPS/);
   assert.throws(() => assertSafeProviderUrl("file:///tmp/provider.json"), /HTTP/);
+});
+
+test("LLM completion URL appends its path without losing query parameters or accepting fragments and credentials", () => {
+  const endpoint = buildLlmCompletionUrl("https://provider.example/v1/?tenant=studio");
+  assert.equal(endpoint.pathname, "/v1/chat/completions");
+  assert.equal(endpoint.search, "?tenant=studio");
+  assert.throws(() => buildLlmCompletionUrl("https://user:password@provider.example/v1"), /账号密码/);
+  assert.throws(() => buildLlmCompletionUrl("https://provider.example/v1#ignored"), /片段/);
+  assert.throws(() => buildLlmCompletionUrl("http://provider.example/v1"), /HTTPS/);
 });
 
 test("generic provider responses normalize to hotspot items", () => {

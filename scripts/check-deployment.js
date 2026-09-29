@@ -1,9 +1,11 @@
 const os = require("node:os");
 const path = require("node:path");
 const { assertSafeArchiveBackupDirectory, parseArchiveBackupKeep } = require("../lib/archive-backup");
+const { buildLlmCompletionUrl } = require("../lib/platform-provider");
 
 try {
   require("../ecosystem.config.js");
+  buildLlmCompletionUrl(process.env.LLM_BASE_URL || "https://api.deepseek.com/v1");
   parseArchiveBackupKeep(process.env.ARCHIVE_BACKUP_KEEP);
   const databasePath = process.env.ARCHIVE_DB_PATH
     ? path.resolve(process.env.ARCHIVE_DB_PATH)
