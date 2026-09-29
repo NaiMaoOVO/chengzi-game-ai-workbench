@@ -372,6 +372,27 @@ if (archiveAuth.enabled && archiveAuth.adminUserId) {
   const legacyOwner = `user:${archiveAuth.adminUserId}`;
   db.exec("BEGIN IMMEDIATE");
   try {
+    const remapRequestIds = (table) => {
+      const conflicts = db.prepare(`
+        SELECT legacy.id
+        FROM ${table} AS legacy
+        JOIN ${table} AS current ON current.owner_key = ? AND current.request_id = legacy.request_id
+        WHERE legacy.owner_key = 'default' AND legacy.request_id IS NOT NULL
+        ORDER BY legacy.id
+      `).all(legacyOwner);
+      const isUsed = db.prepare(`SELECT 1 FROM ${table} WHERE owner_key IN ('default', ?) AND request_id = ? LIMIT 1`);
+      const update = db.prepare(`UPDATE ${table} SET request_id = ? WHERE id = ? AND owner_key = 'default'`);
+      for (const row of conflicts) {
+        let requestId = `owner-migration:${table}:${row.id}`;
+        let suffix = 0;
+        while (isUsed.get(legacyOwner, requestId)) {
+          suffix += 1;
+          requestId = `owner-migration:${table}:${row.id}:${suffix}`;
+        }
+        update.run(requestId, row.id);
+      }
+    };
+    for (const table of ["snapshots", "publications", "risk_events", "daily_todos"]) remapRequestIds(table);
     for (const table of ["snapshots", "project_profiles", "publications", "risk_events", "daily_todos", "creator_libraries", "morning_runs"]) {
       db.prepare("UPDATE " + table + " SET owner_key = ? WHERE owner_key = 'default'").run(legacyOwner);
     }

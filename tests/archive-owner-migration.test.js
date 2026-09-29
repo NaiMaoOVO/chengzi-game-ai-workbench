@@ -76,6 +76,59 @@ async function stopArchive(child) {
   }
 }
 
+test("admin owner migration preserves rows with colliding idempotency keys", async (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "gameops-owner-request-collision-test-"));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const databasePath = path.join(dir, "archive.db");
+  const setupServer = startArchive(databasePath, false);
+  try {
+    await waitForHealth(setupServer);
+  } finally {
+    await stopArchive(setupServer);
+  }
+
+  const db = new DatabaseSync(databasePath);
+  const createdAt = new Date().toISOString();
+  const tables = [
+    ["snapshots", `INSERT INTO snapshots
+      (owner_key, kind, game, source, payload, request_id, request_fingerprint, created_at)
+      VALUES (?, 'briefing', '鸣潮', 'real', ?, 'migration-collision-001', ?, ?)`],
+    ["publications", `INSERT INTO publications
+      (owner_key, game, title, channel, request_id, request_fingerprint, created_at, updated_at)
+      VALUES (?, '鸣潮', ?, 'B站', 'migration-collision-001', ?, ?, ?)`],
+    ["risk_events", `INSERT INTO risk_events
+      (owner_key, game, title, request_id, request_fingerprint, created_at, updated_at)
+      VALUES (?, '鸣潮', ?, 'migration-collision-001', ?, ?, ?)`],
+    ["daily_todos", `INSERT INTO daily_todos
+      (owner_key, game, title, request_id, request_fingerprint, created_at, updated_at)
+      VALUES (?, '鸣潮', ?, 'migration-collision-001', ?, ?, ?)`]
+  ];
+  for (const [table, sql] of tables) {
+    const insert = db.prepare(sql);
+    for (const owner of ["default", "user:1"]) {
+      const label = owner === "default" ? "legacy" : "admin";
+      insert.run(owner, table === "snapshots" ? JSON.stringify({ summary: label }) : label, `${label}-${table}-fingerprint`, createdAt, ...(table === "snapshots" ? [] : [createdAt]));
+    }
+  }
+  db.close();
+
+  const authServer = startArchive(databasePath, true);
+  try {
+    await waitForHealth(authServer);
+    const verify = new DatabaseSync(databasePath, { readOnly: true });
+    for (const [table] of tables) {
+      const rows = verify.prepare(`SELECT request_id, request_fingerprint FROM ${table} WHERE owner_key = 'user:1' ORDER BY id`).all();
+      assert.equal(rows.length, 2, `${table}: migration should preserve both rows`);
+      assert.deepEqual(rows.map((row) => row.request_fingerprint), [`legacy-${table}-fingerprint`, `admin-${table}-fingerprint`]);
+      assert.equal(rows[1].request_id, "migration-collision-001", `${table}: keep the administrator's idempotency key`);
+      assert.match(rows[0].request_id, new RegExp(`^owner-migration:${table}:\\d+$`));
+    }
+    verify.close();
+  } finally {
+    await stopArchive(authServer);
+  }
+});
+
 test("failed legacy owner migration rolls back every table", async (t) => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "gameops-owner-migration-test-"));
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
