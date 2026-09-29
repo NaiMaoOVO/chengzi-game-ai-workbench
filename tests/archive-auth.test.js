@@ -250,6 +250,19 @@ test("archive auth requires login, CSRF, and keeps each account's data private",
     assert.deepEqual(risks.payload.items.map((item) => item.title), [account.marker]);
 
     const otherIds = scopedRecordIds[other.marker];
+    const updateOtherPublication = await request("/publications/" + otherIds.publication, {
+      method: "PUT",
+      headers: jsonHeaders({ cookie: account.cookie, csrf: account.cookie === adminCookie ? adminCsrf : memberCsrf }),
+      body: JSON.stringify({ title: `跨账号修改-${account.marker}` })
+    });
+    assert.equal(updateOtherPublication.status, 404, "不能修改另一账号的发布记录");
+    const updateOtherRisk = await request("/risk-events/" + otherIds.risk, {
+      method: "PUT",
+      headers: jsonHeaders({ cookie: account.cookie, csrf: account.cookie === adminCookie ? adminCsrf : memberCsrf }),
+      body: JSON.stringify({ title: `跨账号修改-${account.marker}` })
+    });
+    assert.equal(updateOtherRisk.status, 404, "不能修改另一账号的风险工单");
+
     const deleteOtherPublication = await request("/publications/" + otherIds.publication, {
       method: "DELETE",
       headers: jsonHeaders({ cookie: account.cookie, csrf: account.cookie === adminCookie ? adminCsrf : memberCsrf })
@@ -261,6 +274,23 @@ test("archive auth requires login, CSRF, and keeps each account's data private",
     });
     assert.equal(deleteOtherRisk.status, 404, "不能删除另一账号的风险工单");
   }
+
+  const memberLibraryBefore = await request("/creator-library", { headers: { Cookie: memberCookie } });
+  const memberLibraryWrite = await request("/creator-library", {
+    method: "PUT",
+    headers: jsonHeaders({ cookie: memberCookie, csrf: memberCsrf }),
+    body: JSON.stringify({
+      owner_key: `user:${adminLogin.payload.user.id}`,
+      base_updated_at: memberLibraryBefore.payload.updated_at,
+      library: { ...memberLibraryBefore.payload.library, "member-write": { name: "成员新档案", platform: "B站" } }
+    })
+  });
+  assert.equal(memberLibraryWrite.status, 200, "成员创作者库写入应成功并归属成员本人");
+  const memberLibraryAfterWrite = await request("/creator-library", { headers: { Cookie: memberCookie } });
+  assert.equal(Object.hasOwn(memberLibraryAfterWrite.payload.library, "member-write"), true, "成员创作者库应保留自己的写入");
+  const adminLibraryAfterMemberWrite = await request("/creator-library", { headers: { Cookie: adminCookie } });
+  assert.equal(Object.hasOwn(adminLibraryAfterMemberWrite.payload.library, "creator-admin-private"), true);
+  assert.equal(Object.hasOwn(adminLibraryAfterMemberWrite.payload.library, "member-write"), false, "成员请求体中的 owner_key 不能覆盖管理员个人库");
 
   const memberSameGameWrite = await request("/profile", {
     method: "PUT",
