@@ -8209,6 +8209,7 @@ function navigateToView(viewName) {
   document.querySelectorAll(".view").forEach((item) => item.classList.remove("active"));
   getViewElements(viewName).forEach((element) => element.classList.add("active"));
   if (viewName === "daily" && !targetWasActive) window.loadTodayTodos?.();
+  if (viewName === "creator" && !targetWasActive && archiveSessionUser && !isLocalFileRuntime()) syncCreatorLibrary();
   document.querySelector("#view-title").textContent = views[viewName].title;
   updateChainBar(viewName);
   if (window.history.replaceState) {

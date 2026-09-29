@@ -2474,6 +2474,70 @@ test("navigation exposes the active view to assistive technology", () => {
   assert.match(source, /removeAttribute\("aria-current"\)/);
 });
 
+test("entering the creator view refreshes only an authenticated hosted library", () => {
+  const start = app.indexOf("function navigateToView");
+  const end = app.indexOf("function openCommandPalette", start);
+  assert.ok(start >= 0 && end > start);
+
+  const makeElement = (view = "") => {
+    const classes = new Set(view ? ["view"] : []);
+    return {
+      dataset: view ? { view } : {},
+      classList: {
+        add: (value) => classes.add(value),
+        remove: (value) => classes.delete(value),
+        toggle: (value, force) => force ? classes.add(value) : classes.delete(value),
+        contains: (value) => classes.has(value)
+      },
+      attributes: {},
+      setAttribute(name, value) { this.attributes[name] = value; },
+      removeAttribute(name) { delete this.attributes[name]; }
+    };
+  };
+  const viewElements = { daily: makeElement("daily"), creator: makeElement("creator") };
+  viewElements.daily.classList.add("active");
+  const navButtons = [makeElement("daily"), makeElement("creator")];
+  const title = { textContent: "" };
+  const calls = { sync: 0, chain: 0 };
+  const context = {
+    views: {
+      daily: { title: "每日工作台", element: viewElements.daily },
+      creator: { title: "KOL/KOC 合作筛选", element: viewElements.creator }
+    },
+    archiveSessionUser: { id: "account-a" },
+    localFile: false,
+    getViewElements(name) { return [viewElements[name]].filter(Boolean); },
+    isLocalFileRuntime() { return context.localFile; },
+    syncCreatorLibrary() { calls.sync += 1; },
+    updateChainBar() { calls.chain += 1; },
+    document: {
+      querySelectorAll(selector) {
+        return selector === ".nav-button" ? navButtons : Object.values(viewElements);
+      },
+      querySelector(selector) { return selector === "#view-title" ? title : null; }
+    },
+    window: { history: { replaceState() {} } }
+  };
+  vm.runInNewContext(`${app.slice(start, end)}; this.navigate = navigateToView;`, context);
+
+  context.navigate("creator");
+  assert.equal(calls.sync, 1);
+  context.navigate("creator");
+  assert.equal(calls.sync, 1, "reselecting the active creator view should not sync again");
+  context.navigate("daily");
+  context.navigate("creator");
+  assert.equal(calls.sync, 2, "returning to the creator view should refresh the remote library");
+  context.archiveSessionUser = null;
+  context.navigate("daily");
+  context.navigate("creator");
+  assert.equal(calls.sync, 2, "guest sessions must not sync a remote library");
+  context.archiveSessionUser = { id: "account-a" };
+  context.localFile = true;
+  context.navigate("daily");
+  context.navigate("creator");
+  assert.equal(calls.sync, 2, "file-based usage must remain local");
+});
+
 test("creator library dates use the shared date formatter", () => {
   const start = app.indexOf("function renderCreatorLibrary");
   const end = app.indexOf("function saveCreatorLibraryCard", start);
