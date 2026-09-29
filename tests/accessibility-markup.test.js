@@ -1393,6 +1393,61 @@ test("daily AI samples prioritize overdue and high-risk work without mutating so
   assert.equal(hasSignals(unavailableContext), true);
 });
 
+test("daily AI insight preserves hotspot history outages without discarding current signals", () => {
+  const priorityStart = dailyWorkbench.indexOf("function priorityValue(");
+  const riskSortEnd = dailyWorkbench.indexOf("function matchesActiveFilter", priorityStart);
+  const signalStart = dailyWorkbench.indexOf("function dailyInsightSignalItems(", riskSortEnd);
+  const contextStart = dailyWorkbench.indexOf("function latestDailyHotspotArchive(", signalStart);
+  const contextEnd = dailyWorkbench.indexOf("function hasDailyAiSignals(", contextStart);
+  assert.ok(priorityStart >= 0 && riskSortEnd > priorityStart && signalStart > riskSortEnd && contextStart > signalStart && contextEnd > contextStart);
+  const source = [dailyWorkbench.slice(priorityStart, riskSortEnd), dailyWorkbench.slice(signalStart, contextEnd)].join("\n");
+  const latestDailyInsightContext = {
+    manualItems: [{ title: "整理今日素材", game: "鸣潮" }],
+    state: {
+      platformGame: "鸣潮",
+      platformHistoryUnavailable: true,
+      platformSnapshot: { platform: "B站", topics: [] },
+      platformSnapshots: []
+    }
+  };
+  const buildContext = vm.runInNewContext(`(() => { ${source}; return buildDailyAiInsightContext; })()`, {
+    window: {},
+    latestDailyInsightContext,
+    currentGame: () => "鸣潮",
+    today: () => "2026-09-29",
+    dueState: () => "future"
+  });
+  const emptyHotspotContext = buildContext();
+  assert.equal(emptyHotspotContext.hotspotHistoryUnavailable, true);
+
+  const labelStart = dailyWorkbench.indexOf("function dailyAiInsightInputLabel(");
+  const labelEnd = dailyWorkbench.indexOf("function renderDailyAiInsightResult", labelStart);
+  const inputLabel = vm.runInNewContext(`(${dailyWorkbench.slice(labelStart, labelEnd).trim()})`, {
+    buildDailyAiInsightContext: () => emptyHotspotContext
+  });
+  assert.match(inputLabel(), /历史热点存档暂不可用/);
+  assert.match(inputLabel(), /不能据此断言历史范围内没有热点或判断历史趋势/);
+
+  latestDailyInsightContext.state.platformSnapshot = {
+    platform: "B站",
+    topicSource: "real",
+    updatedAt: "2026-09-29T03:59:00.000Z",
+    topics: [{ title: "当前热点", source: "real" }]
+  };
+  const currentHotspotContext = buildContext();
+  assert.equal(currentHotspotContext.hotspotHistoryUnavailable, true);
+  assert.deepEqual(Array.from(currentHotspotContext.hotspots, (item) => item.title), ["当前热点"]);
+
+  latestDailyInsightContext.state.platformSnapshot = { platform: "B站", topics: [] };
+  latestDailyInsightContext.state.platformSnapshots = [{
+    game: "鸣潮",
+    source: "real",
+    created_at: new Date().toISOString(),
+    payload: { platform: "B站", topicSource: "real", topics: [{ title: "可用存档热点", source: "real" }] }
+  }];
+  assert.equal(buildContext().hotspotHistoryUnavailable, false);
+});
+
 test("daily AI insight uses recent valid archived hotspots only as an explicit fallback", () => {
   const priorityStart = dailyWorkbench.indexOf("function priorityValue(");
   const riskSortEnd = dailyWorkbench.indexOf("function matchesActiveFilter", priorityStart);
@@ -2796,6 +2851,14 @@ test("creator effect backfill reports personal-library persistence failures", ()
   assert.doesNotMatch(backfillSource, /quote: patch\.actualCost/);
   assert.match(recalcSource, /backfillPersistenceFailures/);
   assert.match(recalcSource, /个人库/);
+});
+
+test("creator score explanation states when backfilled actual cost drives CPM and CPE", () => {
+  const start = app.indexOf("function explainCreatorScore(");
+  const end = app.indexOf("function formatWan", start);
+  assert.ok(start >= 0 && end > start);
+  assert.match(app.slice(start, end), /CPM\/CPE 优先按实测成本计算，尚无回填时按预估报价计算/);
+  assert.match(html, /回填实际成本后，CPM\/CPE 优先按实测成本计算/);
 });
 
 test("creator collaboration history displays an explicit zero cost as free rather than missing", () => {

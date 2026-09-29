@@ -6901,7 +6901,7 @@ function explainCreatorScore(goal, activity) {
   const weights = Object.entries(config.weights)
     .map(([key, value]) => ({ launch: "曝光", review: "测评", guide: "攻略", value: "性价比" }[key] + ` ${Math.round(value * 100)}%`))
     .join("、");
-  return `目标分会随活动场景动态调整。当前场景「${config.label}」的基础权重为：${weights}；合作目标「${goalLabels[goal] || "综合"}」会额外强化对应能力。${config.logic} 缺少粉丝数、均播、互动率或预估报价的达人会进入待补数据，不参与推荐组合。`;
+  return `目标分会随活动场景动态调整。当前场景「${config.label}」的基础权重为：${weights}；合作目标「${goalLabels[goal] || "综合"}」会额外强化对应能力。${config.logic} CPM/CPE 优先按实测成本计算，尚无回填时按预估报价计算。缺少粉丝数、均播、互动率或预估报价的达人会进入待补数据，不参与推荐组合。`;
 }
 
 function formatWan(value) {
@@ -7257,6 +7257,8 @@ function creatorRowsToText(rows) {
   const firstRow = cleanRows[0].map(normalizeCreatorHeader);
   const headerIndex = aliases.map((names, fallbackIndex) => {
     const normalizedNames = names.map(normalizeCreatorHeader);
+    const exactContentTypeIndex = fallbackIndex === 7 ? firstRow.indexOf(normalizeCreatorHeader("内容类型")) : -1;
+    if (exactContentTypeIndex >= 0) return exactContentTypeIndex;
     const index = firstRow.findIndex((cell) => normalizedNames.includes(cell));
     return index >= 0 ? index : fallbackIndex;
   });

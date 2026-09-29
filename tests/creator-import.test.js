@@ -351,6 +351,23 @@ test("creator import accepts exactly 1000 rows without reporting truncation", ()
   assert.equal(parsed.truncated, false);
 });
 
+test("creator CSV export and reimport preserve content type instead of the creator tier", () => {
+  const helpers = loadCreatorImportHelpers();
+  const parseDelimitedRows = loadDelimitedRowParser();
+  const rows = [
+    ["达人名", "平台", "账号ID", "主页链接", "类型", "粉丝数", "平均播放", "互动率", "内容类型", "历史游戏品类", "评论质量", "预估报价", "实际成本", "商单密度"],
+    ["达人甲", "B站", "uid-001", "https://space.bilibili.com/10001", "垂类 KOC", "100000", "10000", "5%", "攻略", "动作游戏", "高", "1000", "800", "低"]
+  ];
+  const csvText = rows.map((row) => row.map((value) => {
+    const text = String(value);
+    return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+  }).join(",")).join("\r\n");
+  const importedText = helpers.creatorRowsToText(parseDelimitedRows(csvText, ","));
+  const imported = helpers.parseCreators(importedText);
+
+  assert.equal(imported.rows[0].contentType, "攻略");
+});
+
 test("creator import caps 1001 rows and explicitly reports truncation", () => {
   const helpers = loadCreatorImportHelpers();
   const importText = helpers.creatorRowsToText(sampleRows(1001));

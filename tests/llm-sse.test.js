@@ -29,7 +29,8 @@ const DAILY_INSIGHT_BODY = {
     publications: [{ title: "版本预热视频", channel: "B站", related_topic: "版本前瞻" }],
     hotspots: [{ title: "新角色强度讨论", tag: "攻略", risk: "中" }],
     hotspotPlatform: "抖音",
-    hotspotSource: "real"
+    hotspotSource: "real",
+    hotspotHistoryUnavailable: true
   }
 };
 
@@ -298,6 +299,8 @@ test("llm daily insight accepts the current operational queue and labelled hotsp
       assert.match(prompt, /新角色强度讨论/);
       assert.match(prompt, /热点信号（真实热点）/);
       assert.match(prompt, /平台 "抖音"/);
+      assert.match(prompt, /历史热点存档暂不可用/);
+      assert.match(prompt, /当前热点快照仍可用于当前信号分析/);
       assert.doesNotMatch(prompt, /玩家评论原文/);
     });
   } finally {

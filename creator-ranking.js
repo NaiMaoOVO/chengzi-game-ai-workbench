@@ -119,8 +119,12 @@
     const quality = qualityScore(row.commentQuality);
     const density = densityScore(row.commercialDensity);
     const quote = Number(row.quote) || 0;
-    const cpm = quote > 0 && row.avgViews > 0 ? quote / row.avgViews * 1000 : null;
-    const cpe = quote > 0 && row.avgViews > 0 && row.engagementRate > 0 ? quote / (row.avgViews * row.engagementRate / 100) : null;
+    const hasActualCost = row.actualCost !== null && row.actualCost !== undefined && row.actualCost !== ""
+      && Number.isFinite(Number(row.actualCost)) && Number(row.actualCost) >= 0;
+    const valueCost = hasActualCost ? Number(row.actualCost) : quote;
+    const hasValueCost = hasActualCost || quote > 0;
+    const cpm = hasValueCost && row.avgViews > 0 ? valueCost / row.avgViews * 1000 : null;
+    const cpe = hasValueCost && row.avgViews > 0 && row.engagementRate > 0 ? valueCost / (row.avgViews * row.engagementRate / 100) : null;
     const conversionRate = parseRateValue(row.conversionRate);
     const conversionScore = conversionRate > 0 ? clampScore(conversionRate * 5) : 0;
     const reviewBonus = hasAny(content, ["测评", "拆解", "数据", "机制", "硬核", "长视频"]) ? 18 : 0;

@@ -227,6 +227,25 @@ test("history score incorporates actual reach, cost efficiency, and conversion w
   assert.ok(measured.score > neutral.score);
 });
 
+test("actual creator cost replaces quote for current CPM and value scoring after backfill", () => {
+  const quoteOnly = {
+    platform: "B站", name: "达人甲", followers: 100000, avgViews: 10000,
+    engagementRate: 5, contentType: "攻略", gameHistory: "动作游戏",
+    commentQuality: "高", commercialDensity: "低", quote: 1000
+  };
+  const quoted = scoreCreator(quoteOnly);
+  const actualAtQuote = scoreCreator({ ...quoteOnly, actualCost: 1000 });
+  const actualOverrun = scoreCreator({ ...quoteOnly, actualCost: 100000 });
+  const actualFree = scoreCreator({ ...quoteOnly, actualCost: 0 });
+
+  assert.equal(quoted.cpm, 100, "unbackfilled rows should continue using the estimate");
+  assert.equal(actualAtQuote.cpm, 100);
+  assert.equal(actualOverrun.cpm, 10000, "backfilled CPM should use actual spend");
+  assert.ok(actualAtQuote.scores.value > actualOverrun.scores.value);
+  assert.equal(actualFree.cpm, 0, "an explicit zero actual cost is valid data, not a missing value");
+  assert.ok(actualFree.scores.value > quoted.scores.value);
+});
+
 test("missing actual metrics stay neutral instead of lowering history score", () => {
   const result = getCreatorHistoryScore([{ quality: 4, onTime: "yes", recommendation: "again", actualCost: null }]);
   assert.equal(result.dataSignals, 0);

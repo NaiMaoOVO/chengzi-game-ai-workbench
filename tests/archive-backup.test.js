@@ -51,6 +51,31 @@ test("archive backup creates a consistent SQLite copy outside the live database 
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
+test("archive backup refuses a symlinked rotation lock without changing its target", (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "gameops-backup-lock-link-test-"));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const databasePath = path.join(dir, "archive.db");
+  const backupDir = path.join(dir, "backups");
+  const db = new DatabaseSync(databasePath);
+  db.exec("CREATE TABLE check_rows (value TEXT NOT NULL);");
+  db.close();
+  fs.mkdirSync(backupDir);
+  const target = path.join(dir, "unrelated.txt");
+  fs.writeFileSync(target, "preserve this file", { mode: 0o644 });
+  fs.chmodSync(target, 0o644);
+  fs.symlinkSync(target, path.join(backupDir, ".archive-backup-lock.sqlite"));
+
+  const result = spawnSync(process.execPath, [path.join(root, "scripts", "backup-archive.js")], {
+    cwd: root,
+    env: { ...process.env, ARCHIVE_DB_PATH: databasePath, ARCHIVE_BACKUP_DIR: backupDir },
+    encoding: "utf8"
+  });
+
+  assert.equal(result.status, 1);
+  assert.equal(fs.readFileSync(target, "utf8"), "preserve this file");
+  assert.equal(fs.statSync(target).mode & 0o777, 0o644);
+});
+
 test("archive backup writes a checksum and prunes older copies by retention", () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "gameops-backup-retention-test-"));
   const databasePath = path.join(dir, "archive.db");
@@ -73,6 +98,35 @@ test("archive backup writes a checksum and prunes older copies by retention", ()
   const digest = crypto.createHash("sha256").update(fs.readFileSync(path.join(backupDir, databaseFiles[0]))).digest("hex");
   assert.match(fs.readFileSync(checksumPath, "utf8"), new RegExp("^" + digest + "  " + databaseFiles[0] + "\\n$"));
   fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test("concurrent archive backups serialize rotation and leave a verified recovery point", async (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "gameops-backup-concurrency-test-"));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const databasePath = path.join(dir, "archive.db");
+  const backupDir = path.join(dir, "backups");
+  const db = new DatabaseSync(databasePath);
+  db.exec("CREATE TABLE backup_load (value BLOB NOT NULL);");
+  const insert = db.prepare("INSERT INTO backup_load (value) VALUES (?)");
+  for (let index = 0; index < 9; index += 1) insert.run(crypto.randomBytes(3 * 1024 * 1024));
+  db.close();
+
+  const env = { ...process.env, ARCHIVE_DB_PATH: databasePath, ARCHIVE_BACKUP_DIR: backupDir, ARCHIVE_BACKUP_KEEP: "1" };
+  const script = path.join(root, "scripts", "backup-archive.js");
+  const runs = [];
+  for (let index = 0; index < 4; index += 1) {
+    const child = spawn(process.execPath, [script], { cwd: root, env, stdio: ["ignore", "ignore", "pipe"] });
+    let stderr = "";
+    child.stderr.on("data", (chunk) => { stderr += chunk.toString("utf8"); });
+    runs.push(new Promise((resolve) => child.once("close", (code, signal) => resolve({ code, signal, stderr }))));
+    if (index < 3) await new Promise((resolve) => setTimeout(resolve, 15));
+  }
+  const results = await Promise.all(runs);
+  assert.ok(results.every((result) => result.code === 0 && !result.signal), results.map((result) => result.stderr).join("\n"));
+
+  const databaseFiles = fs.readdirSync(backupDir).filter((name) => /^archive-.*\.db$/.test(name));
+  assert.equal(databaseFiles.length, 1, "keep=1 should retain exactly one completed backup");
+  assert.doesNotThrow(() => verifyArchiveBackup(path.join(backupDir, databaseFiles[0])));
 });
 
 test("archive backup rotation never deletes the newly verified copy due to a future filename", (t) => {

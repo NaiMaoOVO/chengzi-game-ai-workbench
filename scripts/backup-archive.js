@@ -45,11 +45,32 @@ let checksumPath = "";
 let backupCreated = false;
 let checksumCreated = false;
 let backupVerified = false;
+let backupLockDb = null;
 
 try {
   const backupDir = assertSafeArchiveBackupDirectory(backupDirInput);
   fs.mkdirSync(backupDir, { recursive: true, mode: 0o700 });
   fs.chmodSync(backupDir, 0o700);
+  const backupLockPath = path.join(backupDir, ".archive-backup-lock.sqlite");
+  let existingLock;
+  try {
+    existingLock = fs.lstatSync(backupLockPath);
+  } catch (error) {
+    if (error.code !== "ENOENT") throw error;
+  }
+  if (existingLock && (!existingLock.isFile() || existingLock.isSymbolicLink())) {
+    throw new Error("备份轮转锁必须是普通文件");
+  }
+  backupLockDb = new DatabaseSync(backupLockPath);
+  const openedLock = fs.lstatSync(backupLockPath);
+  if (!openedLock.isFile() || openedLock.isSymbolicLink()
+    || existingLock && (existingLock.dev !== openedLock.dev || existingLock.ino !== openedLock.ino)) {
+    throw new Error("备份轮转锁在打开期间发生变化");
+  }
+  backupLockDb.exec("PRAGMA busy_timeout = 120000; BEGIN EXCLUSIVE");
+
+  // SQLite's OS-backed exclusive lock serializes the whole snapshot and rotation flow,
+  // and is released automatically if this process exits unexpectedly.
   const stamp = new Date().toISOString().replace(/[-:.TZ]/g, "");
   destination = path.join(backupDir, "archive-" + stamp + ".db");
   const escapedDestination = "'" + destination.replace(/'/g, "''") + "'";
@@ -104,5 +125,10 @@ try {
     if (checksumCreated) fs.rmSync(checksumPath, { force: true });
   }
   console.error("存档备份失败：" + error.message);
-  process.exit(1);
+  process.exitCode = 1;
+} finally {
+  if (backupLockDb) {
+    try { backupLockDb.exec("ROLLBACK"); } catch (_error) { /* lock may not have been acquired */ }
+    backupLockDb.close();
+  }
 }

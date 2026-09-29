@@ -826,7 +826,8 @@
         ? archivedHotspot?.payload.range || snapshot.range : "",
       hotspotUpdatedAt: Number.isFinite(hotspotUpdatedAtTime) ? new Date(hotspotUpdatedAtTime).toISOString() : "",
       hotspotRestored: !archivedHotspot && Boolean(snapshot.restored || snapshot.updatedAtKind === "restored"),
-      hotspotArchived: Boolean(archivedHotspot)
+      hotspotArchived: Boolean(archivedHotspot),
+      hotspotHistoryUnavailable: Boolean(state.platformHistoryUnavailable && !archivedHotspot)
     };
   }
 
@@ -1009,6 +1010,7 @@
         ? context.hotspotUpdatedAt ? `历史缓存热点，原快照时间 ${context.hotspotUpdatedAt}` : "历史缓存热点，原快照时间未知"
         : context.hotspotUpdatedAt ? `热点快照时间 ${context.hotspotUpdatedAt}` : "热点快照时间未知");
     }
+    if (context.hotspotHistoryUnavailable) parts.push("历史热点存档暂不可用；不能据此断言历史范围内没有热点或判断历史趋势");
     if (context.riskUnavailable) parts.push("风险工单未同步");
     if (context.publicationUnavailable) parts.push("发布回流未同步");
     if (context.todoUnavailable) parts.push("待办未同步");
