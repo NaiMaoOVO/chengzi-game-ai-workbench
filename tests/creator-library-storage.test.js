@@ -246,6 +246,13 @@ test("authenticated hosted creator edits debounce sync and discard it after acco
   harness.setLocalFile(true);
   assert.equal(harness.write(library), true);
   assert.equal(activeTimers().length, 0, "file pages should keep local-only behavior");
+
+  harness.setLocalFile(false);
+  assert.equal(harness.write(library), true);
+  const [, scheduled] = activeTimers()[0];
+  scheduled.callback();
+  assert.equal(syncCalls, 1, "a stable authenticated edit should invoke cloud sync after the debounce");
+  assert.equal(harness.timerKey(), "");
   assert.ok(pendingId > 0);
 });
 
