@@ -66,7 +66,7 @@ function findListenerPid(port) {
   }
 }
 
-function checkControllerIdentity() {
+function getControllerHealth() {
   return new Promise((resolve) => {
     const request = http.get(`http://127.0.0.1:${CONTROLLER_PORT}/health`, (response) => {
       let body = "";
@@ -80,20 +80,26 @@ function checkControllerIdentity() {
           resolve(
             response.statusCode === 200 &&
               payload.ok === true &&
-              payload.service === "gameops-local-controller" &&
-              (!payload.instanceId || payload.instanceId === CONTROLLER_INSTANCE_ID)
+              payload.service === "gameops-local-controller"
+              ? payload
+              : null
           );
         } catch (_error) {
-          resolve(false);
+          resolve(null);
         }
       });
     });
-    request.on("error", () => resolve(false));
+    request.on("error", () => resolve(null));
     request.setTimeout(900, () => {
       request.destroy();
-      resolve(false);
+      resolve(null);
     });
   });
+}
+
+async function checkControllerIdentity() {
+  const payload = await getControllerHealth();
+  return Boolean(payload && (!payload.instanceId || payload.instanceId === CONTROLLER_INSTANCE_ID));
 }
 
 async function resolveControllerPid() {
@@ -134,8 +140,15 @@ async function main() {
     process.kill(pid, "SIGTERM");
     const stopped = await waitForExit(pid);
     if (!stopped) throw new Error("旧控制进程未能在 5 秒内退出，请稍后重试");
-  } else if (await checkControllerIdentity()) {
-    throw new Error("控制器已在线，但无法验证进程归属；为避免重复启动，未重启。请检查 /status 后再试");
+  } else {
+    const health = await getControllerHealth();
+    if (health) {
+      const sameInstance = !health.instanceId || health.instanceId === CONTROLLER_INSTANCE_ID;
+      const message = sameInstance
+        ? "控制器已在线，但无法验证进程归属；为避免重复启动，未重启。请检查 /status 后再试"
+        : "检测到其他运行目录的 GameOps 控制器正在占用端口；为避免重复启动，未启动。请使用当前 Launcher 的重启入口";
+      throw new Error(message);
+    }
   }
   removeOwnedState(STATE_FILE, false, pid || undefined);
   removeOwnedState(STATE_PATHS.legacy, true, pid || undefined);
