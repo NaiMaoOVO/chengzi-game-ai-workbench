@@ -2726,6 +2726,7 @@ test("creator library sync ignores a late previous-account response", async () =
     ARCHIVE_SERVICE_URL: "https://archive.example",
     creatorLibraryStorageIssue: "",
     creatorLibraryStorageRawSnapshot: null,
+    cancelCreatorLibraryAutoSync: () => {},
     archiveRequest: async (_url, options) => {
       if (options.method === "PUT") return response({ ok: true });
       readCount += 1;
@@ -2776,6 +2777,7 @@ function createCreatorSyncHarness(archiveJsonRequestWithTimeout) {
     ARCHIVE_SERVICE_URL: "https://archive.example",
     creatorLibraryStorageIssue: "",
     creatorLibraryStorageRawSnapshot: undefined,
+    cancelCreatorLibraryAutoSync: () => {},
     document: { querySelector: (selector) => selector === "#creator-status" ? status : null },
     archiveJsonRequestWithTimeout,
     readCreatorLibrary: () => {

@@ -6222,6 +6222,27 @@ function getCreatorBriefInput() {
 let creatorLibraryStorageIssue = "";
 let creatorLibraryStorageCorrupt = false;
 let creatorLibraryStorageRawSnapshot;
+let creatorLibraryAutoSyncTimer = null;
+let creatorLibraryAutoSyncStorageKey = "";
+
+function cancelCreatorLibraryAutoSync() {
+  if (creatorLibraryAutoSyncTimer !== null) clearTimeout(creatorLibraryAutoSyncTimer);
+  creatorLibraryAutoSyncTimer = null;
+  creatorLibraryAutoSyncStorageKey = "";
+}
+
+function scheduleCreatorLibrarySync() {
+  if (!archiveSessionUser || isLocalFileRuntime()) return;
+  cancelCreatorLibraryAutoSync();
+  creatorLibraryAutoSyncStorageKey = creatorLibraryStorageKey();
+  creatorLibraryAutoSyncTimer = setTimeout(() => {
+    const storageKey = creatorLibraryAutoSyncStorageKey;
+    creatorLibraryAutoSyncTimer = null;
+    creatorLibraryAutoSyncStorageKey = "";
+    if (!storageKey || !archiveSessionUser || isLocalFileRuntime() || creatorLibraryStorageKey() !== storageKey) return;
+    void syncCreatorLibrary();
+  }, 500);
+}
 
 function readCreatorLibrary() {
   creatorLibraryStorageIssue = "";
@@ -6256,7 +6277,7 @@ function readCreatorLibrary() {
   }
 }
 
-function writeCreatorLibrary(library, { replaceCorrupt = false, expectedCorruptRaw, requireUnchanged = false, expectedRaw } = {}) {
+function writeCreatorLibrary(library, { replaceCorrupt = false, expectedCorruptRaw, requireUnchanged = false, expectedRaw, skipRemoteSync = false } = {}) {
   const previousIssue = creatorLibraryStorageIssue;
   const previousCorrupt = creatorLibraryStorageCorrupt;
   creatorLibraryStorageIssue = "";
@@ -6313,6 +6334,9 @@ function writeCreatorLibrary(library, { replaceCorrupt = false, expectedCorruptR
       }
     }
     storage.setItem(key, JSON.stringify(library));
+    if (!skipRemoteSync) {
+      try { scheduleCreatorLibrarySync(); } catch (_error) { /* 本地保存成功仍保留；手动同步按钮可重试。 */ }
+    }
     return true;
   } catch (_error) {
     creatorLibraryStorageIssue = "本机个人库存储不可用或空间不足，未能保存；原始数据未修改。";
@@ -6839,12 +6863,14 @@ let creatorLibrarySyncGeneration = 0;
 let creatorLibrarySyncController = null;
 
 function cancelCreatorLibrarySync() {
+  cancelCreatorLibraryAutoSync();
   creatorLibrarySyncGeneration += 1;
   creatorLibrarySyncController?.abort();
   creatorLibrarySyncController = null;
 }
 
 async function syncCreatorLibrary() {
+  cancelCreatorLibraryAutoSync();
   creatorLibrarySyncController?.abort();
   const generation = ++creatorLibrarySyncGeneration;
   const controller = new AbortController();
@@ -6893,7 +6919,7 @@ async function syncCreatorLibrary() {
     }
     if (generation !== creatorLibrarySyncGeneration) return;
     if (!result.response.ok || !result.payload.ok) throw new Error(result.payload.error || `HTTP ${result.response.status}`);
-    if (!writeCreatorLibrary(merged, { requireUnchanged: true, expectedRaw: expectedLocalRaw })) {
+    if (!writeCreatorLibrary(merged, { requireUnchanged: true, expectedRaw: expectedLocalRaw, skipRemoteSync: true })) {
       throw new Error(creatorLibraryStorageIssue || "浏览器存储空间不足，无法写入同步结果");
     }
     renderCreatorLibrary();

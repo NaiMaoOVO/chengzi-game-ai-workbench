@@ -161,7 +161,7 @@ test("cloud sync cannot overwrite a newer local creator library", () => {
   const syncEnd = app.indexOf("function explainCreatorScore", syncStart);
   const syncSource = app.slice(syncStart, syncEnd);
   assert.match(syncSource, /const expectedLocalRaw = creatorLibraryStorageRawSnapshot/);
-  assert.match(syncSource, /writeCreatorLibrary\(merged, \{ requireUnchanged: true, expectedRaw: expectedLocalRaw \}\)/);
+  assert.match(syncSource, /writeCreatorLibrary\(merged, \{ requireUnchanged: true, expectedRaw: expectedLocalRaw, skipRemoteSync: true \}\)/);
   assert.match(syncSource, /同步期间发生变化[\s\S]{0,80}请再次同步/);
   assert.match(syncSource, /同步期间发生变化\/.test\(message\)/);
 });
@@ -174,6 +174,79 @@ test("cloud creator sync stops before writing remotely when the local library is
   const guardIndex = source.indexOf("if (creatorLibraryStorageIssue) throw");
   const putIndex = source.indexOf("let result = await put(");
   assert.ok(readIndex >= 0 && guardIndex > readIndex && putIndex > guardIndex);
+});
+
+test("authenticated hosted creator edits debounce sync and discard it after account changes", () => {
+  let timerId = 0;
+  let syncCalls = 0;
+  const timers = new Map();
+  const cancelled = new Set();
+  let localFile = false;
+  let localValue = null;
+  const localStorage = {
+    getItem: () => localValue,
+    setItem: (_key, value) => { localValue = value; }
+  };
+  const scheduleStart = app.indexOf("let creatorLibraryAutoSyncTimer = null;");
+  const scheduleEnd = app.indexOf("function creatorSnapshot(", scheduleStart);
+  assert.ok(scheduleStart >= 0 && scheduleEnd > scheduleStart, "creator library auto-sync flow should be available for authenticated accounts");
+  const source = app.slice(scheduleStart, scheduleEnd);
+  const context = {
+    window: { localStorage },
+    recordSync: () => { syncCalls += 1; },
+    setTimeout: (callback, delay) => {
+      const id = ++timerId;
+      timers.set(id, { callback, delay });
+      return id;
+    },
+    clearTimeout: (id) => cancelled.add(id)
+  };
+  const harness = vm.runInNewContext(`(() => {
+    const CREATOR_LIBRARY_STORAGE_KEY = "creator-library";
+    let archiveSessionUser = { id: "account-a" };
+    let creatorLibraryStorageIssue = "";
+    let creatorLibraryStorageCorrupt = false;
+    let creatorLibraryStorageRawSnapshot;
+    function isLocalFileRuntime() { return localFile; }
+    function syncCreatorLibrary() { recordSync(); }
+    ${validators}
+    ${source}
+    return {
+      write: writeCreatorLibrary,
+      cancelAutoSync: cancelCreatorLibraryAutoSync,
+      setUser: (user) => { archiveSessionUser = user; },
+      setLocalFile: (value) => { localFile = value; },
+      timerKey: () => creatorLibraryAutoSyncStorageKey
+    };
+  })()`, {
+    ...context,
+    get localFile() { return localFile; },
+    set localFile(value) { localFile = value; }
+  });
+  const activeTimers = () => [...timers.entries()].filter(([id]) => !cancelled.has(id));
+  const library = { creator: { name: "同步验证", platform: "B站" } };
+
+  assert.equal(harness.write(library), true);
+  assert.equal(harness.write({ ...library, second: { name: "第二次修改", platform: "小红书" } }), true);
+  assert.equal(activeTimers().length, 1, "repeated edits should share one pending sync");
+  assert.equal(activeTimers()[0][1].delay, 500);
+
+  harness.setUser({ id: "account-b" });
+  const [pendingId, pending] = activeTimers()[0];
+  harness.cancelAutoSync();
+  assert.equal(activeTimers().length, 0, "account changes should cancel the pending sync timer");
+  pending.callback();
+  assert.equal(syncCalls, 0, "a pending save from the previous account must not sync under the new account");
+  assert.equal(harness.timerKey(), "");
+
+  harness.setUser(null);
+  assert.equal(harness.write(library), true);
+  assert.equal(activeTimers().length, 0, "guest libraries should not be uploaded automatically");
+  harness.setUser({ id: "account-b" });
+  harness.setLocalFile(true);
+  assert.equal(harness.write(library), true);
+  assert.equal(activeTimers().length, 0, "file pages should keep local-only behavior");
+  assert.ok(pendingId > 0);
 });
 
 test("the creator library panel surfaces unreadable storage instead of an empty-library state", () => {
