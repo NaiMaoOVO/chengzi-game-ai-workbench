@@ -19,6 +19,9 @@
   let dailyAiInsightResultKey = "";
   let dailyAiInsightUserKey = "";
   let dailyAiInsightSnapshot = null;
+  let dailyAiInsightPendingContextKey = "";
+  let dailyAiInsightPendingUserKey = "";
+  let dailyAiInsightNeedsRetry = false;
   let lastDailyQueueSnapshot = null;
   let observedDailyQueueSessionKey = "";
 
@@ -895,7 +898,18 @@
     const button = document.querySelector("#generate-daily-ai-insight");
     const result = document.querySelector("#daily-ai-insight-result");
     const context = buildDailyAiInsightContext();
-    dailyAiInsightGeneration += 1;
+    const contextKey = dailyAiInsightContextKey(context);
+    const userKey = dailyQueueSessionKey();
+    const hasPendingRequest = Boolean(dailyAiInsightPendingContextKey);
+    const pendingMatches = hasPendingRequest
+      && dailyAiInsightPendingContextKey === contextKey
+      && dailyAiInsightPendingUserKey === userKey;
+    if (!pendingMatches) {
+      dailyAiInsightGeneration += 1;
+      if (hasPendingRequest) dailyAiInsightNeedsRetry = true;
+      dailyAiInsightPendingContextKey = "";
+      dailyAiInsightPendingUserKey = "";
+    }
     let hasResult = Boolean(result && !result.hidden);
     if (hasResult && dailyAiInsightUserKey !== dailyQueueSessionKey()) {
       clearDailyAiInsightResult();
@@ -918,7 +932,10 @@
         button.disabled = true;
         button.setAttribute("aria-disabled", "true");
       }
-      setDailyAiInsightStatus(hasResult ? "数据刷新中 · 保留上次洞察" : "正在整理数据", "loading");
+      const statusText = dailyAiInsightNeedsRetry ? "数据刷新中 · 旧洞察已取消，完成后请重新生成"
+        : pendingMatches ? "数据刷新中 · 当前洞察继续生成"
+          : hasResult ? "数据刷新中 · 保留上次洞察" : "正在整理数据";
+      setDailyAiInsightStatus(statusText, dailyAiInsightNeedsRetry ? "warning" : "loading");
       return;
     }
     if (context.authRequired) {
@@ -936,26 +953,30 @@
         button.disabled = true;
         button.setAttribute("aria-disabled", "true");
       }
-      setDailyAiInsightStatus(hasResult ? "数据未同步 · 保留上次洞察" : "等待服务连接", "warning");
+      const statusText = dailyAiInsightNeedsRetry ? "数据未同步 · 洞察已取消，恢复后请重新生成"
+        : hasResult ? "数据未同步 · 保留上次洞察" : "等待服务连接";
+      setDailyAiInsightStatus(statusText, "warning");
       return;
     }
 
     const available = hasDailyAiSignals(context);
-    const contextKey = dailyAiInsightContextKey(context);
     const resultMatches = hasResult && dailyAiInsightResultKey === contextKey;
     if (hasResult && !resultMatches) clearResult();
     if (resultMatches) setActionButtonsDisabled(Boolean(context.todoUnavailable));
     if (button) {
-      button.disabled = !available;
-      button.setAttribute("aria-disabled", String(!available));
-      button.title = available
-        ? "手动触发；每类最多发送 5 条信号及项目、数量、热点平台/来源/范围和快照时间到已配置的 AI 服务"
-        : "当前没有可供 AI 判断的工作信号或样例信号";
+      button.disabled = !available || pendingMatches;
+      button.setAttribute("aria-disabled", String(!available || pendingMatches));
+      button.title = pendingMatches ? "AI 正在归纳当前运营信号"
+        : available
+          ? "手动触发；每类最多发送 5 条信号及项目、数量、热点平台/来源/范围和快照时间到已配置的 AI 服务"
+          : "当前没有可供 AI 判断的工作信号或样例信号";
     }
-    const statusText = resultMatches ? "AI 洞察已保留"
-      : hasResult ? "信号已更新 · 请重新生成"
-        : available ? "规则归纳" : "等待信号";
-    const statusTone = resultMatches ? "ready" : hasResult ? "warning" : available ? "ready" : "idle";
+    const statusText = pendingMatches ? "AI 洞察正在生成"
+      : dailyAiInsightNeedsRetry ? "信号已变化 · 洞察已取消，请重新生成"
+        : resultMatches ? "AI 洞察已保留"
+          : hasResult ? "信号已更新 · 请重新生成"
+            : available ? "规则归纳" : "等待信号";
+    const statusTone = pendingMatches ? "loading" : dailyAiInsightNeedsRetry || hasResult && !resultMatches ? "warning" : resultMatches || available ? "ready" : "idle";
     setDailyAiInsightStatus(statusText, statusTone);
   }
 
@@ -1094,6 +1115,9 @@
     }
     const generation = ++dailyAiInsightGeneration;
     const contextKey = dailyAiInsightContextKey(context);
+    dailyAiInsightPendingContextKey = contextKey;
+    dailyAiInsightPendingUserKey = dailyQueueSessionKey();
+    dailyAiInsightNeedsRetry = false;
     if (button) {
       button.disabled = true;
       button.setAttribute("aria-disabled", "true");
@@ -1116,9 +1140,11 @@
       }
       renderDailyAiInsightResult(response.result, context);
       dailyAiInsightResultKey = contextKey;
+      dailyAiInsightNeedsRetry = false;
       setDailyAiInsightStatus(response.cached ? "AI 缓存结果" : "AI 已归纳", "ready");
     } catch (error) {
       if (generation !== dailyAiInsightGeneration) return;
+      dailyAiInsightNeedsRetry = false;
       setDailyAiInsightStatus("规则归纳", "warning");
       const result = document.querySelector("#daily-ai-insight-result");
       if (result) {
@@ -1130,9 +1156,13 @@
         dailyAiInsightSnapshot = null;
       }
     } finally {
-      if (generation === dailyAiInsightGeneration && button) {
-        button.disabled = false;
-        button.setAttribute("aria-disabled", "false");
+      if (generation === dailyAiInsightGeneration) {
+        dailyAiInsightPendingContextKey = "";
+        dailyAiInsightPendingUserKey = "";
+        if (button) {
+          button.disabled = false;
+          button.setAttribute("aria-disabled", "false");
+        }
       }
     }
   }
@@ -1393,6 +1423,9 @@
     lastDailyQueueSnapshot = null;
     window.cancelTodayTodosLoad?.();
     dailyAiInsightGeneration += 1;
+    dailyAiInsightPendingContextKey = "";
+    dailyAiInsightPendingUserKey = "";
+    dailyAiInsightNeedsRetry = false;
     latestDailyInsightContext = { manualItems: [], state: {} };
     clearDailyAiInsightResult();
     const user = event.detail?.user || null;

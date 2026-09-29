@@ -1702,6 +1702,102 @@ test("daily AI insight enforces the two-watchout output limit", () => {
   assert.deepEqual(Array.from(renderer.snapshot().watchouts), ["核实来源", "补充指标"]);
 });
 
+test("daily AI insight survives an unchanged queue refresh but rejects changed signals", async () => {
+  const syncStart = dailyWorkbench.indexOf("function syncDailyAiInsight()");
+  const syncEnd = dailyWorkbench.indexOf("function dailyAiFailureText", syncStart);
+  const generateStart = dailyWorkbench.indexOf("async function generateDailyAiInsight()");
+  const generateEnd = dailyWorkbench.indexOf("window.renderTodayTodos", generateStart);
+  assert.ok(syncStart >= 0 && syncEnd > syncStart && generateStart > syncEnd && generateEnd > generateStart);
+  const generateSource = dailyWorkbench.slice(generateStart, generateEnd);
+
+  let resolveRequest;
+  const button = { disabled: false, title: "", attributes: {}, setAttribute(name, value) { this.attributes[name] = value; } };
+  const result = {
+    hidden: true,
+    textContent: "",
+    querySelectorAll: () => [],
+    replaceChildren() { this.textContent = ""; }
+  };
+  const status = { textContent: "", dataset: {} };
+  const renders = [];
+  const baseContext = { loading: false, todos: [{ title: "核验热点" }], todoUnavailable: false, riskUnavailable: false, publicationUnavailable: false };
+  const sandbox = {
+    contextValue: baseContext,
+    userKey: "account-a",
+    document: {
+      querySelector: (selector) => ({
+        "#generate-daily-ai-insight": button,
+        "#daily-ai-insight-result": result,
+        "#daily-insight-status": status
+      })[selector] || null
+    },
+    requestLlmTask: () => new Promise((resolve) => { resolveRequest = resolve; }),
+    result,
+    status,
+    renders
+  };
+  vm.runInNewContext(`(() => {
+    let dailyAiInsightGeneration = 0;
+    let dailyAiInsightResultKey = "";
+    let dailyAiInsightUserKey = "";
+    let dailyAiInsightSnapshot = null;
+    let dailyAiInsightPendingContextKey = "";
+    let dailyAiInsightPendingUserKey = "";
+    let dailyAiInsightNeedsRetry = false;
+    function buildDailyAiInsightContext() { return contextValue; }
+    function dailyAiInsightContextKey(context) { const stable = { ...context }; delete stable.loading; return JSON.stringify(stable); }
+    function dailyQueueSessionKey() { return userKey; }
+    function hasDailyAiSignals(context) { return context.todos.length > 0; }
+    function dailyAiInsightInputLabel() { return "1 条待办"; }
+    function dailyAiFailureText() { return "AI 洞察暂不可用"; }
+    function setDailyAiInsightStatus(text, tone) { status.textContent = text; status.dataset.tone = tone; }
+    function clearDailyAiInsightResult() {
+      result.hidden = true;
+      result.textContent = "";
+      dailyAiInsightResultKey = "";
+      dailyAiInsightUserKey = "";
+      dailyAiInsightSnapshot = null;
+    }
+    function renderDailyAiInsightResult(value) {
+      result.hidden = false;
+      result.textContent = value.summary;
+      renders.push(value.summary);
+      dailyAiInsightUserKey = dailyQueueSessionKey();
+    }
+    ${dailyWorkbench.slice(syncStart, syncEnd)}
+    ${generateSource}
+    this.controls = {
+      sync: syncDailyAiInsight,
+      generate: generateDailyAiInsight,
+      generation: () => dailyAiInsightGeneration
+    };
+  })()`, sandbox);
+
+  const sameSignalRequest = sandbox.controls.generate();
+  const firstGeneration = sandbox.controls.generation();
+  sandbox.contextValue = { ...baseContext, loading: true };
+  sandbox.controls.sync();
+  assert.equal(sandbox.controls.generation(), firstGeneration, "loading the same signal set must not cancel its request");
+  sandbox.contextValue = baseContext;
+  sandbox.controls.sync();
+  assert.equal(button.disabled, true, "the generate button must stay disabled while its matching request is pending");
+  resolveRequest({ ok: true, cached: false, result: { summary: "保留这次洞察" } });
+  await sameSignalRequest;
+  assert.deepEqual(renders, ["保留这次洞察"], "an unchanged signal set should keep the in-flight response");
+  assert.equal(result.hidden, false);
+
+  const changedSignalRequest = sandbox.controls.generate();
+  sandbox.contextValue = { ...baseContext, loading: true, todos: [{ title: "新的不同信号" }] };
+  sandbox.controls.sync();
+  sandbox.contextValue = { ...baseContext, todos: [{ title: "新的不同信号" }] };
+  sandbox.controls.sync();
+  resolveRequest({ ok: true, cached: false, result: { summary: "过期洞察不得显示" } });
+  await changedSignalRequest;
+  assert.deepEqual(renders, ["保留这次洞察"], "a response for changed signals must be discarded");
+  assert.equal(result.hidden, true);
+  assert.match(status.textContent, /洞察已取消.*重新生成/);
+});
+
 test("retained AI insight actions are disabled and revalidated while source data is stale", () => {
   const renderStart = dailyWorkbench.indexOf("function renderDailyAiInsightResult(");
   const renderEnd = dailyWorkbench.indexOf("async function generateDailyAiInsight(", renderStart);
