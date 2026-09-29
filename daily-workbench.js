@@ -1339,6 +1339,7 @@
     const sessionKeyAtStart = dailyQueueSessionKey();
     const game = currentGame();
     const priority = priorityEl()?.value || "medium";
+    refreshDailyDateLabels();
     const dueDate = dueEl()?.value || today();
     try {
       await request("/daily-todos", {

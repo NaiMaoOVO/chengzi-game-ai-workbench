@@ -3460,6 +3460,7 @@ test("a pending todo save from the previous account cannot clear the new account
   const context = {
     document: { querySelector: (selector) => selector === '#daily-todo-form button[type="submit"]' ? submitButton : null },
     window: { loadTodayTodos: async () => { loads += 1; } },
+    refreshDailyDateLabels() {},
     titleEl: () => titleInput,
     priorityEl: () => ({ value: "medium" }),
     dueEl: () => ({ value: "2026-09-27" }),
@@ -3488,6 +3489,46 @@ test("a pending todo save from the previous account cannot clear the new account
   assert.equal(loads, 0);
   assert.deepEqual(statuses, []);
   assert.equal(submitButton.disabled, false);
+});
+
+test("adding a todo after Shanghai midnight refreshes its default due date before saving", async () => {
+  const helperStart = dailyWorkbench.indexOf("function today()");
+  const helperEnd = dailyWorkbench.indexOf("function shiftBusinessDate", helperStart);
+  const addStart = dailyWorkbench.indexOf("async function addTodo");
+  const addEnd = dailyWorkbench.indexOf("async function updateTodo", addStart);
+  assert.ok(helperStart >= 0 && helperEnd > helperStart && addStart >= 0 && addEnd > addStart);
+
+  const currentDate = "2026-09-29";
+  const dueInput = { value: "2026-09-28" };
+  const titleInput = { value: "整理今日玩家反馈" };
+  const submitButton = { disabled: false };
+  let savedPayload;
+  const context = {
+    businessDate: () => currentDate,
+    dueEl: () => dueInput,
+    setText() {},
+    document: { querySelector: () => submitButton },
+    window: { loadTodayTodos: async () => {} },
+    titleEl: () => titleInput,
+    priorityEl: () => ({ value: "medium" }),
+    currentGame: () => "鸣潮",
+    dailyQueueSessionKey: () => "local|anonymous",
+    request: async (_path, options) => { savedPayload = JSON.parse(options.body); return { ok: true }; },
+    dailyTodoRequestId: () => "daily-todo-midnight",
+    clearDailyTodoRequest() {},
+    setStatus() {}
+  };
+  vm.runInNewContext(`
+    let lastDailyBusinessDate = "2026-09-28";
+    ${dailyWorkbench.slice(helperStart, helperEnd)}
+    ${dailyWorkbench.slice(addStart, addEnd)}
+    this.addTodo = addTodo;
+  `, context);
+
+  await context.addTodo();
+
+  assert.equal(dueInput.value, currentDate);
+  assert.equal(savedPayload.due_date, currentDate);
 });
 
 test("daily queue validates response item arrays before rendering", () => {
