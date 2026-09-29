@@ -201,6 +201,76 @@ test("archive auth requires login, CSRF, and keeps each account's data private",
   const memberCsrf = memberLogin.payload.csrf_token;
   assert.equal((await request("/backup/status", { headers: { Cookie: memberCookie } })).status, 403, "成员不能查看全局备份状态");
 
+  const privateArchiveDb = new DatabaseSync(databasePath);
+  const scopedAccounts = [
+    { ownerKey: `user:${adminLogin.payload.user.id}`, cookie: adminCookie, game: "仅管理员档案", marker: "admin-private" },
+    { ownerKey: `user:${memberLogin.payload.user.id}`, cookie: memberCookie, game: "仅成员档案", marker: "member-private" }
+  ];
+  const scopedRecordIds = {};
+  for (const account of scopedAccounts) {
+    const updatedAt = new Date().toISOString();
+    privateArchiveDb.prepare("INSERT INTO project_profiles (owner_key, game, payload, updated_at) VALUES (?, ?, ?, ?)")
+      .run(account.ownerKey, account.game, JSON.stringify({ marker: account.marker }), updatedAt);
+    const existingLibrary = privateArchiveDb.prepare("SELECT payload FROM creator_libraries WHERE owner_key = ?").get(account.ownerKey);
+    const libraryPayload = existingLibrary ? JSON.parse(existingLibrary.payload) : {};
+    libraryPayload[`creator-${account.marker}`] = { name: account.marker, platform: "B站", accountId: account.marker };
+    privateArchiveDb.prepare("INSERT INTO creator_libraries (owner_key, payload, updated_at) VALUES (?, ?, ?) ON CONFLICT(owner_key) DO UPDATE SET payload = excluded.payload, updated_at = excluded.updated_at")
+      .run(account.ownerKey, JSON.stringify(libraryPayload), updatedAt);
+    privateArchiveDb.prepare("INSERT INTO snapshots (owner_key, kind, game, payload, created_at) VALUES (?, ?, ?, ?, ?)")
+      .run(account.ownerKey, "account-scope-test", account.game, JSON.stringify({ marker: account.marker }), updatedAt);
+    const publication = privateArchiveDb.prepare("INSERT INTO publications (owner_key, game, title, channel, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)")
+      .run(account.ownerKey, account.game, account.marker, "B站", updatedAt, updatedAt);
+    const risk = privateArchiveDb.prepare("INSERT INTO risk_events (owner_key, game, title, created_at, updated_at) VALUES (?, ?, ?, ?, ?)")
+      .run(account.ownerKey, account.game, account.marker, updatedAt, updatedAt);
+    scopedRecordIds[account.marker] = { publication: Number(publication.lastInsertRowid), risk: Number(risk.lastInsertRowid) };
+  }
+  privateArchiveDb.close();
+
+  for (const account of scopedAccounts) {
+    const other = scopedAccounts.find((candidate) => candidate.ownerKey !== account.ownerKey);
+    const headers = { Cookie: account.cookie };
+    const profiles = await request("/profiles", { headers });
+    assert.equal(profiles.status, 200);
+    const profileGames = profiles.payload.profiles.map((item) => item.game);
+    assert.ok(profileGames.includes(account.game));
+    assert.equal(profileGames.includes(other.game), false, "项目档案列表不应暴露另一账号");
+    const profile = await request("/profile?game=" + encodeURIComponent(account.game), { headers });
+    assert.equal(profile.payload.profile.marker, account.marker);
+    const library = await request("/creator-library", { headers });
+    const creatorKeys = Object.keys(library.payload.library);
+    assert.ok(creatorKeys.includes(`creator-${account.marker}`));
+    assert.equal(creatorKeys.includes(`creator-${other.marker}`), false, "创作者个人库不应暴露另一账号");
+    const snapshots = await request("/snapshots?kind=account-scope-test", { headers });
+    assert.deepEqual(snapshots.payload.items.map((item) => item.payload.marker), [account.marker]);
+    const latest = await request("/latest?kind=account-scope-test", { headers });
+    assert.equal(latest.payload.snapshot.payload.marker, account.marker);
+    const publications = await request("/publications", { headers });
+    assert.deepEqual(publications.payload.items.map((item) => item.title), [account.marker]);
+    const risks = await request("/risk-events", { headers });
+    assert.deepEqual(risks.payload.items.map((item) => item.title), [account.marker]);
+
+    const otherIds = scopedRecordIds[other.marker];
+    const deleteOtherPublication = await request("/publications/" + otherIds.publication, {
+      method: "DELETE",
+      headers: jsonHeaders({ cookie: account.cookie, csrf: account.cookie === adminCookie ? adminCsrf : memberCsrf })
+    });
+    assert.equal(deleteOtherPublication.status, 404, "不能删除另一账号的发布记录");
+    const deleteOtherRisk = await request("/risk-events/" + otherIds.risk, {
+      method: "DELETE",
+      headers: jsonHeaders({ cookie: account.cookie, csrf: account.cookie === adminCookie ? adminCsrf : memberCsrf })
+    });
+    assert.equal(deleteOtherRisk.status, 404, "不能删除另一账号的风险工单");
+  }
+
+  const memberSameGameWrite = await request("/profile", {
+    method: "PUT",
+    headers: jsonHeaders({ cookie: memberCookie, csrf: memberCsrf }),
+    body: JSON.stringify({ game: "仅管理员档案", profile: { marker: "member-write" } })
+  });
+  assert.equal(memberSameGameWrite.status, 200);
+  const adminProfileAfterMemberWrite = await request("/profile?game=" + encodeURIComponent("仅管理员档案"), { headers: { Cookie: adminCookie } });
+  assert.equal(adminProfileAfterMemberWrite.payload.profile.marker, "admin-private", "同名项目档案写入也必须限定当前账号");
+
   const sameRunIdentity = new DatabaseSync(databasePath);
   const morningRunValues = ["2026-09-19", "同一游戏", "B站", "success", "2026-09-19T01:00:00.000Z"];
   sameRunIdentity.prepare("INSERT INTO morning_runs (owner_key, run_date, game, platform, status, started_at) VALUES (?, ?, ?, ?, ?, ?)")
