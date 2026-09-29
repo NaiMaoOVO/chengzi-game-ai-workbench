@@ -372,6 +372,17 @@ if (archiveAuth.enabled && archiveAuth.adminUserId) {
   const legacyOwner = `user:${archiveAuth.adminUserId}`;
   db.exec("BEGIN IMMEDIATE");
   try {
+    const naturalKeyConflicts = [
+      ["project_profiles", "SELECT COUNT(*) AS count FROM project_profiles AS legacy JOIN project_profiles AS current ON current.owner_key = ? AND current.game = legacy.game WHERE legacy.owner_key = 'default'"],
+      ["creator_libraries", "SELECT COUNT(*) AS count FROM creator_libraries AS legacy JOIN creator_libraries AS current ON current.owner_key = ? WHERE legacy.owner_key = 'default'"],
+      ["morning_runs", "SELECT COUNT(*) AS count FROM morning_runs AS legacy JOIN morning_runs AS current ON current.owner_key = ? AND current.run_date = legacy.run_date AND current.game = legacy.game AND current.platform = legacy.platform WHERE legacy.owner_key = 'default'"]
+    ].map(([table, sql]) => ({ table, count: db.prepare(sql).get(legacyOwner).count })).filter((conflict) => conflict.count > 0);
+    if (naturalKeyConflicts.length) {
+      const details = naturalKeyConflicts.map(({ table, count }) => `${table}=${count}`).join(", ");
+      const error = new Error(`管理员数据所有权迁移存在自然键冲突（${details}）；事务已回滚，数据未修改。请先确认冲突处理策略。`);
+      error.code = "OWNER_MIGRATION_CONFLICT";
+      throw error;
+    }
     const remapRequestIds = (table) => {
       const conflicts = db.prepare(`
         SELECT legacy.id

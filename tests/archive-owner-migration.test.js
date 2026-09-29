@@ -129,6 +129,46 @@ test("admin owner migration preserves rows with colliding idempotency keys", asy
   }
 });
 
+test("admin owner migration reports natural-key conflicts without changing either owner", async (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "gameops-owner-natural-collision-test-"));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const databasePath = path.join(dir, "archive.db");
+  const setupServer = startArchive(databasePath, false);
+  try {
+    await waitForHealth(setupServer);
+  } finally {
+    await stopArchive(setupServer);
+  }
+
+  const db = new DatabaseSync(databasePath);
+  const createdAt = new Date().toISOString();
+  for (const owner of ["default", "user:1"]) {
+    const label = owner === "default" ? "legacy" : "admin";
+    db.prepare("INSERT INTO project_profiles (owner_key, game, payload, updated_at) VALUES (?, '鸣潮', ?, ?)")
+      .run(owner, JSON.stringify({ label }), createdAt);
+    db.prepare("INSERT INTO creator_libraries (owner_key, payload, updated_at) VALUES (?, ?, ?)")
+      .run(owner, JSON.stringify({ creators: [{ label }] }), createdAt);
+    db.prepare("INSERT INTO morning_runs (owner_key, run_date, game, platform, status, started_at) VALUES (?, '2026-09-29', '鸣潮', 'B站', ?, ?)")
+      .run(owner, label === "legacy" ? "success" : "failed", createdAt);
+  }
+  db.close();
+
+  const authServer = startArchive(databasePath, true);
+  const exit = await waitForExit(authServer);
+  assert.equal(exit.code, 1, authServer.stderrText);
+  assert.match(authServer.stderrText, /OWNER_MIGRATION_CONFLICT/);
+  for (const table of ["project_profiles", "creator_libraries", "morning_runs"]) {
+    assert.match(authServer.stderrText, new RegExp(table));
+  }
+
+  const verify = new DatabaseSync(databasePath, { readOnly: true });
+  for (const table of ["project_profiles", "creator_libraries", "morning_runs"]) {
+    assert.equal(verify.prepare(`SELECT COUNT(*) AS count FROM ${table} WHERE owner_key = 'default'`).get().count, 1, `${table}: legacy row remains`);
+    assert.equal(verify.prepare(`SELECT COUNT(*) AS count FROM ${table} WHERE owner_key = 'user:1'`).get().count, 1, `${table}: admin row remains`);
+  }
+  verify.close();
+});
+
 test("failed legacy owner migration rolls back every table", async (t) => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "gameops-owner-migration-test-"));
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
