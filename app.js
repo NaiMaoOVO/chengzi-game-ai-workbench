@@ -1159,7 +1159,11 @@ async function generateDailyBriefing() {
       analyzeFeedback();
     } catch (_error) { /* 各模块失败时按现有兜底展示 */ }
     if (!dailyBriefingGuard.isCurrent(generation)) return;
-    if (window.loadTodayTodos) await window.loadTodayTodos();
+    if (window.loadTodayTodos) {
+      await window.loadTodayTodos();
+      if (!dailyBriefingGuard.isCurrent(generation)) return;
+      await window.waitForTodayTodosLoad?.();
+    }
     if (!dailyBriefingGuard.isCurrent(generation)) return;
     lastBriefing = collectBriefingData();
     if (lastTrendStats) {
@@ -2105,6 +2109,8 @@ window.loadTodayTodos = async function loadTodayTodos() {
   todayTodosController?.abort();
   const controller = new AbortController();
   todayTodosController = controller;
+  let resolveLoad;
+  window.todayTodosLoadPromise = new Promise((resolve) => { resolveLoad = resolve; });
   const requestOptions = { cache: "no-store", signal: controller.signal };
   const platformSnapshot = readDailyPlatformSnapshot();
   const platformHistoryParams = new URLSearchParams({ kind: "trending", limit: "50" });
@@ -2183,8 +2189,20 @@ window.loadTodayTodos = async function loadTodayTodos() {
   } catch (_error) {
     if (todayTodosRequestGuard.isCurrent(requestGeneration)) window.renderTodayTodos([], { error: true, platformSnapshot });
   } finally {
-    if (todayTodosRequestGuard.isCurrent(requestGeneration)) todayTodosController = null;
+    const isCurrent = todayTodosRequestGuard.isCurrent(requestGeneration);
+    if (isCurrent) todayTodosController = null;
+    resolveLoad({ generation: requestGeneration, status: isCurrent ? "complete" : "superseded" });
   }
+};
+
+window.waitForTodayTodosLoad = async function waitForTodayTodosLoad() {
+  let result;
+  while (window.todayTodosLoadPromise) {
+    const pending = window.todayTodosLoadPromise;
+    result = await pending;
+    if (pending === window.todayTodosLoadPromise) return result;
+  }
+  return result;
 };
 
 let llmModelName = "";

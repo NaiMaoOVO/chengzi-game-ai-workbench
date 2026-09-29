@@ -2388,6 +2388,83 @@ test("a briefing generation is ignored after the archive account changes", async
   assert.equal(context.isGenerating(), false);
 });
 
+test("daily briefing waits for the latest queue refresh after its own load is superseded", async () => {
+  const start = app.indexOf("async function generateDailyBriefing()");
+  const end = app.indexOf("function isArchiveServiceUnavailable", start);
+  assert.ok(start >= 0 && end > start);
+  let resolveStats;
+  let resolveBriefingLoad;
+  let resolveLatestLoad;
+  const calls = { collect: 0, render: 0, queue: 0, wait: 0 };
+  const generateButton = { disabled: false, textContent: "生成今日简报", setAttribute() {} };
+  const status = { textContent: "", className: "" };
+  const latestLoad = new Promise((resolve) => { resolveLatestLoad = resolve; });
+  const context = {
+    document: { querySelector: (selector) => selector === "#generate-briefing" ? generateButton : selector === "#briefing-status" ? status : null },
+    setBriefingActionsAvailable: () => {},
+    loadTrendStats: () => new Promise((resolve) => { resolveStats = resolve; }),
+    analyzeTrending: async () => {},
+    analyzeFeedback: () => {},
+    collectBriefingData: () => { calls.collect += 1; return { dataIssues: [], dataQuality: "real" }; },
+    renderBriefing: () => { calls.render += 1; },
+    window: {
+      loadTodayTodos: () => {
+        calls.queue += 1;
+        return new Promise((resolve) => { resolveBriefingLoad = resolve; });
+      },
+      waitForTodayTodosLoad: () => { calls.wait += 1; return latestLoad; }
+    }
+  };
+  vm.runInNewContext(`
+    let dailyBriefingGenerating = false;
+    let lastBriefing = null;
+    let lastTrendStats = null;
+    const dailyBriefingGuard = {
+      generation: 0,
+      next() { this.generation += 1; return this.generation; },
+      isCurrent(generation) { return generation === this.generation; }
+    };
+    ${app.slice(start, end)}
+    this.generateBriefing = generateDailyBriefing;
+  `, context);
+
+  const pendingGeneration = context.generateBriefing();
+  resolveStats();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(calls.queue, 1);
+  resolveBriefingLoad();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(calls.wait, 1);
+  assert.equal(calls.collect, 0, "the briefing must not capture the superseded loading snapshot");
+  resolveLatestLoad();
+  await pendingGeneration;
+  assert.equal(calls.collect, 1);
+  assert.equal(calls.render, 1);
+});
+
+test("queue wait follows the newer load promise when the earlier request is superseded", async () => {
+  const start = app.indexOf("window.waitForTodayTodosLoad = async function waitForTodayTodosLoad()");
+  const end = app.indexOf("let llmModelName", start);
+  assert.ok(start >= 0 && end > start);
+  let resolveOld;
+  let resolveLatest;
+  const oldLoad = new Promise((resolve) => { resolveOld = resolve; });
+  const latestLoad = new Promise((resolve) => { resolveLatest = resolve; });
+  const context = { window: { todayTodosLoadPromise: oldLoad } };
+  vm.runInNewContext(`${app.slice(start, end)}; this.waitForLatest = window.waitForTodayTodosLoad;`, context);
+
+  const waiting = context.waitForLatest();
+  context.window.todayTodosLoadPromise = latestLoad;
+  resolveOld({ status: "superseded" });
+  await new Promise((resolve) => setImmediate(resolve));
+  let settled = false;
+  waiting.then(() => { settled = true; });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(settled, false);
+  resolveLatest({ status: "complete" });
+  assert.deepEqual(JSON.parse(JSON.stringify(await waiting)), { status: "complete" });
+});
+
 test("navigation exposes the active view to assistive technology", () => {
   const start = app.indexOf("function navigateToView");
   const end = app.indexOf("function collectListText", start);

@@ -5,14 +5,15 @@ const path = require("node:path");
 
 const projectRoot = path.resolve(__dirname, "..");
 const { RUNTIME_FILES } = require("../lib/runtime-manifest");
+const { checkLauncherRuntime } = require("../lib/launcher-runtime-check");
 
 const installerSource = fs.readFileSync(path.join(projectRoot, "scripts", "install-macos-launcher.js"), "utf8");
 const checkerSource = fs.readFileSync(path.join(projectRoot, "scripts", "check-launcher-runtime.js"), "utf8");
 
-test("installer and checker consume the shared runtime manifest", () => {
-  for (const [label, source] of [["installer", installerSource], ["checker", checkerSource]]) {
-    assert.match(source, /require\("..\/lib\/runtime-manifest"\)/, label + " 必须引用共享清单");
-  }
+test("installer and launcher checker consume the shared runtime manifest", () => {
+  assert.match(installerSource, /require\("..\/lib\/runtime-manifest"\)/, "installer 必须引用共享清单");
+  assert.match(checkerSource, /require\("..\/lib\/launcher-runtime-check"\)/, "checker 必须调用共享检查逻辑");
+  assert.match(fs.readFileSync(path.join(projectRoot, "lib", "launcher-runtime-check.js"), "utf8"), /require\("\.\/runtime-manifest"\)/, "检查逻辑必须引用共享清单");
   assert.doesNotMatch(installerSource, /const RUNTIME_FILES = \[/, "安装器不得内联清单副本");
   assert.doesNotMatch(checkerSource, /const files = \[/, "检查脚本不得内联清单副本");
 });
@@ -70,4 +71,40 @@ test("runtime manifest includes the automatic archive backup dependency chain", 
   for (const fileName of ["lib/archive-backup.js", "lib/archive-backup-scheduler.js", "scripts/backup-archive.js"]) {
     assert.ok(RUNTIME_FILES.includes(fileName), "runtime manifest 缺少自动备份依赖 " + fileName);
   }
+});
+
+test("launcher check fails when a manifest source is missing even if runtime still has a copy", (t) => {
+  const dir = fs.mkdtempSync(path.join(require("node:os").tmpdir(), "gameops-launcher-source-check-"));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const root = path.join(dir, "source");
+  const runtime = path.join(dir, "runtime");
+  fs.mkdirSync(root);
+  fs.mkdirSync(runtime);
+  fs.writeFileSync(path.join(runtime, "entry.js"), "runtime copy");
+
+  const result = checkLauncherRuntime({ root, runtime, files: ["entry.js"] });
+  assert.equal(result.inSync, false);
+  assert.deepEqual(result.missingSource, ["entry.js"]);
+});
+
+test("launcher check detects when the installed app Node path has been removed", (t) => {
+  const dir = fs.mkdtempSync(path.join(require("node:os").tmpdir(), "gameops-launcher-node-check-"));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const root = path.join(dir, "source");
+  const runtime = path.join(dir, "runtime");
+  const appPath = path.join(dir, "GameOpsLauncher.app");
+  const configPath = path.join(appPath, "Contents", "Resources", "config.json");
+  fs.mkdirSync(root);
+  fs.mkdirSync(runtime);
+  fs.mkdirSync(path.dirname(configPath), { recursive: true });
+  fs.writeFileSync(path.join(root, "entry.js"), "same bytes");
+  fs.writeFileSync(path.join(runtime, "entry.js"), "same bytes");
+  fs.writeFileSync(configPath, JSON.stringify({ nodePath: path.join(dir, "removed-node") }));
+
+  const result = checkLauncherRuntime({ root, runtime, appPath, files: ["entry.js"] });
+  assert.equal(result.inSync, false);
+  assert.match(result.nodeIssue, /Node 可执行文件不存在/);
+
+  fs.writeFileSync(configPath, JSON.stringify({ nodePath: process.execPath }));
+  assert.equal(checkLauncherRuntime({ root, runtime, appPath, files: ["entry.js"] }).inSync, true);
 });
