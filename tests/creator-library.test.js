@@ -98,6 +98,55 @@ test("creator library sync is authenticated and rejects stale writes", async () 
   assert.equal(stale.payload.error, "creator_library_conflict");
 });
 
+test("creator library no-op writes preserve the concurrency token after validating the base version", async () => {
+  const login = await request("/auth/login", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ username: "creator-admin", password: "creator-password-2026" })
+  });
+  const cookie = cookieOf(login);
+  const headers = {
+    "Content-Type": "application/json",
+    Cookie: cookie,
+    "X-CSRF-Token": login.payload.csrf_token
+  };
+  const before = await request("/creator-library", { headers: { Cookie: cookie } });
+  const library = {
+    ...before.payload.library,
+    "noop-profile": { name: "结构相同", platform: "B站", details: { alpha: 1, beta: 2 } }
+  };
+  const saved = await request("/creator-library", {
+    method: "PUT",
+    headers,
+    body: JSON.stringify({ base_updated_at: before.payload.updated_at, library })
+  });
+  assert.equal(saved.status, 200);
+
+  const reorderKeys = (value) => Array.isArray(value)
+    ? value.map(reorderKeys)
+    : value && typeof value === "object"
+      ? Object.fromEntries(Object.entries(value).reverse().map(([key, entry]) => [key, reorderKeys(entry)]))
+      : value;
+  const equivalent = reorderKeys(library);
+  const stale = await request("/creator-library", {
+    method: "PUT",
+    headers,
+    body: JSON.stringify({ base_updated_at: before.payload.updated_at, library: equivalent })
+  });
+  assert.equal(stale.status, 409, "equal content must not bypass the stale base-version check");
+
+  const noOp = await request("/creator-library", {
+    method: "PUT",
+    headers,
+    body: JSON.stringify({ base_updated_at: saved.payload.updated_at, library: equivalent })
+  });
+  assert.equal(noOp.status, 200);
+  assert.equal(noOp.payload.updated_at, saved.payload.updated_at, "an equivalent library should not create a new version");
+  const after = await request("/creator-library", { headers: { Cookie: cookie } });
+  assert.deepEqual(after.payload.library, library);
+  assert.equal(after.payload.updated_at, saved.payload.updated_at);
+});
+
 test("creator library concurrency token advances for writes in the same millisecond", async () => {
   const login = await request("/auth/login", {
     method: "POST",

@@ -918,6 +918,10 @@ const server = http.createServer((request, response) => {
           sendJson(request, response, 409, { ok: false, error: "creator_library_conflict", library: current.library, updated_at: current.updated_at });
           return;
         }
+        if (JSON.stringify(stableJsonValue(body.library)) === JSON.stringify(stableJsonValue(current.library))) {
+          sendJson(request, response, 200, { ok: true, updated_at: current.updated_at });
+          return;
+        }
         const previousTime = Date.parse(current.updated_at || "");
         const updatedAt = new Date(Number.isFinite(previousTime) ? Math.max(Date.now(), previousTime + 1) : Date.now()).toISOString();
         try {
