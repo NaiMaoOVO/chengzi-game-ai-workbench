@@ -210,9 +210,21 @@ function applyServiceMode(mode = getServiceMode()) {
 function handleArchiveStorageChange(event) {
   if (event?.key === ARCHIVE_SESSION_CHANGE_KEY) return refreshArchiveSession();
   if (event?.key !== SERVICE_MODE_STORAGE_KEY && event?.key !== null) return;
-  const nextMode = event?.key === SERVICE_MODE_STORAGE_KEY && (event.newValue === "online" || event.newValue === "local")
+  let storedMode = null;
+  let storageReadFailed = false;
+  try {
+    storedMode = window.localStorage?.getItem(SERVICE_MODE_STORAGE_KEY);
+  } catch (_error) {
+    storageReadFailed = true;
+  }
+  const eventMode = event?.key === SERVICE_MODE_STORAGE_KEY && (event.newValue === "online" || event.newValue === "local")
     ? event.newValue
-    : inferDefaultServiceMode();
+    : null;
+  const nextMode = storedMode === "online" || storedMode === "local"
+    ? storedMode
+    : storageReadFailed && eventMode
+      ? eventMode
+      : inferDefaultServiceMode();
   serviceModeOverride = nextMode;
   if (ARCHIVE_SERVICE_URL === SERVICE_URL_PRESETS[nextMode]?.archive) return;
   applyServiceMode(nextMode);

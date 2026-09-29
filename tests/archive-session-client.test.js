@@ -11,12 +11,20 @@ const archiveSessionFunctions = utils.slice(functionStart, functionEnd);
 function createArchiveSessionClient() {
   const registeredListeners = {};
   const localStorageWrites = [];
+  let storedServiceMode = "local";
   const context = {
     ARCHIVE_SERVICE_URL: "/api/archive",
     Headers,
     fetch: async () => ({ ok: true, status: 200, json: async () => ({}) }),
     window: {
-      localStorage: { getItem: () => "local", setItem: (key, value) => localStorageWrites.push({ key, value }) },
+      localStorage: {
+        getItem: () => storedServiceMode,
+        setItem: (key, value) => {
+          localStorageWrites.push({ key, value });
+          if (key === "gameops-service-mode-v1") storedServiceMode = value;
+        },
+        clear: () => { storedServiceMode = null; }
+      },
       sessionStorage: { setItem() {}, removeItem() {} },
       location: { protocol: "file:", hostname: "" },
       addEventListener: (type, listener) => { registeredListeners[type] = listener; }
@@ -279,10 +287,38 @@ test("service mode stays consistent for the current page when local storage writ
 test("clearing storage in another tab resets the in-memory mode override", async () => {
   const context = createArchiveSessionClient();
   context.archiveSessionClient.setServiceMode("online");
+  context.window.localStorage.clear();
 
   await context.archiveSessionListeners.storage({ key: null, oldValue: null, newValue: null });
 
   const current = context.archiveSessionClient.current();
+  assert.equal(current.mode, "local");
+  assert.equal(current.serviceUrl, "http://127.0.0.1:8796");
+});
+
+test("a stale service-mode event cannot overwrite a newer local selection", async () => {
+  const context = createArchiveSessionClient();
+  context.window.localStorage.setItem("gameops-service-mode-v1", "online");
+  context.archiveSessionClient.setServiceMode("local");
+
+  await context.archiveSessionListeners.storage({ key: "gameops-service-mode-v1", newValue: "online" });
+
+  const current = context.archiveSessionClient.current();
+  assert.equal(context.window.localStorage.getItem("gameops-service-mode-v1"), "local");
+  assert.equal(current.mode, "local");
+  assert.equal(current.serviceUrl, "http://127.0.0.1:8796");
+});
+
+test("a stale service-mode event cannot undo a storage clear", async () => {
+  const context = createArchiveSessionClient();
+  context.archiveSessionClient.setServiceMode("online");
+  context.window.localStorage.clear();
+  await context.archiveSessionListeners.storage({ key: null, oldValue: null, newValue: null });
+
+  await context.archiveSessionListeners.storage({ key: "gameops-service-mode-v1", newValue: "online" });
+
+  const current = context.archiveSessionClient.current();
+  assert.equal(context.window.localStorage.getItem("gameops-service-mode-v1"), null);
   assert.equal(current.mode, "local");
   assert.equal(current.serviceUrl, "http://127.0.0.1:8796");
 });
@@ -415,6 +451,7 @@ test("a logout in another tab clears this tab after the server confirms 401", as
 test("a service mode change in another tab applies the new endpoint before revalidation", async () => {
   const context = createArchiveSessionClient();
   seedVerifiedLogin(context);
+  context.window.localStorage.setItem("gameops-service-mode-v1", "online");
   let requestedUrl = "";
   context.fetch = async (url) => {
     requestedUrl = url;
