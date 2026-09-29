@@ -588,7 +588,9 @@ document.addEventListener("gameops:archive-session", (event) => {
       setRiskTicketStatus("账号已切换，正在加载当前账号数据。", "mock");
       loadPublications();
       loadRiskTickets();
+      refreshProfileList();
     }
+    if (detail.user || !detail.required) refreshDailyQueueIfActive();
     renderCreatorLibrary();
   }
   // 登录线上账号后自动合并本地创作者库，避免用户必须记得手动点击“同步个人库”。
@@ -612,8 +614,6 @@ document.querySelector("#archive-login-form")?.addEventListener("submit", async 
     await loginArchiveUser(username, password);
     const passwordInput = document.querySelector("#archive-login-password");
     if (passwordInput) passwordInput.value = "";
-    refreshDailyQueueIfActive();
-    refreshProfileList();
   } catch (error) {
     if (status) status.textContent = archiveMutationFailure("登录", error);
   }

@@ -4120,7 +4120,7 @@ test("archive account changes clear old publication and risk lists and invalidat
   const briefingTime = { textContent: "上一账号简报时间" };
   const briefingStatus = { textContent: "上一账号简报状态", className: "" };
   const generateBriefingButton = { disabled: true, textContent: "正在生成…", setAttribute(name, value) { this[name] = value; } };
-  const calls = { creatorSyncCancel: 0, briefingGenerationInvalidations: 0, publicationGeneration: 0, riskGeneration: 0, profileGeneration: 0, briefingGeneration: 0, publicationLoads: 0, riskLoads: 0, libraryRenders: 0, briefingActions: [], publicationStatus: "", riskStatus: "", archiveStatus: "" };
+  const calls = { creatorSyncCancel: 0, briefingGenerationInvalidations: 0, publicationGeneration: 0, riskGeneration: 0, profileGeneration: 0, briefingGeneration: 0, publicationLoads: 0, riskLoads: 0, profileLoads: 0, queueRefreshes: 0, libraryRenders: 0, briefingActions: [], publicationStatus: "", riskStatus: "", archiveStatus: "" };
   const context = {
     document: {
       addEventListener: (_name, handler) => { context.archiveSessionHandler = handler; },
@@ -4154,6 +4154,8 @@ test("archive account changes clear old publication and risk lists and invalidat
     setRiskTicketStatus: (text) => { calls.riskStatus = text; },
     loadPublications: () => { calls.publicationLoads += 1; },
     loadRiskTickets: () => { calls.riskLoads += 1; },
+    refreshProfileList: () => { calls.profileLoads += 1; },
+    refreshDailyQueueIfActive: () => { calls.queueRefreshes += 1; },
     renderCreatorLibrary: () => { calls.libraryRenders += 1; }
   };
   vm.runInNewContext(`
@@ -4189,6 +4191,8 @@ test("archive account changes clear old publication and risk lists and invalidat
   assert.equal(calls.briefingGeneration, 1);
   assert.equal(calls.publicationLoads, 1);
   assert.equal(calls.riskLoads, 1);
+  assert.equal(calls.profileLoads, 1, "跨标签切换账号后应加载新账号项目档案");
+  assert.equal(calls.queueRefreshes, 1, "跨标签切换账号后应立即安排每日队列刷新");
   assert.equal(calls.libraryRenders, 1);
   assert.equal(calls.creatorSyncCancel, 1);
 
@@ -4199,6 +4203,8 @@ test("archive account changes clear old publication and risk lists and invalidat
   assert.match(briefingStatus.textContent, /已退出登录/);
   assert.equal(calls.publicationLoads, 1);
   assert.equal(calls.riskLoads, 1);
+  assert.equal(calls.profileLoads, 1, "退出登录后不应请求受保护的项目档案");
+  assert.equal(calls.queueRefreshes, 1, "退出登录后不应刷新受保护的每日队列");
   assert.equal(calls.libraryRenders, 2);
   assert.equal(calls.creatorSyncCancel, 2);
   assert.equal(calls.briefingGenerationInvalidations, 2);
@@ -4230,7 +4236,7 @@ test("service-mode changes in another tab clear archive rows and refresh service
   const publications = { innerHTML: "<p>本地发布行</p>" };
   const risks = { innerHTML: "<p>本地风险行</p>" };
   const overview = { textContent: "本地模式" };
-  const calls = { mode: 0, launcher: 0, ocr: 0, overview: 0, trends: 0, publications: 0, risks: 0 };
+  const calls = { mode: 0, launcher: 0, ocr: 0, overview: 0, trends: 0, publications: 0, risks: 0, profiles: 0, queueRefreshes: 0 };
   const context = {
     getServiceMode: () => mode,
     document: {
@@ -4265,6 +4271,8 @@ test("service-mode changes in another tab clear archive rows and refresh service
     currentRiskTickets: [{ id: 7, title: "本地风险行" }],
     loadPublications: () => { calls.publications += 1; },
     loadRiskTickets: () => { calls.risks += 1; },
+    refreshProfileList: () => { calls.profiles += 1; },
+    refreshDailyQueueIfActive: () => { calls.queueRefreshes += 1; },
     renderCreatorLibrary() {},
     setManagementCount() {},
     setPublicationStatus() {},
@@ -4311,6 +4319,8 @@ test("service-mode changes in another tab clear archive rows and refresh service
   assert.equal(calls.trends, 1);
   assert.equal(calls.publications, 1);
   assert.equal(calls.risks, 1);
+  assert.equal(calls.profiles, 1);
+  assert.equal(calls.queueRefreshes, 1);
   assert.match(overview.textContent, /线上模式/);
   assert.equal(context.lastDailyQueueSnapshot, null);
   assert.equal(context.latestDailyInsightContext.manualItems.length, 0);
