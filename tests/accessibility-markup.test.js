@@ -2706,7 +2706,7 @@ test("creator library sync blocks corrupt remote archives before writing", () =>
   const source = app.slice(start, end);
   assert.match(source, /remote\.invalid/);
   assert.match(source, /已阻止覆盖/);
-  assert.match(source, /本机存档服务未连接；启动服务后重试/);
+  assert.match(source, /存档服务连接中断；网络恢复后将自动重试/);
   assert.match(source, /本地数据未受影响/);
   assert.equal((source.match(/archiveJsonRequestWithTimeout/g) || []).length, 2);
   assert.doesNotMatch(source, /同步失败，\$\{error\.message/);
@@ -2726,7 +2726,11 @@ test("creator library sync ignores a late previous-account response", async () =
     ARCHIVE_SERVICE_URL: "https://archive.example",
     creatorLibraryStorageIssue: "",
     creatorLibraryStorageRawSnapshot: null,
+    creatorLibraryAutoSyncRetryStorageKey: "",
     cancelCreatorLibraryAutoSync: () => {},
+    creatorLibraryStorageKey: () => "creator-library:account-a",
+    isLocalFileRuntime: () => false,
+    isArchiveServiceUnavailable: () => false,
     archiveRequest: async (_url, options) => {
       if (options.method === "PUT") return response({ ok: true });
       readCount += 1;
@@ -2775,9 +2779,14 @@ function createCreatorSyncHarness(archiveJsonRequestWithTimeout) {
   const context = {
     AbortController,
     ARCHIVE_SERVICE_URL: "https://archive.example",
+    archiveSessionUser: { id: "account-a" },
     creatorLibraryStorageIssue: "",
     creatorLibraryStorageRawSnapshot: undefined,
+    creatorLibraryAutoSyncRetryStorageKey: "",
     cancelCreatorLibraryAutoSync: () => {},
+    creatorLibraryStorageKey: () => "creator-library:account-a",
+    isLocalFileRuntime: () => false,
+    isArchiveServiceUnavailable: () => false,
     document: { querySelector: (selector) => selector === "#creator-status" ? status : null },
     archiveJsonRequestWithTimeout,
     readCreatorLibrary: () => {

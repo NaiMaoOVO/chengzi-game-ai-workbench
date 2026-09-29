@@ -6224,6 +6224,7 @@ let creatorLibraryStorageCorrupt = false;
 let creatorLibraryStorageRawSnapshot;
 let creatorLibraryAutoSyncTimer = null;
 let creatorLibraryAutoSyncStorageKey = "";
+let creatorLibraryAutoSyncRetryStorageKey = "";
 
 function cancelCreatorLibraryAutoSync() {
   if (creatorLibraryAutoSyncTimer !== null) clearTimeout(creatorLibraryAutoSyncTimer);
@@ -6243,6 +6244,18 @@ function scheduleCreatorLibrarySync() {
     void syncCreatorLibrary();
   }, 500);
 }
+
+function retryCreatorLibrarySyncAfterReconnect() {
+  const storageKey = creatorLibraryAutoSyncRetryStorageKey;
+  if (!storageKey) return;
+  if (!archiveSessionUser || isLocalFileRuntime() || creatorLibraryStorageKey() !== storageKey) {
+    creatorLibraryAutoSyncRetryStorageKey = "";
+    return;
+  }
+  scheduleCreatorLibrarySync();
+}
+
+window.addEventListener("online", retryCreatorLibrarySyncAfterReconnect);
 
 function readCreatorLibrary() {
   creatorLibraryStorageIssue = "";
@@ -6864,6 +6877,7 @@ let creatorLibrarySyncController = null;
 
 function cancelCreatorLibrarySync() {
   cancelCreatorLibraryAutoSync();
+  creatorLibraryAutoSyncRetryStorageKey = "";
   creatorLibrarySyncGeneration += 1;
   creatorLibrarySyncController?.abort();
   creatorLibrarySyncController = null;
@@ -6871,6 +6885,8 @@ function cancelCreatorLibrarySync() {
 
 async function syncCreatorLibrary() {
   cancelCreatorLibraryAutoSync();
+  const syncStorageKey = creatorLibraryStorageKey();
+  creatorLibraryAutoSyncRetryStorageKey = archiveSessionUser && !isLocalFileRuntime() ? syncStorageKey : "";
   creatorLibrarySyncController?.abort();
   const generation = ++creatorLibrarySyncGeneration;
   const controller = new AbortController();
@@ -6924,12 +6940,22 @@ async function syncCreatorLibrary() {
     }
     renderCreatorLibrary();
     renderCreatorTable(currentCreatorRows, document.querySelector("#creator-goal")?.value || "launch", document.querySelector("#creator-activity")?.value || "newLaunch");
+    creatorLibraryAutoSyncRetryStorageKey = "";
     setStatus(`个人库：已同步 ${Object.keys(merged).length} 位创作者。`, true);
   } catch (error) {
     if (generation !== creatorLibrarySyncGeneration) return;
     const message = String(error?.message || "");
+    if (isArchiveServiceUnavailable(error)) {
+      if (archiveSessionUser && !isLocalFileRuntime() && creatorLibraryStorageKey() === syncStorageKey) {
+        creatorLibraryAutoSyncRetryStorageKey = syncStorageKey;
+      } else {
+        creatorLibraryAutoSyncRetryStorageKey = "";
+      }
+    } else {
+      creatorLibraryAutoSyncRetryStorageKey = "";
+    }
     const detail = isArchiveServiceUnavailable(error)
-      ? "本机存档服务未连接；启动服务后重试"
+      ? "存档服务连接中断；网络恢复后将自动重试，本机服务未运行时请启动后手动同步"
       : /请先登录|数据损坏|个人库存储不可用|本机个人库|损坏记录|存储空间不足|同步期间发生变化/.test(message)
         ? message
         : "暂不可用，请稍后重试";

@@ -192,7 +192,7 @@ test("authenticated hosted creator edits debounce sync and discard it after acco
   assert.ok(scheduleStart >= 0 && scheduleEnd > scheduleStart, "creator library auto-sync flow should be available for authenticated accounts");
   const source = app.slice(scheduleStart, scheduleEnd);
   const context = {
-    window: { localStorage },
+    window: { localStorage, addEventListener: () => {} },
     recordSync: () => { syncCalls += 1; },
     setTimeout: (callback, delay) => {
       const id = ++timerId;
@@ -254,6 +254,121 @@ test("authenticated hosted creator edits debounce sync and discard it after acco
   assert.equal(syncCalls, 1, "a stable authenticated edit should invoke cloud sync after the debounce");
   assert.equal(harness.timerKey(), "");
   assert.ok(pendingId > 0);
+});
+
+test("creator library retries a deferred sync after reconnect only for its original account", () => {
+  let timerId = 0;
+  let syncCalls = 0;
+  const timers = new Map();
+  const cancelled = new Set();
+  const listeners = {};
+  let localFile = false;
+  const storage = { getItem: () => null, setItem: () => {} };
+  const sourceStart = app.indexOf("let creatorLibraryAutoSyncTimer = null;");
+  const sourceEnd = app.indexOf("function creatorSnapshot(", sourceStart);
+  const source = app.slice(sourceStart, sourceEnd);
+  const harness = vm.runInNewContext(`(() => {
+    const CREATOR_LIBRARY_STORAGE_KEY = "creator-library";
+    let archiveSessionUser = { id: "account-a" };
+    function isLocalFileRuntime() { return localFile; }
+    function syncCreatorLibrary() { recordSync(); creatorLibraryAutoSyncRetryStorageKey = ""; }
+    ${validators}
+    ${source}
+    return {
+      retry: retryCreatorLibrarySyncAfterReconnect,
+      key: creatorLibraryStorageKey,
+      setUser: (user) => { archiveSessionUser = user; },
+      setLocalFile: (value) => { localFile = value; },
+      setPendingKey: (key) => { creatorLibraryAutoSyncRetryStorageKey = key; },
+      pendingKey: () => creatorLibraryAutoSyncRetryStorageKey
+    };
+  })()`, {
+    window: {
+      localStorage: storage,
+      addEventListener: (type, listener) => { listeners[type] = listener; }
+    },
+    localFile: false,
+    recordSync: () => { syncCalls += 1; },
+    setTimeout: (callback, delay) => {
+      const id = ++timerId;
+      timers.set(id, { callback, delay });
+      return id;
+    },
+    clearTimeout: (id) => cancelled.add(id)
+  });
+  const activeTimers = () => [...timers.entries()].filter(([id]) => !cancelled.has(id));
+
+  assert.equal(typeof listeners.online, "function", "the page should listen for browser reconnection");
+  const accountAKey = harness.key();
+  harness.setPendingKey(accountAKey);
+  harness.setUser({ id: "account-b" });
+  listeners.online();
+  assert.equal(activeTimers().length, 0, "reconnect must not carry account A's retry into account B");
+  assert.equal(harness.pendingKey(), "");
+
+  harness.setUser({ id: "account-a" });
+  harness.setPendingKey(accountAKey);
+  listeners.online();
+  assert.equal(activeTimers().length, 1);
+  assert.equal(activeTimers()[0][1].delay, 500);
+  const [retryTimerId, retryTimer] = activeTimers()[0];
+  cancelled.add(retryTimerId);
+  retryTimer.callback();
+  assert.equal(syncCalls, 1, "a matching account should retry once after the standard debounce");
+  assert.equal(harness.pendingKey(), "");
+
+  harness.setPendingKey(accountAKey);
+  harness.setLocalFile(true);
+  listeners.online();
+  assert.equal(activeTimers().length, 0, "file pages must never retry to the cloud");
+  assert.equal(harness.pendingKey(), "");
+});
+
+test("only a network failure marks the authenticated creator library for reconnect retry", async () => {
+  const syncStart = app.indexOf("let creatorLibrarySyncGeneration = 0;");
+  const syncEnd = app.indexOf("function explainCreatorScore", syncStart);
+  const syncSource = app.slice(syncStart, syncEnd);
+
+  const createHarness = (requestError) => vm.runInNewContext(`(() => {
+    let archiveSessionUser = { id: "account-a" };
+    let creatorLibraryAutoSyncRetryStorageKey = "";
+    let creatorLibraryStorageIssue = "";
+    let creatorLibraryStorageRawSnapshot = "[]";
+    const currentCreatorRows = [];
+    const status = { textContent: "", className: "" };
+    const document = { querySelector: () => status };
+    const ARCHIVE_SERVICE_URL = "https://archive.example";
+    const CREATOR_LIBRARY_STORAGE_KEY = "creator-library";
+    function creatorLibraryStorageKey() { return "creator-library:account-a"; }
+    function cancelCreatorLibraryAutoSync() {}
+    function isLocalFileRuntime() { return false; }
+    function isArchiveServiceUnavailable(error) { return /Failed to fetch|NetworkError|load failed/i.test(String(error?.message || "")); }
+    function readCreatorLibrary() { creatorLibraryStorageRawSnapshot = "[]"; return {}; }
+    function invalidCreatorLibraryEntries() { return []; }
+    function mergeCreatorLibraries(local, remote) { return { ...remote, ...local }; }
+    function renderCreatorLibrary() {}
+    function renderCreatorTable() {}
+    async function archiveJsonRequestWithTimeout() { throw requestError; }
+    ${syncSource}
+    return {
+      sync: syncCreatorLibrary,
+      pendingKey: () => creatorLibraryAutoSyncRetryStorageKey,
+      statusText: () => status.textContent,
+      cancel: cancelCreatorLibrarySync
+    };
+  })()`, { AbortController, requestError });
+
+  const network = createHarness(new Error("Failed to fetch"));
+  await network.sync();
+  assert.equal(network.pendingKey(), "creator-library:account-a");
+  assert.match(network.statusText(), /网络恢复后将自动重试/);
+  assert.doesNotMatch(network.statusText(), /Failed to fetch/);
+  network.cancel();
+  assert.equal(network.pendingKey(), "", "account/session cancellation should clear reconnect retries");
+
+  const serverError = createHarness(new Error("HTTP 503"));
+  await serverError.sync();
+  assert.equal(serverError.pendingKey(), "", "non-network failures should not be retried on reconnect");
 });
 
 test("the creator library panel surfaces unreadable storage instead of an empty-library state", () => {

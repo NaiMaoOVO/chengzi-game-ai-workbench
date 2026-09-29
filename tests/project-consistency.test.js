@@ -55,11 +55,11 @@ test("README describes creator selection as a personal decision library with col
   assert.match(readme, /合作历史与实测效果/);
   assert.match(readme, /报价和实际成本/);
   assert.match(readme, /线上账号各自使用独立的浏览器缓存/);
-  assert.match(readme, /登录状态下编辑后自动延迟同步/);
+  assert.match(readme, /登录状态下编辑后自动延迟同步，网络恢复时重试/);
   assert.match(readme, /访客与本机 `file:\/\/` 模式保持本地保存/);
   assert.match(readme, /旧本地库会保留且不会自动并入账号/);
   assert.match(readme, /切换账号会取消旧个人库同步/);
-  assert.match(html, /登录线上账号后自动同步/);
+  assert.match(html, /登录线上账号后自动同步，网络恢复时重试/);
   assert.match(html, /访客或本机文件模式仅保存在本机/);
   assert.match(html, /旧本地库不会自动并入账号，迁移请先导出/);
 });
