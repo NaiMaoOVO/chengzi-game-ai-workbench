@@ -41,6 +41,13 @@ test("installer preserves osacompile metadata while adding the gameops URL schem
   );
 });
 
+test("README explains how to restart a controller running from the Launcher snapshot", () => {
+  const readme = fs.readFileSync(path.join(projectRoot, "README.md"), "utf8");
+  assert.match(readme, /Application Support\/GameOpsLauncher\/runtime/);
+  assert.match(readme, /gameops:\/\/restart/);
+  assert.match(readme, /拒绝操作.*第二个控制器/);
+});
+
 test("runtime manifest covers every local require of runtime entrypoints", () => {
   const visited = new Set();
 

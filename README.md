@@ -78,6 +78,8 @@ node start-demo.js
 node restart-demo.js
 ```
 
+该命令只重启由当前项目目录启动的控制进程。若服务由网页 Launcher 启动、运行在 `~/Library/Application Support/GameOpsLauncher/runtime`，请点击页面“重启本地服务”或使用 `gameops://restart`；源码目录中的脚本无法验证快照进程归属时会拒绝操作，以免启动第二个控制器。
+
 ### 服务健康语义
 
 - `/health`：确认响应端服务身份；对 OCR、LLM 和存档服务而言，它不等同于业务依赖已就绪
