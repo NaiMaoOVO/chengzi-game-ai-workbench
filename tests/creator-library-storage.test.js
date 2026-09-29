@@ -4,6 +4,7 @@ const fs = require("node:fs");
 const vm = require("node:vm");
 
 const app = fs.readFileSync(require.resolve("../app.js"), "utf8");
+const utils = fs.readFileSync(require.resolve("../utils.js"), "utf8");
 const start = app.indexOf("function readCreatorLibrary()");
 const end = app.indexOf("function creatorSnapshot(", start);
 assert.ok(start >= 0 && end > start, "creator library storage functions should exist in app.js");
@@ -377,4 +378,70 @@ test("the creator library panel surfaces unreadable storage instead of an empty-
   const source = app.slice(renderStart, renderEnd);
   assert.match(source, /creatorLibraryStorageIssue[\s\S]*role="status"/);
   assert.match(source, /个人库暂时无法读取/);
+});
+
+test("creator library renders imported and stored text as text, not executable markup", () => {
+  const renderStart = app.indexOf("function renderCreatorLibrary()");
+  const renderEnd = app.indexOf("function saveCreatorLibraryCard", renderStart);
+  const optionStart = app.indexOf("function creatorLibraryOption(");
+  const escapeStart = utils.indexOf("function escapeHtml(");
+  const escapeEnd = utils.indexOf("\n\nfunction safeExternalUrl", escapeStart);
+  assert.ok(renderStart >= 0 && renderEnd > renderStart);
+  assert.ok(optionStart >= 0 && optionStart < renderStart);
+  assert.ok(escapeStart >= 0 && escapeEnd > escapeStart);
+
+  const profile = {
+    key: 'creator"><img src=x onerror=alert(1)>',
+    name: '<img src=x onerror=alert(1)>',
+    platform: 'B站<script>alert(2)</script>',
+    status: "未合作",
+    updatedAt: "2026-09-29",
+    notes: '<svg onload=alert(3)>',
+    snapshot: { followers: 12000, avgViews: 3000, engagementRate: 4.2, quote: 800 },
+    collaborations: [{
+      occurredOn: "2026-09-28",
+      project: '<img src=x onerror=alert(4)>',
+      result: '<svg onload=alert(5)>',
+      actualViews: 2400,
+      actualEngagementRate: 3.5,
+      actualCost: 0,
+      quotedCost: 800,
+      onTime: "yes",
+      recommendation: "again"
+    }]
+  };
+  const container = { innerHTML: "" };
+  const count = { textContent: "" };
+  const elements = {
+    "#creator-library-list": container,
+    "#creator-library-count": count,
+    "#creator-library-search": { value: "" },
+    "#creator-library-status-filter": { value: "" }
+  };
+  const renderer = vm.runInNewContext(`(() => {
+    const CREATOR_LIBRARY_STATUSES = ["未合作", "已联系", "已确认", "已发布", "已复盘", "暂停合作"];
+    let creatorLibraryStorageIssue = "";
+    function readCreatorLibrary() { return { profile: fixture }; }
+    function getCreatorLibraryDisplayProfiles(library) { return Object.values(library); }
+    function formatPublicationDate(value) { return value || "未记录"; }
+    function getCreatorHistoryScore() { return null; }
+    function sortCreatorCollaborationsByDate(items) { return items; }
+    function formatWan(value) { return String(value || 0); }
+    function formatCurrency(value) { return String(value || "未填"); }
+    function formatActualCost(value) { return value === 0 ? "¥0" : String(value || "未填"); }
+    function parseRateValue(value) { return Number(value) || 0; }
+    ${utils.slice(escapeStart, escapeEnd)}
+    ${app.slice(optionStart, renderStart)}
+    ${app.slice(renderStart, renderEnd)}
+    return renderCreatorLibrary;
+  })()`, {
+    fixture: profile,
+    document: { querySelector: (selector) => elements[selector] || null }
+  });
+
+  renderer();
+  assert.doesNotMatch(container.innerHTML, /<(?:img|script|svg)\b/i);
+  assert.match(container.innerHTML, /&lt;img src=x onerror=alert\(1\)&gt;/);
+  assert.match(container.innerHTML, /&lt;svg onload=alert\(5\)&gt;/);
+  assert.equal(count.textContent, "1");
 });
