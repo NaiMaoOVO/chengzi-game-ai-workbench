@@ -50,6 +50,18 @@ test("README explains how to restart a controller running from the Launcher snap
   assert.match(readme, /若使用网页 Launcher.*不要从源码目录启动第二个控制器/);
 });
 
+test("local child services start only after the controller successfully binds its port", () => {
+  const source = fs.readFileSync(path.join(projectRoot, "start-demo.js"), "utf8");
+  const listenStart = source.indexOf("srv.listen(CONTROLLER_PORT,");
+  const listenEnd = source.indexOf("\n  });\n})();", listenStart);
+  const startCall = source.indexOf("main();", listenStart);
+
+  assert.ok(listenStart >= 0 && listenEnd > listenStart, "controller listen callback should exist");
+  assert.ok(startCall > listenStart && startCall < listenEnd, "child service startup must wait for controller bind success");
+  assert.equal((source.match(/\bmain\(\);/g) || []).length, 1, "startup must have one gated entry point");
+  assert.match(source, /error\.code === "EADDRINUSE"[\s\S]*?不要重复启动/);
+});
+
 test("runtime manifest covers every local require of runtime entrypoints", () => {
   const visited = new Set();
 

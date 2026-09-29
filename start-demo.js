@@ -139,12 +139,16 @@ async function ensureServices() {
     j(404, {ok:false, message:"\u672a\u77e5\u8def\u5f84"});
   });
   srv.on("error", function(error) {
-    console.error("本地控制进程启动失败：" + error.message);
+    const detail = error.code === "EADDRINUSE"
+      ? `端口 ${CONTROLLER_PORT} 已被占用；如果当前由网页 Launcher 管理，请使用 Launcher 页面操作，不要重复启动。`
+      : error.message;
+    console.error("本地控制进程启动失败：" + detail);
     process.exit(1);
   });
   srv.listen(CONTROLLER_PORT, "127.0.0.1", function() {
     writeControllerState(STATE_FILE, {pid:process.pid, project:ROOT, instanceId:CONTROLLER_INSTANCE_ID});
     console.log("\x1b[36mLauncher http://127.0.0.1:" + CONTROLLER_PORT + "\x1b[0m");
+    main();
   });
 })();
 
@@ -191,5 +195,3 @@ async function main() {
   process.on("SIGINT", shutdown);
   process.on("SIGTERM", shutdown);
 }
-
-main();
